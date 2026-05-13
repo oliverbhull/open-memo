@@ -87,6 +87,7 @@ jobs:
           mkdir -p private_keys
           echo "${APPLE_API_KEY_BASE64}" | base64 --decode > "private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
           export APPLE_API_KEY="${PWD}/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
+          export CSC_NAME="${CSC_NAME#Developer ID Application: }"
 
           npm run release:mac
 
