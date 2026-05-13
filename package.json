@@ -50,7 +50,7 @@
     "electron-store": "^11.0.2",
     "qrcode": "^1.5.4",
     "react-window": "^2.2.3",
-    "simple-icons": "^15.21.0",
+    "simple-icons": "^16.19.0",
     "uuid": "^13.0.0",
     "ws": "^8.18.3"
   },
