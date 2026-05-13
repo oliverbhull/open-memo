@@ -61,7 +61,7 @@
     "@vitejs/plugin-react": "^5.0.2",
     "concurrently": "^9.2.1",
     "electron": "^32.0.0",
-    "electron-builder": "^26.0.12",
+    "electron-builder": "^26.8.1",
     "esbuild": "^0.23.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
