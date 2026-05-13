@@ -28,6 +28,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install native build tools
+        run: brew install autoconf automake libtool opus pkg-config
+
       - name: Cache Cargo registry
         uses: actions/cache@v4
         with:
