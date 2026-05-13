@@ -57,14 +57,14 @@
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/react": "^19.1.12",
-    "@types/react-dom": "^19.1.9",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.2",
     "concurrently": "^9.2.1",
     "electron": "^32.0.0",
     "electron-builder": "^26.0.12",
     "esbuild": "^0.23.0",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1",
+    "react-dom": "^19.2.6",
     "typescript": "^5.9.2",
     "vite": "^7.1.5",
     "wait-on": "^9.0.0"
