@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build signed macOS release
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .build/cargo-install
+            .build/cargo-target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('scripts/shell/build-stt.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Import Developer ID certificate
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PWD: ${{ secrets.MAC_CERT_PWD }}
+        run: |
+          if [[ -z "${MAC_CERT_P12}" || -z "${MAC_CERT_PWD}" ]]; then
+            echo "Missing MAC_CERT_P12 or MAC_CERT_PWD secrets." >&2
+            exit 1
+          fi
+
+          echo "${MAC_CERT_P12}" | base64 --decode > /tmp/open-memo-dev-id.p12
+          security create-keychain -p actions build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p actions build.keychain
+          security import /tmp/open-memo-dev-id.p12 -k build.keychain -P "${MAC_CERT_PWD}" -T /usr/bin/codesign -T /usr/bin/productbuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k actions build.keychain
+          security list-keychains -d user -s build.keychain
+          security find-identity -v -p codesigning build.keychain
+
+      - name: Build signed and notarized app
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          CSC_NAME: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [[ -z "${APPLE_TEAM_ID}" || -z "${APPLE_API_KEY_BASE64}" || -z "${APPLE_API_KEY_ID}" || -z "${APPLE_API_ISSUER}" ]]; then
+            echo "Missing Apple notarization secrets." >&2
+            exit 1
+          fi
+
+          mkdir -p private_keys
+          echo "${APPLE_API_KEY_BASE64}" | base64 --decode > "private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
+          export APPLE_API_KEY="${PWD}/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
+
+          npm run release:mac
+
+      - name: Verify signed app
+        run: |
+          codesign --verify --deep --strict --verbose=2 dist/mac-arm64/Memo.app
+          spctl --assess --type execute --verbose dist/mac-arm64/Memo.app
+
+      - name: Collect release artifacts
+        run: |
+          mkdir -p release-artifacts
+          shopt -s nullglob
+          artifacts=(dist/Open-Memo-*.dmg dist/Open-Memo-*.zip dist/latest-mac.yml)
+          if (( ${#artifacts[@]} == 0 )); then
+            echo "No release artifacts were produced." >&2
+            exit 1
+          fi
+          cp "${artifacts[@]}" release-artifacts/
+          ls -lh release-artifacts
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-memo-release
+          path: release-artifacts/*
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: release-artifacts/*

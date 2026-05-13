@@ -1,0 +1,5 @@
+# This directory contains the Whisper model
+# The model (ggml-base.en-q8_0.bin) is automatically downloaded during CI/CD build
+# For local development, download the model manually:
+# curl -L -o ggml-base.en-q8_0.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-q8_0.bin
+

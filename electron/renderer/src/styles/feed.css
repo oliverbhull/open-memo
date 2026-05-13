@@ -1,0 +1,287 @@
+/* Feed styles - matching mobile exactly */
+
+/* Container spacing: 4px top, 10px sides, 4px bottom */
+/* Gap between entries: 4px (bottom of first) + 4px (top of second) = 8px */
+.container {
+  margin: 4px 10px 4px 10px;
+  position: relative;
+}
+
+.container.processing {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.container.error {
+  border-color: rgba(239, 68, 68, 0.5);
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.textContainer {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px; /* Ensure consistent height for text row */
+  min-width: 0; /* Allow flex item to shrink below content size */
+  overflow: hidden; /* Prevent content from overflowing container */
+  padding-right: 0; /* No padding needed - play button is inside now */
+  position: relative; /* For absolute positioning of play button if needed */
+}
+
+.text {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 17px;
+  line-height: 24px;
+  flex: 1;
+  font-weight: 400;
+  min-height: 24px; /* Fixed height for single line */
+  min-width: 0; /* Critical: allows flex item to shrink below content size for ellipsis */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.text.processing-text {
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.text.error-text {
+  color: rgba(255, 200, 200, 0.9);
+}
+
+.titleText {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  line-height: 16px;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  min-height: 16px; /* Fixed height */
+  display: flex;
+  align-items: center;
+}
+
+.timestamp {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  line-height: 16px;
+  flex-shrink: 0;
+  font-weight: 500;
+  min-height: 16px; /* Fixed height */
+  display: flex;
+  align-items: center;
+}
+
+.copyButton {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 5px;
+  padding: 0;
+  margin-left: -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.45);
+  background: transparent;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.copyButton:hover:not(:disabled) {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.copyButton:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.locationRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  width: 100%;
+  min-height: 20px; /* Fixed height for location row - increased to accommodate play button */
+  position: relative;
+}
+
+.locationText {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  line-height: 16px;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  min-height: 16px; /* Fixed height */
+  display: flex;
+  align-items: center;
+}
+
+.appIcon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.expandedContent {
+  margin-top: 0;
+  overflow: hidden;
+}
+
+.collapsedContent {
+  margin-top: 0;
+}
+
+.fullTextContainer {
+  padding-top: 0;
+}
+
+.fullTextRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  position: relative;
+}
+
+.fullText {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 400;
+  /* No min-height - this can grow based on content */
+}
+
+.fullText.processing-text {
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.fullText.error-text {
+  color: rgba(255, 200, 200, 0.9);
+}
+
+/* Processing indicator */
+.processingIndicator {
+  width: 8px;
+  height: 8px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.processingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Error indicator */
+.errorIndicator {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.errorIcon {
+  font-size: 12px;
+}
+
+/* Hover actions */
+.hover-actions {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  z-index: 10;
+  animation: fadeIn 200ms ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+.hover-action-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(18, 18, 24, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 200ms ease;
+  padding: 0;
+}
+
+.hover-action-button:hover {
+  background: rgba(24, 24, 32, 0.9);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+.hover-action-button.share-button {
+  color: var(--primary);
+}
+
+.hover-action-button.share-button:hover {
+  background: rgba(194, 109, 80, 0.2);
+  border-color: var(--primary);
+}
+
+.hover-action-button.delete-button {
+  color: #EF4444;
+}
+
+.hover-action-button.delete-button:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #EF4444;
+}
+
+.hover-action-button svg {
+  width: 16px;
+  height: 16px;
+}

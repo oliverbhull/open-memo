@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Memo Overlay</title>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent !important;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      pointer-events: none;
+    }
+
+    :root {
+      --primary-color: #C26D50;
+    }
+
+    /* ── Waveform ─────────────────────────────────────── */
+
+    .waveform {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3.5px;
+      width: 80px;
+      height: 28px;
+    }
+
+    .bar {
+      width: 3px;
+      height: 1.5px;
+      background: var(--primary-color);
+      border-radius: 2px;
+      transform-origin: center center;
+      transition: height 50ms linear;
+    }
+
+    body.waveform-live .bar {
+      transition: none;
+    }
+
+    .idle .bar {
+      height: 1.5px !important;
+    }
+
+    /* ── Command toast ────────────────────────────────── */
+
+    #toast {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: max-content;
+      max-width: 188px;
+
+      padding: 6px 14px;
+      border-radius: 100px;
+
+      /* Liquid-glass appearance */
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(24px) saturate(1.6);
+      -webkit-backdrop-filter: blur(24px) saturate(1.6);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow:
+        0 2px 12px rgba(0, 0, 0, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.12);
+
+      color: var(--primary-color);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Slide-up + fade-in */
+    @keyframes toastIn {
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Fade-out */
+    @keyframes toastOut {
+      from {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      to {
+        opacity: 0;
+        transform: translateY(-3px);
+      }
+    }
+
+    #toast.visible {
+      display: flex;
+      animation: toastIn 200ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    #toast.fading {
+      animation: toastOut 350ms ease-in forwards;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="waveform idle" id="waveform">
+    <div class="bar"></div>
+    <div class="bar"></div>
+    <div class="bar"></div>
+    <div class="bar"></div>
+    <div class="bar"></div>
+    <div class="bar"></div>
+    <div class="bar"></div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    // Waveform calibration: expects 7 values in 0–1 from memo-stt (BLE or system mic).
+    const { ipcRenderer } = require("electron");
+
+    const body = document.body;
+    const waveform = document.getElementById("waveform");
+    const toast = document.getElementById("toast");
+    const bars = Array.from(document.querySelectorAll(".bar"));
+
+    let audioLevels = null;
+    let lastAudioUpdate = 0;
+    let isRecording = false;
+    let primaryColor = "#C26D50";
+    let animationFrameId = null;
+    let tickFrameId = null;
+    let isIdle = true;
+    let toastTimer = null;
+
+    const IDLE_HEIGHT = 2;
+    const MIN_HEIGHT = 2;
+    const MAX_HEIGHT = 20;
+    const HEIGHT_RANGE = MAX_HEIGHT - MIN_HEIGHT;
+    const WAVEFORM_SCALE = 1.0;
+    const WEIGHTS = [0.45, 0.65, 0.85, 1.0, 0.85, 0.65, 0.45];
+
+    function resetBarsToIdle() {
+      waveform.classList.add("idle");
+      isIdle = true;
+      for (let i = 0; i < bars.length; i++) {
+        bars[i].style.height = `${IDLE_HEIGHT}px`;
+      }
+    }
+
+    const TRANSFORM_CACHE = new Map();
+    function transformLevel(level) {
+      if (level < 0.05) return 0;
+      const scaled = Math.max(0, Math.min(1, level * WAVEFORM_SCALE));
+      const rounded = Math.round(scaled * 100) / 100;
+      if (TRANSFORM_CACHE.has(rounded)) return TRANSFORM_CACHE.get(rounded);
+      const result = Math.pow(scaled, 0.85);
+      TRANSFORM_CACHE.set(rounded, result);
+      return result;
+    }
+
+    function applyBarHeights(levels) {
+      for (let i = 0; i < bars.length; i++) {
+        const raw = levels[i] ?? 0;
+        const t = transformLevel(raw);
+        const weighted = t * WEIGHTS[i];
+        const clamped = Math.min(1, weighted);
+        const height = MIN_HEIGHT + clamped * HEIGHT_RANGE;
+        bars[i].style.height = `${height}px`;
+      }
+    }
+
+    function updateBars(levels) {
+      if (!levels || levels.length === 0) {
+        if (!isIdle) resetBarsToIdle();
+        return;
+      }
+      if (isIdle) {
+        waveform.classList.remove("idle");
+        isIdle = false;
+      }
+      if (body.classList.contains("waveform-live")) {
+        if (animationFrameId !== null) {
+          cancelAnimationFrame(animationFrameId);
+          animationFrameId = null;
+        }
+        applyBarHeights(levels);
+      } else {
+        if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
+        animationFrameId = requestAnimationFrame(() => {
+          applyBarHeights(levels);
+          animationFrameId = null;
+        });
+      }
+      lastAudioUpdate = Date.now();
+    }
+
+    function tick() {
+      const now = Date.now();
+      if (audioLevels && now - lastAudioUpdate > 250) {
+        audioLevels = null;
+        if (!isIdle) resetBarsToIdle();
+      }
+      if (isRecording) {
+        tickFrameId = requestAnimationFrame(tick);
+      } else {
+        tickFrameId = null;
+      }
+    }
+
+    function startTickLoop() {
+      if (tickFrameId === null && isRecording) {
+        tickFrameId = requestAnimationFrame(tick);
+      }
+    }
+
+    function stopTickLoop() {
+      if (tickFrameId !== null) {
+        cancelAnimationFrame(tickFrameId);
+        tickFrameId = null;
+      }
+    }
+
+    // ── Toast helpers ──────────────────────────────────
+
+    function showToast(label, color) {
+      // Cancel any in-flight toast timer
+      if (toastTimer !== null) {
+        clearTimeout(toastTimer);
+        toastTimer = null;
+      }
+
+      // Hide waveform — they must never coexist
+      waveform.style.display = "none";
+
+      if (color) {
+        primaryColor = color;
+        document.documentElement.style.setProperty("--primary-color", color);
+      }
+
+      toast.textContent = label;
+      toast.classList.remove("fading");
+      toast.classList.add("visible");
+
+      // After hold period, start fade-out (350 ms matches CSS)
+      toastTimer = setTimeout(() => {
+        toast.classList.add("fading");
+        // Window will be destroyed by main process after fade completes
+      }, 1800);
+    }
+
+    // ── IPC listeners ──────────────────────────────────
+
+    ipcRenderer.on("memo:audioLevels", (event, levels) => {
+      audioLevels = levels;
+      if (levels && levels.length > 0) body.classList.add("waveform-live");
+      updateBars(levels);
+    });
+
+    ipcRenderer.on("memo:status", (event, status) => {
+      const wasRecording = isRecording;
+      isRecording = status.isRecording;
+
+      if (status.primaryColor && status.primaryColor !== primaryColor) {
+        primaryColor = status.primaryColor;
+        document.documentElement.style.setProperty("--primary-color", primaryColor);
+      }
+
+      if (isRecording) {
+        // Ensure waveform is visible and toast is hidden
+        toast.classList.remove("visible", "fading");
+        waveform.style.display = "";
+        body.classList.add("waveform-live");
+        if (isIdle) {
+          waveform.classList.remove("idle");
+          isIdle = false;
+        }
+        if (!wasRecording) startTickLoop();
+      } else {
+        body.classList.remove("waveform-live");
+        resetBarsToIdle();
+        audioLevels = null;
+        if (wasRecording) stopTickLoop();
+      }
+    });
+
+    ipcRenderer.on("memo:commandToast", (event, { label, primaryColor: color }) => {
+      showToast(label, color);
+    });
+
+    document.documentElement.style.setProperty("--primary-color", primaryColor);
+  </script>
+</body>
+</html>

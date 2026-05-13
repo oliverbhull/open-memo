@@ -1,0 +1,305 @@
+/* Expanding Color Picker */
+.expanding-color-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  z-index: 100;
+}
+
+.color-picker-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.2s ease, background-color 0s;
+  padding: 0;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.color-picker-icon:hover {
+  opacity: 1;
+}
+
+.color-picker-icon:hover::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* Color Spectrum Slider */
+.color-spectrum {
+  height: 24px;
+  width: 0;
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.3s ease 0.1s,
+              transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: crosshair;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  margin-left: 4px;
+}
+
+.color-spectrum.expanded {
+  width: 200px;
+  opacity: 1;
+  transform: scaleX(1);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.3s ease,
+              transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Settings window: color bar always expanded, no animation */
+.settings-color-bar {
+  margin: 0 0 12px;
+}
+.settings-color-bar .color-spectrum {
+  width: 100%;
+  opacity: 1;
+  transform: none;
+  transition: none;
+  margin-left: 0;
+}
+.settings-color-bar .color-spectrum.expanded {
+  width: 100%;
+  transition: none;
+}
+
+.spectrum-gradient {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    to right,
+    hsl(0, 100%, 50%),
+    hsl(60, 100%, 50%),
+    hsl(120, 100%, 50%),
+    hsl(180, 100%, 50%),
+    hsl(240, 100%, 50%),
+    hsl(300, 100%, 50%),
+    hsl(360, 100%, 50%)
+  );
+}
+
+.spectrum-selector {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  border-radius: 1.5px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  box-shadow: 
+    0 0 6px rgba(0, 0, 0, 0.4),
+    0 0 2px rgba(255, 255, 255, 0.3);
+  z-index: 1;
+}
+
+/* Sync Button */
+.sync-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: 
+    opacity 0.3s ease,
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.sync-button:hover {
+  background: rgba(0, 0, 0, 0.5);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.sync-button:active {
+  transform: scaleX(1) scale(0.98);
+}
+
+.sync-button.listening {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.sync-button.syncing {
+  animation: spin 1s linear infinite;
+}
+
+.sync-button.connected {
+  border-color: rgba(76, 175, 80, 0.6);
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.sync-button.error {
+  border-color: rgba(244, 67, 54, 0.6);
+  background: rgba(244, 67, 54, 0.1);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: scaleX(1) rotate(0deg);
+  }
+  to {
+    transform: scaleX(1) rotate(360deg);
+  }
+}
+
+/* Sync QR Backdrop - Full screen overlay */
+.sync-qr-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  min-width: 100vw;
+  min-height: 100vh;
+  background: rgba(0, 0, 0, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 999999;
+  animation: fadeIn 0.3s ease;
+  pointer-events: auto;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Sync QR Overlay - Container for centered content */
+.sync-qr-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  min-width: 100vw;
+  min-height: 100vh;
+  z-index: 1000000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* QR Code Modal - Full screen page */
+.qr-code-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  min-width: 100vw;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000001;
+  pointer-events: auto;
+  animation: fadeIn 0.3s ease;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.qr-code-modal-content {
+  background: rgba(18, 18, 24, 0.98);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  padding: 40px;
+  text-align: center;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 16px 64px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  max-width: 420px;
+  width: 90vw;
+  max-height: 90vh;
+  animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: auto;
+  position: relative;
+  z-index: 1000002;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}

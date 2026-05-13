@@ -1,0 +1,39 @@
+name: Bug Report
+description: Report something that is not working in Open Memo.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve Open Memo.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Memo
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Open Memo version
+      placeholder: v0.1.0
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: macOS 15.0
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Add any relevant logs, screenshots, or console output.

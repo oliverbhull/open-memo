@@ -1,0 +1,154 @@
+{
+  "name": "open-memo",
+  "version": "0.1.0",
+  "description": "Open-source push-to-talk dictation for macOS",
+  "homepage": "https://github.com/oliverbhull/open-memo",
+  "main": "dist/main.cjs",
+  "preload": "dist/preload.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
+    "dev:renderer": "vite --config vite.config.ts",
+    "dev:main": "esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs --watch",
+    "dev:preload": "esbuild electron/preload/index.ts --platform=node --bundle --external:electron --outfile=dist/preload.cjs --format=cjs --watch",
+    "build:ts": "npm run build:main && npm run build:preload",
+    "build:main": "esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs",
+    "build:preload": "esbuild electron/preload/index.ts --platform=node --bundle --external:electron --outfile=dist/preload.cjs --format=cjs",
+    "build:renderer": "vite build --config vite.config.ts",
+    "build:stt:release": "bash scripts/shell/build-stt.sh",
+    "build:app": "npm run build:stt:release && npm run build:ts && npm run build:renderer",
+    "build:dir": "npm run build:app && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
+    "dist:mac": "npm run build:app && electron-builder --mac --publish=never",
+    "release:mac": "npm run dist:mac",
+    "build": "npm run dist:mac",
+    "start": "npm run build:ts && electron ."
+  },
+  "keywords": [
+    "whisper",
+    "speech-to-text",
+    "dictation",
+    "push-to-talk",
+    "electron",
+    "transcription"
+  ],
+  "author": "Oliver Hull",
+  "license": "MIT",
+  "productName": "Memo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oliverbhull/open-memo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/oliverbhull/open-memo/issues"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react-window": "^1.8.8",
+    "@types/uuid": "^10.0.0",
+    "date-fns": "^3.6.0",
+    "electron-store": "^11.0.2",
+    "qrcode": "^1.5.4",
+    "react-window": "^2.2.3",
+    "simple-icons": "^15.21.0",
+    "uuid": "^13.0.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "concurrently": "^9.2.1",
+    "electron": "^32.0.0",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.23.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5",
+    "wait-on": "^9.0.0"
+  },
+  "build": {
+    "appId": "com.memo.desktop",
+    "productName": "Memo",
+    "artifactName": "Open-Memo-${version}-${arch}.${ext}",
+    "asar": true,
+    "nodeGypRebuild": false,
+    "npmRebuild": true,
+    "mac": {
+      "icon": "assets/app-icons/app-icon.icns",
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "config/entitlements.mac.plist",
+      "entitlementsInherit": "config/entitlements.mac.plist",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Memo needs microphone access to record audio for transcription.",
+        "NSBluetoothAlwaysUsageDescription": "Memo uses Bluetooth to connect to Memo devices."
+      },
+      "notarize": true
+    },
+    "dmg": {
+      "icon": "assets/app-icons/app-icon.icns",
+      "background": "assets/dmg-background.png",
+      "contents": [
+        {
+          "x": 180,
+          "y": 220,
+          "type": "file"
+        },
+        {
+          "x": 480,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "window": {
+        "width": 660,
+        "height": 450
+      }
+    },
+    "files": [
+      "dist/main.cjs",
+      "dist/preload.cjs",
+      "dist-react/**",
+      "assets/**",
+      "electron/renderer/overlay.html",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".build/stt/",
+        "to": "sttbin",
+        "filter": [
+          "memo-stt"
+        ]
+      }
+    ],
+    "beforePack": "scripts/beforePack.cjs",
+    "afterPack": "scripts/afterPack.cjs",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "oliverbhull",
+        "repo": "open-memo"
+      }
+    ]
+  }
+}

@@ -1,0 +1,390 @@
+/* Welcome message step */
+.onboarding-welcome-message {
+  font-size: 28px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  text-align: center;
+  animation: welcomeFadeInOut 1.5s ease-in-out;
+}
+
+@keyframes welcomeFadeInOut {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+.onboarding-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.onboarding-content {
+  width: 100%;
+  max-width: 400px;
+}
+
+/* Status Tracker */
+.onboarding-status-tracker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 24px;
+  width: 100%;
+}
+
+.onboarding-status-step {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.onboarding-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+  z-index: 2;
+}
+
+.onboarding-status-step.active .onboarding-status-dot {
+  width: 12px;
+  height: 12px;
+  border-color: currentColor;
+  box-shadow: 0 0 0 3px rgba(194, 109, 80, 0.2);
+}
+
+.onboarding-status-step.active {
+  color: var(--primary, #C26D50);
+}
+
+.onboarding-status-line {
+  width: 40px;
+  height: 2px;
+  background-color: rgba(255, 255, 255, 0.2);
+  margin: 0 4px;
+  transition: all 0.3s ease;
+}
+
+.onboarding-status-line.completed {
+  background-color: currentColor;
+}
+
+/* Logo styling is handled inline with CSS mask - no additional CSS needed */
+
+.onboarding-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.onboarding-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.onboarding-description {
+  font-size: 15px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0;
+  max-width: 320px;
+  margin-bottom: 4px;
+}
+
+.onboarding-input-group {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: stretch;
+}
+
+.onboarding-input {
+  width: 100%;
+  background: rgba(18, 18, 24, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 14px 16px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 15px;
+  font-family: inherit;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+
+.onboarding-input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(24, 24, 32, 0.7);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+}
+
+.onboarding-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.onboarding-hint {
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 0;
+  text-align: left;
+}
+
+.onboarding-button {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 14px 24px;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 15px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-sizing: border-box;
+}
+
+.onboarding-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.onboarding-button:active:not(:disabled) {
+  transform: translateY(0);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.onboarding-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.onboarding-button.primary {
+  background: var(--primary, #C26D50) !important;
+  border-color: var(--primary, #C26D50) !important;
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+}
+
+.onboarding-button.primary:hover:not(:disabled) {
+  background: var(--primary, #C26D50);
+  border-color: var(--primary, #C26D50);
+  opacity: 0.9;
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+  box-shadow: 
+    0 4px 16px rgba(0, 0, 0, 0.3),
+    0 0 0 2px rgba(194, 109, 80, 0.2);
+}
+
+.onboarding-button.primary:active:not(:disabled) {
+  transform: translateY(0);
+  filter: brightness(0.95);
+}
+
+.onboarding-button.skip {
+  background: rgba(18, 18, 24, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+  padding: 14px 24px;
+  height: auto;
+}
+
+.onboarding-button.skip:hover:not(:disabled) {
+  background: rgba(24, 24, 32, 0.7);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+  transform: translateY(-1px);
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.onboarding-button.secondary {
+  background: rgba(18, 18, 24, 0.6);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.onboarding-button.secondary:hover:not(:disabled) {
+  background: rgba(24, 24, 32, 0.7);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.onboarding-button.back {
+  background: rgba(18, 18, 24, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+  padding: 14px 24px;
+  height: auto;
+}
+
+.onboarding-button.back:hover:not(:disabled) {
+  background: rgba(24, 24, 32, 0.7);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+  transform: translateY(-1px);
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.onboarding-icon-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.onboarding-icon {
+  width: 64px;
+  height: 64px;
+}
+
+.onboarding-success {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 8px;
+  color: rgba(187, 247, 208, 0.95);
+  font-size: 14px;
+  font-weight: 500;
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+
+.onboarding-success svg {
+  flex-shrink: 0;
+  stroke: currentColor;
+}
+
+.onboarding-instructions {
+  width: 100%;
+  text-align: left;
+  background: rgba(18, 18, 24, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 20px;
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+
+.onboarding-steps-list {
+  margin: 0;
+  padding-left: 20px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.onboarding-steps-list li {
+  margin-bottom: 8px;
+}
+
+.onboarding-steps-list li:last-child {
+  margin-bottom: 0;
+}
+
+.onboarding-button-group {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+/* When button group is used for name step (primary + skip) or microphone step (back + primary) or accessibility step (back + primary) or input monitoring step (back + primary) - same row layout */
+.onboarding-button-group.name-step-buttons,
+.onboarding-button-group.microphone-step-buttons,
+.onboarding-button-group.accessibility-step-buttons,
+.onboarding-button-group.input-monitoring-step-buttons {
+  flex-direction: row !important;
+  gap: 8px;
+  align-items: stretch;
+  width: 100%;
+  display: flex;
+}
+
+.onboarding-button-group.name-step-buttons .onboarding-button,
+.onboarding-button-group.microphone-step-buttons .onboarding-button,
+.onboarding-button-group.accessibility-step-buttons .onboarding-button,
+.onboarding-button-group.input-monitoring-step-buttons .onboarding-button {
+  margin: 0;
+  height: auto;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.onboarding-button-group.name-step-buttons .onboarding-button.primary,
+.onboarding-button-group.microphone-step-buttons .onboarding-button.primary,
+.onboarding-button-group.accessibility-step-buttons .onboarding-button.primary,
+.onboarding-button-group.input-monitoring-step-buttons .onboarding-button.primary {
+  flex: 1;
+  width: auto;
+}
+
+.onboarding-button-group.name-step-buttons .onboarding-button.skip,
+.onboarding-button-group.microphone-step-buttons .onboarding-button.back,
+.onboarding-button-group.accessibility-step-buttons .onboarding-button.back,
+.onboarding-button-group.input-monitoring-step-buttons .onboarding-button.back {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 100px;
+}
+
