@@ -91,15 +91,11 @@ packages/
 assets/models/*.bin
 node_modules/
 
-# Signing certificates (keep certs/README.md as template)
-certs/*.p8
-certs/*.p12
-
 # Firebase config
 assets/firebase.web.json
 
 # Signing certificates and keys
-certs/*.p8
-certs/*.p12
-certs/*.pem
+*.p8
+*.p12
+*.pem
 private_keys/

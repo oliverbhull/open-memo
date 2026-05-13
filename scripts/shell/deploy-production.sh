@@ -22,7 +22,7 @@ done
 
 if (( ${#missing_env[@]} > 0 )); then
   echo "Missing Apple notarization environment variables: ${missing_env[*]}" >&2
-  echo "See certs/README.md for local signing setup." >&2
+  echo "See docs/maintainers/signing-and-release.md for local signing setup." >&2
   exit 1
 fi
 
