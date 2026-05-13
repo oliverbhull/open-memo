@@ -47,7 +47,7 @@ jobs:
         run: npm run build:dir
 
       - name: Upload app smoke-build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: open-memo-macos-dir
           path: dist/mac-arm64/Memo.app
