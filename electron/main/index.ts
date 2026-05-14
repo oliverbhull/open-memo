@@ -331,6 +331,11 @@ function setupMemoSttService(): void {
       logger.debug('[Main] Settings updated, refreshing tray menu');
       updateMenuState();
     });
+
+    // When AudioSourceManager signals a system mic device change, do a debounced restart
+    audioSourceManager.on('systemMicDeviceChanged', () => {
+      scheduleSystemMicRestart('AudioSourceManager systemMicDeviceChanged');
+    });
   }
 
   logger.info('Creating new MemoSttService instance');
@@ -591,6 +596,23 @@ function setupMemoSttService(): void {
       updateOverlayVisibility(false, mainWindow);
       sendStatusToOverlay(false, mainWindow);
     }
+  });
+
+  // Handle audio device errors from memo-stt (e.g. headphones disconnected mid-session
+  // or a saved device label that no longer matches any CoreAudio device).
+  // Clear the pinned device label so the next start uses the OS default input, then restart.
+  memoSttService.on('micDeviceError', (detail: string) => {
+    logger.warn(`[Main] mic device error: ${detail} — clearing fallback device and restarting`);
+    audioSourceManager?.clearFallbackDevice();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('audio:showToast', {
+        message: 'Microphone reconnecting…',
+        severity: 'warning',
+        duration: 3000,
+      });
+    }
+    // Brief delay so any pending stderr/exit events flush before we restart
+    setTimeout(() => memoSttService?.restart(), 800);
   });
 
   // Handle BLE device discovery events (from memo-stt scanning)
@@ -1191,6 +1213,40 @@ ipcMain.handle('audio:switchToSystemMic', async () => {
     logger.error('[Audio] Failed to switch to system mic:', error);
     return { success: false, error: String(error) };
   }
+});
+
+// Debounce timer for input-device-change restarts (avoids rapid-fire restarts when the OS
+// fires multiple devicechange events during a single plug/unplug event).
+let inputDeviceChangeTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Schedule a restart of memo-stt to pick up the new OS default input device.
+ * Debounced so back-to-back OS events collapse into a single restart.
+ */
+function scheduleSystemMicRestart(reason: string): void {
+  const settings = loadSettings();
+  if (settings.inputSource !== 'system') return; // Only applies to system mic mode
+
+  if (inputDeviceChangeTimer) {
+    clearTimeout(inputDeviceChangeTimer);
+  }
+  inputDeviceChangeTimer = setTimeout(() => {
+    inputDeviceChangeTimer = null;
+    logger.info(`[Main] Restarting memo-stt due to audio input device change (${reason})`);
+    memoSttService?.restart();
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('audio:showToast', {
+        message: 'Microphone updated',
+        severity: 'info',
+        duration: 2000,
+      });
+    }
+  }, 600);
+}
+
+ipcMain.handle('audio:inputDeviceChanged', () => {
+  scheduleSystemMicRestart('devicechange event');
 });
 
 // Interface settings handlers

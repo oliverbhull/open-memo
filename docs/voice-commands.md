@@ -7,6 +7,7 @@ Open Memo can recognize spoken commands in addition to normal dictation. Command
 - "open Safari" launches Safari.
 - "new tab" while Safari is active sends Command-T.
 - "go to claude.ai" opens `https://claude.ai` in the default browser.
+- "open Safari, new tab, linkedin.com" runs each command in order.
 
 ## How Detection Works
 
@@ -58,6 +59,18 @@ save
 ```
 
 These only run when the matching app is active and enabled in settings.
+
+## Command Chains
+
+You can string commands together in one utterance with commas or connector words such as "then", "and then", or "after that":
+
+```text
+open Safari, new tab, linkedin.com
+open Safari then go to github.com
+open Safari, new tab, go to claude dot ai
+```
+
+Memo only continues parsing a chain after the first high-confidence command, and bare domains such as `linkedin.com` are accepted only inside a command chain. If a later phrase is not recognized as a command, Memo stops executing commands and treats the rest as normal dictation.
 
 ## Default Apps
 

@@ -229,6 +229,27 @@ export class AudioSourceManager extends EventEmitter {
   }
 
   /**
+   * Clear the saved fallback device label and ID from the store.
+   * Called when the previously-saved device is no longer available so the
+   * next start of memo-stt falls back to the macOS default input device.
+   */
+  clearFallbackDevice(): void {
+    this.store.set('fallbackMicId', null);
+    this.store.set('fallbackMicLabel', null);
+    this.state.systemMicId = null;
+    console.log('[AudioSourceManager] Cleared fallback device (will use OS default input)');
+  }
+
+  /**
+   * React to an OS-level audio input device change (e.g. headphones plugged in/out).
+   * Clears any pinned device label so memo-stt re-opens the current OS default input.
+   */
+  handleSystemMicDeviceChange(): void {
+    console.log('[AudioSourceManager] System mic device change detected — will restart to use new default input');
+    this.emit('systemMicDeviceChanged');
+  }
+
+  /**
    * Reset user selection flag (for next session)
    */
   resetUserSelection(): void {

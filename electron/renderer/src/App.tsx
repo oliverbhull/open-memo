@@ -173,6 +173,32 @@ function App() {
     };
   }, []);
 
+  // Notify the main process when audio input devices change (e.g. headphones plugged in/out)
+  // so memo-stt can restart and open a stream to the new default input device.
+  useEffect(() => {
+    if (!navigator.mediaDevices || !window.electronAPI?.audioSource?.notifyInputDeviceChanged) {
+      return;
+    }
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const handleDeviceChange = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        window.electronAPI!.audioSource!.notifyInputDeviceChanged!().catch(() => {
+          // Best-effort — ignore if IPC fails
+        });
+      }, 500);
+    };
+
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+  }, []);
+
   const handleLoadMore = useCallback(async () => {
     if (loadingMore) return;
     setLoadingMore(true);

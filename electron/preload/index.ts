@@ -352,6 +352,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.removeAllListeners('audio:showToast');
       };
     },
+    /** Called by the renderer's devicechange listener when an audio input device is added or removed. */
+    notifyInputDeviceChanged: (): Promise<void> => {
+      return ipcRenderer.invoke('audio:inputDeviceChanged');
+    },
   },
   keystroke: {
     startRecording: (): Promise<{ success: boolean; error?: string }> => {

@@ -49,6 +49,10 @@ export class MemoSttService extends EventEmitter {
   private commandDetector: CommandDetector;
   private commandExecutor: CommandExecutor;
   private audioSourceManager: AudioSourceManager | null = null;
+  /** Timestamp (ms) when the current process was spawned — used to detect quick-exit device errors */
+  private processStartedAt: number | null = null;
+  /** Quick-exit threshold: if process exits within this many ms with non-zero code, assume audio device error */
+  private readonly QUICK_EXIT_THRESHOLD_MS = 4000;
   /** Timer for BLE inactivity: if no CONNECTED:/audio for this long, infer disconnect (safety net when Rust never sends DISCONNECTED:) */
   private bleActivityTimeoutHandle: NodeJS.Timeout | null = null;
   private readonly BLE_INACTIVITY_TIMEOUT_MS = 28000;
@@ -211,7 +215,7 @@ export class MemoSttService extends EventEmitter {
   /**
    * Execute a detected command
    */
-  private async executeCommand(detectedCommand: DetectedCommand, apps: AppConfig[]): Promise<void> {
+  private async executeCommand(detectedCommand: DetectedCommand, apps: AppConfig[]): Promise<boolean> {
     try {
       if (detectedCommand.type === 'open_app') {
         const app = apps.find(a => a.name === detectedCommand.app);
@@ -221,6 +225,7 @@ export class MemoSttService extends EventEmitter {
             this.emit('commandExecuted', { type: 'open_app', app: app.name });
             logger.info(`[MemoSttService] Executed: opened ${app.name}`);
           }
+          return success;
         }
       } else if (detectedCommand.type === 'app_command') {
         // Check if it's a global command
@@ -238,6 +243,7 @@ export class MemoSttService extends EventEmitter {
               });
               logger.info(`[MemoSttService] Executed global command: ${cmd.trigger}`);
             }
+            return success;
           }
         } else {
           // App-specific command
@@ -254,6 +260,7 @@ export class MemoSttService extends EventEmitter {
                 });
                 logger.info(`[MemoSttService] Executed: ${cmd.trigger} in ${app.name}`);
               }
+              return success;
             }
           }
         }
@@ -267,11 +274,31 @@ export class MemoSttService extends EventEmitter {
             this.emit('commandExecuted', { type: 'url', url: detectedCommand.url });
             logger.info(`[MemoSttService] Executed: opened ${detectedCommand.url}`);
           }
+          return success;
         }
       }
     } catch (error) {
       logger.error('[MemoSttService] Error executing command:', error);
     }
+    return false;
+  }
+
+  private async executeCommandSequence(commands: DetectedCommand[], apps: AppConfig[]): Promise<void> {
+    for (const command of commands) {
+      const success = await this.executeCommand(command, apps);
+      if (!success) {
+        logger.warn(`[MemoSttService] Stopping command sequence after failed command: ${command.type}`);
+        return;
+      }
+
+      if (command.type === 'open_app') {
+        await this.delay(450);
+      }
+    }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   start(): void {
@@ -407,6 +434,7 @@ export class MemoSttService extends EventEmitter {
         env: env,
       });
       this.stdinClosed = false;
+      this.processStartedAt = Date.now();
 
       this.process.stdin?.on('error', (error: NodeJS.ErrnoException) => {
         this.handleStdinError(error);
@@ -437,6 +465,21 @@ export class MemoSttService extends EventEmitter {
         if (message.includes('❌ Error:') || message.includes('Error: Audio too short')) {
           logger.debug('[MemoSttService] Transcription error detected in stderr, clearing processing state');
           this.emit('processingFailed');
+        }
+
+        // Detect audio device unavailability errors from cpal/CoreAudio
+        const isDeviceError = (
+          message.includes('DeviceNotAvailable') ||
+          message.includes('Device not available') ||
+          message.includes('no input device') ||
+          message.includes('No input device') ||
+          message.includes('failed to open audio') ||
+          message.includes('Failed to open audio') ||
+          (message.toLowerCase().includes('audio') && message.toLowerCase().includes('device') && message.toLowerCase().includes('error'))
+        );
+        if (isDeviceError) {
+          logger.warn('[MemoSttService] Audio device error detected in stderr, emitting micDeviceError');
+          this.emit('micDeviceError', message.trim());
         }
       });
 
@@ -489,6 +532,18 @@ export class MemoSttService extends EventEmitter {
         
         // Attempt to restart if it wasn't manually stopped and we haven't exceeded max attempts
         if (code !== 0 && code !== null && wasRunning && this.restartAttempts < this.MAX_RESTART_ATTEMPTS) {
+          // Quick-exit heuristic: if the process died within QUICK_EXIT_THRESHOLD_MS of starting
+          // with a non-zero code (and we weren't on BLE), it almost certainly failed to open the
+          // audio device.  Let main handle the fallback before scheduling a blind retry.
+          const uptime = this.processStartedAt ? Date.now() - this.processStartedAt : Infinity;
+          const settings = loadSettings();
+          if (uptime < this.QUICK_EXIT_THRESHOLD_MS && settings.inputSource === 'system') {
+            logger.warn(`[MemoSttService] Process exited quickly (${uptime}ms) in system mode — treating as audio device error`);
+            this.processStartedAt = null;
+            this.emit('micDeviceError', `process exited after ${uptime}ms`);
+            return; // Let main decide whether to restart (it will clear label and retry)
+          }
+
           const delay = this.RESTART_DELAY_BASE * Math.pow(2, this.restartAttempts);
           this.restartAttempts++;
           logger.info(`Attempting to restart memo-stt in ${delay}ms (attempt ${this.restartAttempts}/${this.MAX_RESTART_ATTEMPTS})...`);
@@ -903,79 +958,17 @@ export class MemoSttService extends EventEmitter {
       const settings = loadSettings();
       if (settings.voiceCommands?.enabled) {
         const activeApp = transcription.appContext?.appName || '';
-        const detectedCommand = await this.commandDetector.detectWithIntent(text, activeApp);
+        const detectedSequence = await this.commandDetector.detectSequenceWithIntent(text, activeApp);
+        const detectedCommand = detectedSequence.commands[0] ?? { type: 'none' as const, confidence: 0 };
         
-        logger.debug(`[MemoSttService] Command detection: text="${text}", activeApp="${activeApp}", detected=${detectedCommand.type}, confidence=${detectedCommand.confidence}`);
+        logger.debug(`[MemoSttService] Command detection: text="${text}", activeApp="${activeApp}", commands=${detectedSequence.commands.length}, first=${detectedCommand.type}, confidence=${detectedCommand.confidence}`);
         
-        if (detectedCommand.type !== 'none' && detectedCommand.confidence > 0.7) {
-          logger.info(`[MemoSttService] Command detected: ${detectedCommand.type}, executing...`);
-          
-          // Strip command text from transcription
-          let remainingText = text;
-          if (detectedCommand.matchedText) {
-            // Remove the matched command text from the transcription
-            // Use case-insensitive matching and handle word boundaries
-            const matchedLower = detectedCommand.matchedText.toLowerCase().trim();
-            const textLower = text.toLowerCase();
-            
-            // Try to find the match, handling variations in spacing and punctuation
-            let matchIndex = textLower.indexOf(matchedLower);
-            
-            // If exact match not found, try with word boundaries
-            if (matchIndex === -1) {
-              // Try matching with word boundary regex
-              const regex = new RegExp(`\\b${this.escapeRegex(matchedLower)}\\b`, 'i');
-              const regexMatch = text.match(regex);
-              if (regexMatch) {
-                matchIndex = regexMatch.index || -1;
-              }
-            }
-            
-            // If still not found, try fuzzy match (remove punctuation)
-            if (matchIndex === -1) {
-              const matchedClean = matchedLower.replace(/[.,!?;:]/g, '');
-              const textClean = textLower.replace(/[.,!?;:]/g, '');
-              matchIndex = textClean.indexOf(matchedClean);
-              if (matchIndex !== -1) {
-                // Adjust index to account for removed punctuation
-                const beforeClean = textClean.substring(0, matchIndex);
-                matchIndex = beforeClean.length === 0 ? 0 : textLower.indexOf(beforeClean);
-              }
-            }
-            
-            if (matchIndex !== -1) {
-              // Find the actual end of the match in original text
-              const matchedLength = detectedCommand.matchedText.length;
-              let endIndex = matchIndex + matchedLength;
-              
-              // Extend to include trailing punctuation if present
-              while (endIndex < text.length && /[.,!?;:\s]/.test(text.charAt(endIndex))) {
-                endIndex++;
-              }
-              
-              // Remove the matched text and clean up surrounding whitespace
-              const before = text.substring(0, matchIndex).trim();
-              const after = text.substring(endIndex).trim();
-              
-              // Combine remaining text, handling cases where command is at start/end/middle
-              if (before && after) {
-                remainingText = `${before} ${after}`.trim();
-              } else if (before) {
-                remainingText = before;
-              } else if (after) {
-                remainingText = after;
-              } else {
-                remainingText = '';
-              }
-              
-              // Clean up multiple spaces
-              remainingText = remainingText.replace(/\s+/g, ' ').trim();
-            }
-          }
-          
-          // Execute command
-          this.executeCommand(detectedCommand, settings.voiceCommands.apps).catch((error) => {
-            logger.error('[MemoSttService] Failed to execute command:', error);
+        if (detectedSequence.commands.length > 0) {
+          const remainingText = detectedSequence.remainingText;
+          logger.info(`[MemoSttService] Command sequence detected (${detectedSequence.commands.length}), executing...`);
+
+          this.executeCommandSequence(detectedSequence.commands, settings.voiceCommands.apps).catch((error) => {
+            logger.error('[MemoSttService] Failed to execute command sequence:', error);
           });
           
           // If there's remaining text after stripping the command, inject it
@@ -1019,10 +1012,6 @@ export class MemoSttService extends EventEmitter {
       logger.error('Line was:', line);
       this.emit('processingFailed');
     }
-  }
-
-  private escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**

@@ -11,11 +11,32 @@ export interface DetectedCommand {
   matchedText?: string; // The text that matched the command pattern
 }
 
+export interface DetectedCommandSequence {
+  commands: DetectedCommand[];
+  remainingText: string;
+}
+
+interface DetectionOptions {
+  allowBareUrl?: boolean;
+}
+
+interface CommandSegment {
+  text: string;
+  start: number;
+  end: number;
+}
+
+interface UrlMatch {
+  url: string;
+  matchedText: string;
+}
+
 export class CommandDetector {
   private apps: AppConfig[];
   private globalCommands: AppCommand[];
   private intentEmbeddings: CommandIntentEmbeddings;
   private readonly semanticThreshold = 0.78;
+  private readonly maxCommandChainLength = 5;
   
   constructor(apps: AppConfig[] = [], globalCommands: AppCommand[] = []) {
     this.apps = apps;
@@ -39,7 +60,80 @@ export class CommandDetector {
   }
 
   async detectWithIntent(transcription: string, activeApp: string): Promise<DetectedCommand> {
-    const lexical = this.detectLexical(transcription, activeApp);
+    return this.detectSingleWithIntent(transcription, activeApp);
+  }
+
+  async detectSequenceWithIntent(transcription: string, activeApp: string): Promise<DetectedCommandSequence> {
+    const trimmed = transcription.trim();
+    if (!trimmed) {
+      return { commands: [], remainingText: '' };
+    }
+
+    const segments = this.splitCommandSegments(transcription);
+    const commands: DetectedCommand[] = [];
+    let currentApp = activeApp;
+    let lastConsumedEnd = 0;
+    let segmentIndex = 0;
+
+    while (segmentIndex < segments.length) {
+      if (commands.length >= this.maxCommandChainLength) {
+        break;
+      }
+
+      const segment = segments[segmentIndex];
+      if (!segment) {
+        segmentIndex++;
+        continue;
+      }
+
+      const detected = await this.detectSingleWithIntent(segment.text, currentApp, {
+        allowBareUrl: commands.length > 0,
+      });
+
+      if (detected.type === 'none' || detected.confidence <= 0.7) {
+        if (commands.length === 0) {
+          return { commands: [], remainingText: trimmed };
+        }
+
+        return {
+          commands,
+          remainingText: this.cleanRemainingText(transcription.slice(segment.start)),
+        };
+      }
+
+      commands.push(detected);
+      lastConsumedEnd = this.segmentConsumedEnd(transcription, segment, detected);
+
+      if (detected.type === 'open_app' && detected.app) {
+        currentApp = detected.app;
+      }
+
+      if (lastConsumedEnd < segment.end) {
+        const remainder = this.trimCommandSegment(transcription, lastConsumedEnd, segment.end);
+        if (remainder) {
+          segments.splice(segmentIndex + 1, 0, remainder);
+        }
+      }
+
+      segmentIndex++;
+    }
+
+    if (commands.length === 0) {
+      return { commands: [], remainingText: trimmed };
+    }
+
+    return {
+      commands,
+      remainingText: this.cleanRemainingText(transcription.slice(lastConsumedEnd)),
+    };
+  }
+
+  private async detectSingleWithIntent(
+    transcription: string,
+    activeApp: string,
+    options: DetectionOptions = {}
+  ): Promise<DetectedCommand> {
+    const lexical = this.detectLexical(transcription, activeApp, options);
     if (lexical.type !== 'none') {
       logger.debug(`[CommandDetector] Lexical command match: type=${lexical.type}, confidence=${lexical.confidence}`);
       return lexical;
@@ -56,31 +150,26 @@ export class CommandDetector {
     this.intentEmbeddings.updateCatalog(this.apps, this.globalCommands);
   }
 
-  private detectLexical(transcription: string, activeApp: string): DetectedCommand {
+  private detectLexical(
+    transcription: string,
+    activeApp: string,
+    options: DetectionOptions = {}
+  ): DetectedCommand {
     const text = transcription.toLowerCase().trim();
     const originalText = transcription.trim(); // Keep original case for matching
     
     // 1. Check for command-shaped "open <app>" pattern (highest priority).
     // Require the command to start the utterance so examples like
     // "I could say open Safari" stay on the dictation path.
-    const openMatch = text.match(/^(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:open|launch|start|run)\s+([^\s,\.!?;:]+(?:\s+[^\s,\.!?;:]+)*?)(?:\s|[,\.!?;:]|$)/i);
-    if (openMatch) {
-      // Remove trailing punctuation (periods, exclamation marks, etc.)
-      const appName = (openMatch[1] ?? '').replace(/[.,!?;:]+$/, '').trim();
-      const app = this.findAppByAlias(appName);
-      if (app) {
-        const originalMatch = originalText.match(/^(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:open|launch|start|run)\s+([^\s,\.!?;:]+(?:\s+[^\s,\.!?;:]+)*?)(?:\s|[,\.!?;:]|$)/i);
-        const matchedText = originalMatch ? originalMatch[0].trim() : `open ${app.name}`;
-        return { type: 'open_app', app: app.name, confidence: 0.9, matchedText };
-      }
+    const openAppMatch = this.detectOpenApp(originalText);
+    if (openAppMatch) {
+      return openAppMatch;
     }
     
     // 2. Check for URL pattern. Keep URL execution regex-first and command-shaped.
-    const urlMatch = this.detectUrl(text);
+    const urlMatch = this.detectUrl(originalText, options);
     if (urlMatch) {
-      const originalMatch = originalText.match(/^(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:go to|goto|open|visit)\s+([^\s,\.!?;:]+(?:\s+[^\s,\.!?;:]+)*?)(?:\s|[,\.!?;:]|$)/i);
-      const matchedText = originalMatch ? originalMatch[0].trim() : `go to ${urlMatch}`;
-      return { type: 'url', url: urlMatch, confidence: 0.85, matchedText };
+      return { type: 'url', url: urlMatch.url, confidence: 0.85, matchedText: urlMatch.matchedText };
     }
     
     // 3. Check for global commands (works across all apps)
@@ -261,33 +350,112 @@ export class CommandDetector {
   private hasToken(text: string, token: string): boolean {
     return new RegExp(`\\b${this.escapeRegex(token)}\\b`, 'i').test(text);
   }
-  
-  private detectUrl(text: string): string | null {
-    // Handle "go to X" or "open X" where X looks like a URL.
-    const goToMatch = text.match(/^(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:go to|goto|open|visit)\s+([^\s,\.!?;:]+(?:\s+[^\s,\.!?;:]+)*?)(?:\s|[,\.!?;:]|$)/i);
-    if (goToMatch) {
-      const target = (goToMatch[1] ?? '').trim();
-      
-      // Check if it looks like a domain (e.g., "claude.ai", "google.com")
-      if (/^[a-z0-9-]+\.[a-z]{2,}$/i.test(target)) {
-        return `https://${target}`;
-      }
-      
-      // Handle "claude dot ai" → "claude.ai"
-      if (/^[a-z0-9-]+\s+dot\s+[a-z]+$/i.test(target)) {
-        const normalized = target.replace(/\s+dot\s+/gi, '.');
-        return `https://${normalized}`;
-      }
-      
-      // Handle "www.claude.ai" or already has protocol
-      if (/^(https?:\/\/|www\.)/i.test(target)) {
-        if (target.startsWith('www.')) {
-          return `https://${target}`;
-        }
-        return target;
+
+  private detectOpenApp(originalText: string): DetectedCommand | null {
+    const openMatch = originalText.match(/^(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:open|launch|start|run)\s+(.+)$/i);
+    if (!openMatch) {
+      return null;
+    }
+
+    const commandPrefix = openMatch[0].slice(0, openMatch[0].length - (openMatch[1] ?? '').length);
+    const targetText = (openMatch[1] ?? '').trim();
+    const configuredPhrases = this.apps
+      .filter(app => app.enabled)
+      .flatMap(app => [app.name, ...app.aliases].map(phrase => ({ app, phrase: phrase.trim() })))
+      .filter(({ phrase }) => phrase.length > 0)
+      .sort((a, b) => b.phrase.length - a.phrase.length);
+
+    for (const { app, phrase } of configuredPhrases) {
+      const phraseMatch = targetText.match(new RegExp(`^${this.escapeRegex(phrase)}(?=$|[\\s,\\.!?;:])`, 'i'));
+      if (phraseMatch) {
+        const matchedText = `${commandPrefix}${phraseMatch[0]}`.trim();
+        return { type: 'open_app', app: app.name, confidence: 0.9, matchedText };
       }
     }
+
+    const fallbackMatch = targetText.match(/^([^\s,\.!?;:]+(?:\s+[^\s,\.!?;:]+)*?)(?:\s|[,\.!?;:]|$)/i);
+    if (!fallbackMatch) {
+      return null;
+    }
+
+    const appName = (fallbackMatch[1] ?? '').replace(/[.,!?;:]+$/, '').trim();
+    const app = this.findAppByAlias(appName);
+    if (!app) {
+      return null;
+    }
+
+    const matchedText = `${commandPrefix}${fallbackMatch[0]}`.trim();
+    return { type: 'open_app', app: app.name, confidence: 0.9, matchedText };
+  }
+  
+  private detectUrl(text: string, options: DetectionOptions = {}): UrlMatch | null {
+    // Handle "go to X" or "open X" where X looks like a URL.
+    const commandMatch = text.match(/^(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:go to|goto|open|visit)\s+(.+)$/i);
+    if (commandMatch) {
+      const commandPrefix = commandMatch[0].slice(0, commandMatch[0].length - (commandMatch[1] ?? '').length);
+      const parsed = this.parseUrlTarget(commandMatch[1] ?? '');
+      if (parsed) {
+        return {
+          url: parsed.url,
+          matchedText: `${commandPrefix}${parsed.matchedText}`.trim(),
+        };
+      }
+    }
+
+    if (!options.allowBareUrl) {
+      return null;
+    }
+
+    return this.parseUrlTarget(text);
+  }
+
+  private parseUrlTarget(rawTarget: string): UrlMatch | null {
+    const target = rawTarget.trim().replace(/[.,!?;:]+$/g, '');
+    if (!target) {
+      return null;
+    }
+
+    const explicitMatch = target.match(/^(https?:\/\/[^\s,!?;:]+|www\.[^\s,!?;:]+)/i);
+    if (explicitMatch) {
+      const matchedText = (explicitMatch[1] ?? '').replace(/[.,!?;:]+$/g, '');
+      if (!matchedText) {
+        return null;
+      }
+
+      return {
+        url: matchedText.toLowerCase().startsWith('www.') ? `https://${matchedText}` : matchedText,
+        matchedText,
+      };
+    }
+
+    const writtenDomainMatch = target.match(/^([a-z0-9-]+(?:\.[a-z0-9-]+)+)(?:\b|$)/i);
+    if (writtenDomainMatch) {
+      const domain = (writtenDomainMatch[1] ?? '').replace(/[.,!?;:]+$/g, '');
+      if (this.isDomainLike(domain)) {
+        return {
+          url: `https://${domain}`,
+          matchedText: domain,
+        };
+      }
+    }
+
+    const spokenDotMatch = target.match(/^([a-z0-9-]+(?:\s+dot\s+[a-z0-9-]+)+)(?:\b|$)/i);
+    if (spokenDotMatch) {
+      const spoken = (spokenDotMatch[1] ?? '').trim();
+      const domain = spoken.replace(/\s+dot\s+/gi, '.');
+      if (this.isDomainLike(domain)) {
+        return {
+          url: `https://${domain}`,
+          matchedText: spoken,
+        };
+      }
+    }
+
     return null;
+  }
+
+  private isDomainLike(domain: string): boolean {
+    return /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(domain) && /\.[a-z]{2,}$/i.test(domain);
   }
   
   private findAppByAlias(alias: string): AppConfig | null {
@@ -388,5 +556,80 @@ export class CommandDetector {
     }
 
     return text === phrase || text.startsWith(`${phrase} `);
+  }
+
+  private splitCommandSegments(transcription: string): CommandSegment[] {
+    const segments: CommandSegment[] = [];
+    const separatorRegex = /[,;\n]+|\b(?:and then|then|after that)\b|\band\b(?=\s+(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:open|launch|start|run|go to|goto|visit|new|close|save|search|find|switch to|bring up|execute|trigger|do|make|create)\b)/gi;
+    let start = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = separatorRegex.exec(transcription)) !== null) {
+      const segment = this.trimCommandSegment(transcription, start, match.index);
+      if (segment) {
+        segments.push(segment);
+      }
+      start = match.index + match[0].length;
+    }
+
+    const finalSegment = this.trimCommandSegment(transcription, start, transcription.length);
+    if (finalSegment) {
+      segments.push(finalSegment);
+    }
+
+    return segments;
+  }
+
+  private trimCommandSegment(source: string, rawStart: number, rawEnd: number): CommandSegment | null {
+    let start = rawStart;
+    let end = rawEnd;
+
+    while (start < end && /[\s,;:]/.test(source.charAt(start))) {
+      start++;
+    }
+
+    while (end > start && /[\s,;:]/.test(source.charAt(end - 1))) {
+      end--;
+    }
+
+    while (end > start && /[.!?]/.test(source.charAt(end - 1))) {
+      end--;
+    }
+
+    const text = source.slice(start, end).trim();
+    if (!text) {
+      return null;
+    }
+
+    return { text, start, end };
+  }
+
+  private segmentConsumedEnd(source: string, segment: CommandSegment, detected: DetectedCommand): number {
+    if (!detected.matchedText) {
+      return segment.end;
+    }
+
+    const segmentText = source.slice(segment.start, segment.end);
+    const segmentLower = segmentText.toLowerCase();
+    const matchedLower = detected.matchedText.toLowerCase().trim();
+    const matchIndex = segmentLower.indexOf(matchedLower);
+
+    if (matchIndex === -1) {
+      return segment.end;
+    }
+
+    let end = segment.start + matchIndex + detected.matchedText.length;
+    while (end < source.length && /[\s,;:]/.test(source.charAt(end))) {
+      end++;
+    }
+
+    return end;
+  }
+
+  private cleanRemainingText(text: string): string {
+    return text
+      .replace(/^[\s,;:]+/, '')
+      .replace(/^(?:and then|then|after that|and)\b[\s,;:]*/i, '')
+      .trim();
   }
 }
