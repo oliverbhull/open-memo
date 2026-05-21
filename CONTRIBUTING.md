@@ -10,7 +10,6 @@ Thanks for your interest in contributing. This guide covers local setup, build c
 - Node.js 20+ and npm.
 - Rust 1.74+ and Cargo.
 - Xcode Command Line Tools.
-- Optional: a local `memo-stt` source checkout when actively developing the STT engine.
 
 ### Getting Started
 
@@ -21,16 +20,9 @@ npm install
 npm run dev
 ```
 
-The dev command starts the Vite renderer, esbuild watchers for Electron main/preload, and Electron itself.
+The dev command installs the published `memo-stt` Cargo package, then starts the Vite renderer, esbuild watchers for Electron main/preload, and Electron itself.
 
-By default, dev mode expects `memo-stt` source at `../memo-stt`. To use a different checkout:
-
-```bash
-export MEMO_STT_PATH=/path/to/memo-stt
-npm run dev
-```
-
-CI and release builds do not require a sibling checkout. They install the published `memo-stt` Cargo package pinned by `MEMO_STT_VERSION` in `scripts/shell/build-stt.sh`.
+CI and release builds use the same published `memo-stt` package pinned by `MEMO_STT_VERSION` in `scripts/shell/build-stt.sh`. To test a local STT engine change explicitly, set `MEMO_STT_LOCAL_SOURCE=/path/to/memo-stt` before running the STT build script.
 
 ## Build Commands
 

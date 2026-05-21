@@ -334,12 +334,12 @@ export class MemoSttService extends EventEmitter {
       let args: string[];
       
       if (isDev) {
-        // Development: use cargo run
-        command = 'cargo';
-        const sttManifestPath = process.env.MEMO_STT_PATH
-          ? path.join(process.env.MEMO_STT_PATH, 'Cargo.toml')
-          : path.join(process.cwd(), '..', 'memo-stt', 'Cargo.toml');
-        args = ['run', '--manifest-path', sttManifestPath, '--bin', 'memo-stt', '--features', 'binary', '--', '--hotkey', this.hotkey, '--no-inject'];
+        // Development uses the same staged binary that release builds package.
+        command = path.join(process.cwd(), '.build', 'stt', 'memo-stt');
+        if (!fs.existsSync(command)) {
+          throw new Error(`memo-stt binary not found at ${command}. Run npm run build:stt:release first.`);
+        }
+        args = ['--hotkey', this.hotkey, '--no-inject'];
       } else {
         // Production: use bundled binary
         const prodPath = path.join(process.resourcesPath, 'sttbin', 'memo-stt');

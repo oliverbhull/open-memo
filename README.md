@@ -57,19 +57,14 @@ npm install
 npm run dev
 ```
 
-Development mode expects a local `memo-stt` source checkout. By default it looks at `../memo-stt`; set `MEMO_STT_PATH` to use another location:
-
-```bash
-export MEMO_STT_PATH=/path/to/memo-stt
-npm run dev
-```
-
-CI and production builds install the published `memo-stt` Cargo package:
+Development, CI, and production builds install the published `memo-stt` Cargo package from crates.io:
 
 ```bash
 npm run build:stt:release
 npm run build:dir
 ```
+
+`npm run dev` runs this STT build step automatically before starting Electron.
 
 `npm run build:dir` creates an unsigned app bundle for smoke testing. Maintainer signing and release notes live in [docs/maintainers/signing-and-release.md](docs/maintainers/signing-and-release.md).
 

@@ -9,13 +9,13 @@ INSTALL_TARGET_DIR="${MEMO_STT_INSTALL_TARGET_DIR:-${ROOT_DIR}/.build/cargo-targ
 CRATE_NAME="${MEMO_STT_CRATE:-memo-stt}"
 CRATE_VERSION="${MEMO_STT_VERSION:-0.1.1}"
 FEATURES="${MEMO_STT_FEATURES:-binary}"
-LOCAL_SOURCE="${MEMO_STT_PATH:-}"
+LOCAL_SOURCE="${MEMO_STT_LOCAL_SOURCE:-}"
 
 mkdir -p "${OUTPUT_DIR}"
 
 if [[ -n "${LOCAL_SOURCE}" ]]; then
   if [[ ! -f "${LOCAL_SOURCE}/Cargo.toml" ]]; then
-    echo "MEMO_STT_PATH must point to a directory containing Cargo.toml: ${LOCAL_SOURCE}" >&2
+    echo "MEMO_STT_LOCAL_SOURCE must point to a directory containing Cargo.toml: ${LOCAL_SOURCE}" >&2
     exit 1
   fi
 

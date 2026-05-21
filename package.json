@@ -7,7 +7,7 @@
   "preload": "dist/preload.cjs",
   "type": "module",
   "scripts": {
-    "dev": "npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
+    "dev": "npm run build:stt:release && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
     "dev:renderer": "vite --config vite.config.ts",
     "dev:main": "esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs --watch",
     "dev:preload": "esbuild electron/preload/index.ts --platform=node --bundle --external:electron --outfile=dist/preload.cjs --format=cjs --watch",
@@ -21,7 +21,7 @@
     "dist:mac": "npm run build:app && electron-builder --mac --publish=never",
     "release:mac": "npm run dist:mac",
     "build": "npm run dist:mac",
-    "start": "npm run build:ts && electron ."
+    "start": "npm run build:stt:release && npm run build:ts && electron ."
   },
   "keywords": [
     "whisper",
