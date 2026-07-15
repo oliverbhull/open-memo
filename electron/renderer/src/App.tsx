@@ -74,6 +74,7 @@ declare global {
           vocabWords: string[];
           phraseReplacements: PhraseReplacementRule[];
           startAtLogin: boolean;
+          asrModel: 'whisper' | 'nemotron';
         }>;
         setPressEnterAfterPaste: (enabled: boolean) => Promise<boolean>;
         setVocabWords: (vocabWords: string[]) => Promise<boolean>;
@@ -82,6 +83,7 @@ declare global {
         setPushToTalkMode: (enabled: boolean) => Promise<boolean>;
         setHandsFreeMode: (enabled: boolean) => Promise<boolean>;
         setStartAtLogin: (enabled: boolean) => Promise<boolean>;
+        setAsrModel: (model: 'whisper' | 'nemotron') => Promise<boolean>;
       };
       voiceCommands?: {
         getSettings: () => Promise<any>;
@@ -427,5 +429,4 @@ function App() {
 }
 
 export default App;
-
 

@@ -1,0 +1,265 @@
+diff --git a/src/main.rs b/src/main.rs
+index 4772659..8b59e51 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -6,7 +6,6 @@
+ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+ #[cfg(feature = "binary")]
+ use log::debug;
+-use memo_stt::SttEngine;
+ use rdev::{listen, Event, EventType, Key};
+ use serde_json::json;
+ use std::collections::{HashMap, VecDeque};
+@@ -17,6 +16,8 @@ use std::sync::{
+ };
+ use std::time::Instant;
+ mod app_detection;
++mod transcription_engine;
++use transcription_engine::TranscriptionEngine;
+
+ /// When stdout is a pipe (Electron), Rust uses a block buffer — lines can sit until the buffer fills.
+ /// Flush so the UI overlay sees recording / stopped state immediately.
+@@ -423,6 +424,65 @@ enum KeyEvent {
+     ToggleLock,
+ }
+
++fn start_nemotron_live_feeder(
++    engine: Arc<Mutex<TranscriptionEngine>>,
++    audio_buffer: Arc<Mutex<Vec<i16>>>,
++    active: Arc<AtomicBool>,
++    handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
++) {
++    if !engine.lock().unwrap().is_nemotron() {
++        return;
++    }
++
++    active.store(false, Ordering::Release);
++    if let Some(previous) = handle.lock().unwrap().take() {
++        let _ = previous.join();
++    }
++
++    if let Err(error) = engine.lock().unwrap().begin_live_stream() {
++        eprintln!("Nemotron stream start failed: {error}");
++        return;
++    }
++
++    active.store(true, Ordering::Release);
++    let active_for_thread = active.clone();
++    let join_handle = std::thread::spawn(move || {
++        let mut cursor = 0usize;
++        while active_for_thread.load(Ordering::Acquire) {
++            std::thread::sleep(std::time::Duration::from_millis(40));
++            let chunk = {
++                let buffer = audio_buffer.lock().unwrap();
++                let end = buffer.len();
++                let chunk = if end > cursor {
++                    buffer[cursor..end].to_vec()
++                } else {
++                    Vec::new()
++                };
++                cursor = end;
++                chunk
++            };
++            if !chunk.is_empty() {
++                if let Err(error) = engine.lock().unwrap().feed_live_audio(&chunk) {
++                    eprintln!("Nemotron live audio failed: {error}");
++                    active_for_thread.store(false, Ordering::Release);
++                    break;
++                }
++            }
++        }
++    });
++    *handle.lock().unwrap() = Some(join_handle);
++}
++
++fn stop_nemotron_live_feeder(
++    active: &Arc<AtomicBool>,
++    handle: &Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
++) {
++    active.store(false, Ordering::Release);
++    if let Some(join_handle) = handle.lock().unwrap().take() {
++        let _ = join_handle.join();
++    }
++}
++
+ /// Compute RMS (root mean square) of i16 samples for VAD.
+ fn compute_rms(samples: &[i16]) -> f32 {
+     if samples.is_empty() {
+@@ -511,7 +571,7 @@ end tell"#;
+
+ #[cfg(feature = "binary")]
+ async fn run_ble_audio_mode(
+-    engine: Arc<Mutex<SttEngine>>,
++    engine: Arc<Mutex<TranscriptionEngine>>,
+     no_inject: bool,
+ ) -> Result<(), Box<dyn std::error::Error>> {
+     use ble::BleAudioReceiver;
+@@ -538,6 +598,9 @@ async fn run_ble_audio_mode(
+     let press_enter_after_paste = Arc::new(AtomicBool::new(false));
+     let is_recording = Arc::new(AtomicBool::new(false));
+     let audio_buffer = Arc::new(Mutex::new(Vec::<i16>::new()));
++    let nemotron_feeder_active = Arc::new(AtomicBool::new(false));
++    let nemotron_feeder_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>> =
++        Arc::new(Mutex::new(None));
+
+     // Vocabulary storage for voice commands
+     #[derive(Clone)]
+@@ -917,6 +980,12 @@ async fn run_ble_audio_mode(
+                                     println_ui_flush!("🎤 Recording... (button pressed)");
+                                     ptt_release_visible = false;
+                                     audio_buffer_clone.lock().unwrap().clear();
++                                    start_nemotron_live_feeder(
++                                        engine_clone.clone(),
++                                        audio_buffer_clone.clone(),
++                                        nemotron_feeder_active.clone(),
++                                        nemotron_feeder_handle.clone(),
++                                    );
+                                 }
+                                 NotificationResult::Control(0x32) => {
+                                     // PTT release hint: hide the overlay immediately, but keep buffering
+@@ -991,12 +1060,21 @@ async fn run_ble_audio_mode(
+                                         }
+                                     }
+
++                                    stop_nemotron_live_feeder(
++                                        &nemotron_feeder_active,
++                                        &nemotron_feeder_handle,
++                                    );
++
+                                     // Get the buffered audio
+                                     let samples = {
+                                         let mut buf = audio_buffer_clone.lock().unwrap();
+                                         std::mem::take(&mut *buf)
+                                     };
+
++                                    if samples.is_empty() {
++                                        engine_clone.lock().unwrap().abort_live_stream();
++                                    }
++
+                                     if !samples.is_empty() {
+                                         if !ptt_release_visible {
+                                             println_ui_flush!("⏹️  Stopped ({} samples, {:.2}s)", samples.len(), samples.len() as f32 / 16000.0);
+@@ -1288,10 +1366,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+         #[cfg(feature = "binary")]
+         {
+             // BLE audio is 16kHz, so initialize engine with 16kHz
+-            println!("Loading speech model (16kHz for BLE audio)...");
+-            let engine = SttEngine::new_default(16000)?;
++            let engine = TranscriptionEngine::from_env(16000)?;
++            println!("Loading {} model (16kHz for BLE audio)...", engine.name());
+
+-            println!("Warming up GPU...");
++            println!("Warming up ASR backend...");
+             engine.warmup()?;
+             println!("Ready!");
+
+@@ -1338,10 +1416,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+         config.sample_format()
+     );
+
+-    println!("Loading speech model ({} Hz input)...", sample_rate);
+-    let engine = SttEngine::new_default(sample_rate)?;
++    let engine = TranscriptionEngine::from_env(sample_rate)?;
++    println!(
++        "Loading {} model ({} Hz input)...",
++        engine.name(),
++        sample_rate
++    );
+
+-    println!("Warming up GPU...");
++    println!("Warming up ASR backend...");
+     engine.warmup()?;
+     println!("Ready!");
+
+@@ -1358,9 +1440,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+     let press_enter_after_paste = Arc::new(AtomicBool::new(false));
+     let no_inject_flag = Arc::new(AtomicBool::new(no_inject));
+
+-    let streaming_enabled = std::env::var("STREAMING_TRANSCRIBE")
+-        .map(|v| v != "0" && v.to_lowercase() != "false")
+-        .unwrap_or(true);
++    // Whisper can pre-transcribe long segments. Nemotron keeps a single
++    // cache-aware model session for the complete transmission.
++    let streaming_enabled = !engine.lock().unwrap().is_nemotron()
++        && std::env::var("STREAMING_TRANSCRIBE")
++            .map(|v| v != "0" && v.to_lowercase() != "false")
++            .unwrap_or(true);
+     let seg_silence_threshold: f32 = std::env::var("SEGMENT_SILENCE_THRESHOLD")
+         .ok()
+         .and_then(|s| s.parse().ok())
+@@ -1378,6 +1463,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+     let segment_boundary: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+     let segmenter_active = Arc::new(AtomicBool::new(false));
+     let last_segment_text: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
++    let nemotron_feeder_active = Arc::new(AtomicBool::new(false));
++    let nemotron_feeder_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>> =
++        Arc::new(Mutex::new(None));
+
+     let audio_buffer_clone = audio_buffer.clone();
+     let is_recording_clone = is_recording.clone();
+@@ -1858,6 +1946,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+                         }
+                     }
+
++                    start_nemotron_live_feeder(
++                        engine_clone.clone(),
++                        audio_buffer_clone.clone(),
++                        nemotron_feeder_active.clone(),
++                        nemotron_feeder_handle.clone(),
++                    );
++
+                     if streaming_enabled {
+                         segment_results_clone.lock().unwrap().clear();
+                         *segment_boundary_clone.lock().unwrap() = 0;
+@@ -2071,11 +2166,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+                         recording_stream_clone.lock().unwrap().take();
+                     }
+
++                    stop_nemotron_live_feeder(&nemotron_feeder_active, &nemotron_feeder_handle);
++
+                     let samples = {
+                         let mut buf = audio_buffer_clone.lock().unwrap();
+                         std::mem::take(&mut *buf)
+                     };
+
++                    if samples.is_empty() {
++                        engine_clone.lock().unwrap().abort_live_stream();
++                    }
++
+                     let streaming_boundary = if streaming_enabled {
+                         *segment_boundary_clone.lock().unwrap()
+                     } else {
+@@ -2410,6 +2511,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+                         {
+                             println_ui_flush!("🎤 Recording...");
+                             audio_buffer_clone.lock().unwrap().clear();
++                            start_nemotron_live_feeder(
++                                engine_clone.clone(),
++                                audio_buffer_clone.clone(),
++                                nemotron_feeder_active.clone(),
++                                nemotron_feeder_handle.clone(),
++                            );
+
+                             if streaming_enabled {
+                                 segment_results_clone.lock().unwrap().clear();
+@@ -2631,11 +2738,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+                                 recording_stream_clone.lock().unwrap().take();
+                             }
+
++                            stop_nemotron_live_feeder(
++                                &nemotron_feeder_active,
++                                &nemotron_feeder_handle,
++                            );
++
+                             let samples = {
+                                 let mut buf = audio_buffer_clone.lock().unwrap();
+                                 std::mem::take(&mut *buf)
+                             };
+
++                            if samples.is_empty() {
++                                engine_clone.lock().unwrap().abort_live_stream();
++                            }
++
+                             let streaming_boundary = if streaming_enabled {
+                                 *segment_boundary_clone.lock().unwrap()
+                             } else {

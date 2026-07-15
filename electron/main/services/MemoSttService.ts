@@ -415,6 +415,49 @@ export class MemoSttService extends EventEmitter {
         INPUT_SOURCE: inputSource,
         MEMO_HANDS_FREE: handsFreeMode ? '1' : '0',
       };
+      const asrModel = settings.asrModel === 'nemotron' ? 'nemotron' : 'whisper';
+      env.MEMO_ASR_BACKEND = asrModel;
+      if (asrModel === 'nemotron') {
+        const nemotronRoot = isDev
+          ? path.join(process.cwd(), '.build', 'nemotron')
+          : path.join(process.resourcesPath, 'nemotron');
+        const bundledPython = path.join(nemotronRoot, 'runtime', 'bin', 'python3.12');
+        const bundledWorker = path.join(nemotronRoot, 'memo_nemotron.py');
+        const bundledModel = path.join(nemotronRoot, 'model');
+
+        // Development overrides make backend work easier without weakening the
+        // release contract: packaged apps always use their signed resources.
+        env.MEMO_ASR_PYTHON = isDev && process.env.MEMO_ASR_PYTHON
+          ? process.env.MEMO_ASR_PYTHON
+          : bundledPython;
+        env.MEMO_ASR_SCRIPT = isDev && process.env.MEMO_ASR_SCRIPT
+          ? process.env.MEMO_ASR_SCRIPT
+          : bundledWorker;
+        env.MEMO_ASR_MODEL_PATH = isDev && process.env.MEMO_ASR_MODEL_PATH
+          ? process.env.MEMO_ASR_MODEL_PATH
+          : bundledModel;
+        env.PYTHONNOUSERSITE = '1';
+
+        const requiredResources = [
+          ['Python runtime', env.MEMO_ASR_PYTHON],
+          ['worker', env.MEMO_ASR_SCRIPT],
+          ['model', env.MEMO_ASR_MODEL_PATH],
+        ] as const;
+        for (const [label, resourcePath] of requiredResources) {
+          if (!resourcePath || !fs.existsSync(resourcePath)) {
+            throw new Error(
+              `Bundled Nemotron ${label} not found at ${resourcePath || '(unset)'}. ` +
+              'Run npm run build:nemotron first.',
+            );
+          }
+        }
+        logger.info(
+          `[MemoSttService #${this.instanceId}] ASR model: Nemotron ` +
+          `(runtime=${env.MEMO_ASR_PYTHON}, model=${env.MEMO_ASR_MODEL_PATH})`,
+        );
+      } else {
+        logger.info(`[MemoSttService #${this.instanceId}] ASR model: Whisper GGML`);
+      }
       // Radio mode: use External Microphone (headphone jack) like memo-RF
       if (inputSource === 'radio') {
         env.MEMO_RADIO_INPUT_DEVICE = env.MEMO_RADIO_INPUT_DEVICE || 'External Microphone';
@@ -1045,5 +1088,4 @@ export class MemoSttService extends EventEmitter {
     }
   }
 }
-
 

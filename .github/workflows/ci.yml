@@ -28,6 +28,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.7.19"
+
       - name: Install native build tools
         run: brew install autoconf automake libtool opus pkg-config
 
@@ -37,17 +42,26 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            .build/cargo-install
-            .build/cargo-target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('scripts/shell/build-stt.sh') }}
+            .build/memo-stt-source
+            .build/memo-stt-target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('scripts/shell/build-stt.sh', 'patches/memo-stt-0.1.1-nemotron.patch', 'sidecars/nemotron/transcription_engine.rs') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
+      - name: Cache Nemotron bundle
+        uses: actions/cache@v4
+        with:
+          path: .build/nemotron
+          key: ${{ runner.os }}-${{ runner.arch }}-nemotron-${{ hashFiles('scripts/shell/build-nemotron.sh', 'sidecars/nemotron/requirements.txt', 'sidecars/nemotron/memo_nemotron.py') }}
 
       - name: Install dependencies
         run: npm ci
 
       - name: Build unsigned app
         run: npm run build:dir
+
+      - name: Verify packaged Nemotron backend
+        run: bash scripts/shell/verify-nemotron-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/nemotron
 
       - name: Upload app smoke-build artifact
         uses: actions/upload-artifact@v4

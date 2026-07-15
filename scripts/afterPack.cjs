@@ -10,6 +10,17 @@ function sh(cmd, args, opts = {}) {
   });
 }
 
+function walkFiles(root) {
+  const files = [];
+  if (!fs.existsSync(root)) return files;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const entryPath = path.join(root, entry.name);
+    if (entry.isDirectory()) files.push(...walkFiles(entryPath));
+    else if (entry.isFile()) files.push(entryPath);
+  }
+  return files;
+}
+
 module.exports = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return;
   const appPath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
@@ -202,6 +213,55 @@ module.exports = async function afterPack(context) {
         console.error('Failed to clean extended attributes:', error);
       }
 
+  // Verify the self-contained Nemotron resources before signing. A release
+  // must never silently depend on a developer's Python or model directory.
+  const nemotronPath = path.join(appPath, 'Contents', 'Resources', 'nemotron');
+  const nemotronRequired = [
+    path.join(nemotronPath, 'runtime', 'bin', 'python3.12'),
+    path.join(nemotronPath, 'memo_nemotron.py'),
+    path.join(nemotronPath, 'model', 'genai_config.json'),
+    path.join(nemotronPath, 'model', 'encoder.onnx'),
+    path.join(nemotronPath, 'model', 'encoder.onnx.data'),
+    path.join(nemotronPath, 'model', 'decoder.onnx'),
+    path.join(nemotronPath, 'model', 'decoder.onnx.data'),
+    path.join(nemotronPath, 'model', 'joint.onnx'),
+    path.join(nemotronPath, 'model', 'joint.onnx.data'),
+    path.join(nemotronPath, 'model', 'tokenizer.json'),
+    path.join(nemotronPath, 'model', 'model_config.json'),
+    path.join(nemotronPath, 'model', '.memo-model-revision'),
+    path.join(nemotronPath, 'VERSIONS'),
+  ];
+  const missingNemotronFiles = nemotronRequired.filter((required) => !fs.existsSync(required));
+  if (missingNemotronFiles.length > 0) {
+    throw new Error(`Nemotron bundle is incomplete:\n${missingNemotronFiles.join('\n')}`);
+  }
+  fs.chmodSync(nemotronRequired[0], 0o755);
+  console.log('✓ Bundled Nemotron runtime and model verified');
+
+  // Python and ONNX Runtime contain nested Mach-O binaries. Sign them from
+  // the leaves inward before electron-builder signs the enclosing app.
+  if (process.env.CSC_IDENTITY_AUTO_DISCOVERY !== 'false' && process.env.MANUAL_SIGN !== '1') {
+    const signer = process.env.CSC_NAME || process.env.CODE_SIGN_IDENTITY || 'Developer ID Application';
+    const nativeLibraries = walkFiles(path.join(nemotronPath, 'runtime'))
+      .filter((filePath) => filePath.endsWith('.so') || filePath.endsWith('.dylib'));
+    for (const nativeLibrary of nativeLibraries) {
+      await sh('codesign', [
+        '--force',
+        '--options', 'runtime',
+        '--sign', signer,
+        nativeLibrary,
+      ]);
+    }
+    await sh('codesign', [
+      '--force',
+      '--options', 'runtime',
+      '--entitlements', path.resolve('config/entitlements.mac.plist'),
+      '--sign', signer,
+      nemotronRequired[0],
+    ]);
+    console.log(`✓ Signed ${nativeLibraries.length} Nemotron native libraries and bundled Python`);
+  }
+
   // Sign the memo-stt binary with entitlements BEFORE the main app is signed
   // This is critical for microphone access in production builds
   try {
@@ -247,5 +307,3 @@ module.exports = async function afterPack(context) {
     }
   }
 };
-
-

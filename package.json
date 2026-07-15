@@ -7,7 +7,7 @@
   "preload": "dist/preload.cjs",
   "type": "module",
   "scripts": {
-    "dev": "npm run build:stt:release && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
+    "dev": "npm run build:backends && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
     "dev:renderer": "vite --config vite.config.ts",
     "dev:main": "esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs --watch",
     "dev:preload": "esbuild electron/preload/index.ts --platform=node --bundle --external:electron --outfile=dist/preload.cjs --format=cjs --watch",
@@ -16,15 +16,19 @@
     "build:preload": "esbuild electron/preload/index.ts --platform=node --bundle --external:electron --outfile=dist/preload.cjs --format=cjs",
     "build:renderer": "vite build --config vite.config.ts",
     "build:stt:release": "bash scripts/shell/build-stt.sh",
-    "build:app": "npm run build:stt:release && npm run build:ts && npm run build:renderer",
+    "build:nemotron": "bash scripts/shell/build-nemotron.sh",
+    "verify:nemotron": "bash scripts/shell/verify-nemotron-bundle.sh",
+    "build:backends": "npm run build:stt:release && npm run build:nemotron",
+    "build:app": "npm run build:backends && npm run build:ts && npm run build:renderer",
     "build:dir": "npm run build:app && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
     "dist:mac": "npm run build:app && electron-builder --mac --publish=never",
     "release:mac": "npm run dist:mac",
     "build": "npm run dist:mac",
-    "start": "npm run build:stt:release && npm run build:ts && electron ."
+    "start": "npm run build:backends && npm run build:ts && electron ."
   },
   "keywords": [
     "whisper",
+    "nemotron",
     "speech-to-text",
     "dictation",
     "push-to-talk",
@@ -139,6 +143,10 @@
         "filter": [
           "memo-stt"
         ]
+      },
+      {
+        "from": ".build/nemotron/",
+        "to": "nemotron"
       }
     ],
     "beforePack": "scripts/beforePack.cjs",

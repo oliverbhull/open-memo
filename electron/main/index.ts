@@ -1261,7 +1261,24 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
     vocabWords: Array.isArray(settings.vocabWords) ? settings.vocabWords : [],
     phraseReplacements: Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : [],
     startAtLogin: loginItemSettings.openAtLogin || false,
+    asrModel: settings.asrModel === 'nemotron' ? 'nemotron' : 'whisper',
   };
+});
+
+ipcMain.handle('settings:setAsrModel', async (_event, model: 'whisper' | 'nemotron') => {
+  if (model !== 'whisper' && model !== 'nemotron') {
+    throw new Error(`Unsupported ASR model: ${String(model)}`);
+  }
+
+  const settings = loadSettings();
+  const previous = settings.asrModel === 'nemotron' ? 'nemotron' : 'whisper';
+  settings.asrModel = model;
+  saveSettings(settings);
+
+  if (memoSttService && previous !== model) {
+    memoSttService.restart();
+  }
+  return true;
 });
 
 ipcMain.handle('settings:setVocabWords', async (_event, vocabWords: string[]) => {
