@@ -13,6 +13,7 @@ This project follows semantic versioning once public releases begin.
 - Simplify the menu-bar tray and add direct Open Memo and Settings actions.
 - Add opt-in local WAV retention with transcript-ID linking, feed playback, and deletion cleanup.
 - Record application bundle identity and render native macOS icons for dictation history.
+- Export active transcriptions as JSON for either a selected date-time range or the complete history.
 
 ## 0.1.2 - 2026-07-15
 

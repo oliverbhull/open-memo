@@ -10,6 +10,25 @@ export interface AudioAttachment {
   duration?: number;
 }
 
+export interface TranscriptionExportEntry {
+  id: string;
+  text: string;
+  createdAt: number;
+  createdAtIso: string;
+  updatedAt: number;
+  updatedAtIso: string;
+  context: Record<string, unknown>;
+}
+
+export interface TranscriptionExportDocument {
+  format: 'open-memo-transcriptions';
+  version: 1;
+  exportedAt: string;
+  range: { from: string | null; to: string | null };
+  count: number;
+  transcriptions: TranscriptionExportEntry[];
+}
+
 export interface TranscriptionData {
   id?: string;
   rawTranscript?: string;
@@ -122,6 +141,11 @@ export interface ElectronAPI {
     get(appName: string, bundleId?: string): Promise<string | null>;
   };
   onOpenSettings(callback: () => void): () => void;
+  exportJson(document: TranscriptionExportDocument): Promise<{
+    success: boolean;
+    canceled?: boolean;
+    error?: string;
+  }>;
   voiceCommands: {
     getSettings(): Promise<VoiceCommandSettings>;
     saveSettings(settings: VoiceCommandSettings): Promise<boolean>;

@@ -27,6 +27,7 @@ import { stripLeadingDashSpace, stripTrailingEnter } from './services/textProces
 import { runMemoExport } from './exportMemos';
 import { audioStorageService } from './services/AudioStorageService';
 import { applicationIconService } from './services/ApplicationIconService';
+import { saveJsonExport } from './services/JsonExportService';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
 
@@ -1211,6 +1212,15 @@ ipcMain.handle('audio:openFolder', async () => {
 
 ipcMain.handle('app-icon:get', (_event, appName: string, bundleId?: string) => {
   return applicationIconService.getIconDataUrl(appName, bundleId);
+});
+
+ipcMain.handle('export:json', async (_event, document: unknown) => {
+  try {
+    return await saveJsonExport(mainWindow, document);
+  } catch (error) {
+    logger.error('[Export] Failed to save JSON export:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Export failed' };
+  }
 });
 
 // Voice command handlers

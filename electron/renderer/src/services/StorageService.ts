@@ -294,6 +294,23 @@ export class StorageService {
     });
   }
 
+  async getAllActiveEntries(): Promise<MemoEntry[]> {
+    const db = await this.ensureInit();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_NAME], 'readonly');
+      const request = transaction.objectStore(STORE_NAME).getAll();
+      let entries: MemoEntry[] = [];
+
+      request.onsuccess = () => {
+        entries = (request.result as MemoEntry[]).filter((entry) => !entry.deletedAt);
+      };
+      request.onerror = () => reject(request.error || new Error('Failed to read transcriptions'));
+      transaction.oncomplete = () => resolve(entries);
+      transaction.onerror = () => reject(transaction.error || new Error('Failed to read transcriptions'));
+      transaction.onabort = () => reject(transaction.error || new Error('Read transaction was aborted'));
+    });
+  }
+
   /**
    * Delete an entry by ID
    */

@@ -73,6 +73,8 @@ npm run build:dir
 
 `npm run export-memos` writes an atomic JSON backup to `~/Desktop/memo-full-export.json`. Quit any running Memo instance before exporting; set `MEMO_EXPORT_OUT` to choose another destination. The JSON includes linked-audio metadata but does not embed the WAV files; Settings provides an **Open folder** action for those recordings.
 
+For a user-facing export, open Settings and select **Export JSON** beside the word count. You can export every active transcription or choose an inclusive date-and-time range before selecting the destination in the macOS save dialog.
+
 `npm run build:dir` creates an unsigned app bundle for smoke testing. Maintainer signing and release notes live in [docs/maintainers/signing-and-release.md](docs/maintainers/signing-and-release.md).
 
 ## Documentation

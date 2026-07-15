@@ -5,6 +5,7 @@ import type {
   PhraseReplacementRule,
   ToastData,
   TranscriptionData,
+  TranscriptionExportDocument,
   VoiceCommandSettings,
 } from '../shared/electron-api';
 
@@ -187,6 +188,11 @@ const electronAPI = {
     ipcRenderer.on('settings:open', handler);
     return () => ipcRenderer.removeListener('settings:open', handler);
   },
+  exportJson: (document: TranscriptionExportDocument): Promise<{
+    success: boolean;
+    canceled?: boolean;
+    error?: string;
+  }> => ipcRenderer.invoke('export:json', document),
   voiceCommands: {
     getSettings: (): Promise<VoiceCommandSettings> => {
       return ipcRenderer.invoke('settings:getVoiceCommands');

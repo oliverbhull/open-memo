@@ -3,12 +3,19 @@ import { useTheme } from '../context/ThemeContext';
 import { VoiceCommandSettings, AppConfig, AppCommand } from './VoiceCommandSettings';
 import { hexToHsl, hslToHex } from '../utils/colorUtils';
 import { storageService } from '../services/StorageService';
+import { buildTranscriptionExport } from '../services/transcriptionExport';
 import type { PhraseReplacementRule } from '../../../shared/electron-api';
 import '../styles/glass.css';
 import '../styles/color-picker.css';
 
 interface SettingsProps {
   onClose: () => void;
+}
+
+function toLocalDateTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  const localTime = new Date(timestamp - date.getTimezoneOffset() * 60_000);
+  return localTime.toISOString().slice(0, 16);
 }
 
 export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
@@ -43,6 +50,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [colorBarSaturation, setColorBarSaturation] = useState(100);
   const [colorBarLightness, setColorBarLightness] = useState(50);
   const [totalWordCount, setTotalWordCount] = useState<number | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFrom, setExportFrom] = useState('');
+  const [exportTo, setExportTo] = useState('');
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   // Load device connection state on mount
   useEffect(() => {
@@ -354,6 +366,65 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     } catch (error) {
       console.error('Failed to reset saved device:', error);
       setConnectionError('Could not reset the saved device.');
+    }
+  };
+
+  const openExportPicker = async () => {
+    setExportOpen(true);
+    setExportStatus(null);
+    setExportBusy(true);
+    try {
+      await storageService.init();
+      const entries = await storageService.getAllActiveEntries();
+      if (entries.length === 0) {
+        setExportStatus('No transcriptions to export.');
+        return;
+      }
+      const bounds = entries.reduce(
+        (current, entry) => ({
+          oldest: Math.min(current.oldest, entry.createdAt),
+          newest: Math.max(current.newest, entry.createdAt),
+        }),
+        { oldest: Number.POSITIVE_INFINITY, newest: Number.NEGATIVE_INFINITY }
+      );
+      setExportFrom(toLocalDateTime(bounds.oldest));
+      setExportTo(toLocalDateTime(bounds.newest));
+    } catch (error) {
+      console.error('[Settings] Failed to prepare transcription export:', error);
+      setExportStatus('Could not load transcriptions.');
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  const exportTranscriptions = async (all: boolean) => {
+    setExportBusy(true);
+    setExportStatus(null);
+    try {
+      const entries = await storageService.getAllActiveEntries();
+      const from = all ? undefined : new Date(exportFrom).getTime();
+      const toStart = all ? undefined : new Date(exportTo).getTime();
+      if (!all && (!Number.isFinite(from) || !Number.isFinite(toStart))) {
+        setExportStatus('Choose both a start and end time.');
+        return;
+      }
+      const to = toStart === undefined ? undefined : toStart + 59_999;
+      const document = buildTranscriptionExport(entries, from, to);
+      if (document.count === 0) {
+        setExportStatus('No transcriptions fall within that time range.');
+        return;
+      }
+      const result = await window.electronAPI.exportJson(document);
+      if (result.success) {
+        setExportStatus(`Exported ${document.count.toLocaleString()} transcription${document.count === 1 ? '' : 's'}.`);
+      } else if (!result.canceled) {
+        setExportStatus(result.error || 'Export failed.');
+      }
+    } catch (error) {
+      console.error('[Settings] Failed to export transcriptions:', error);
+      setExportStatus(error instanceof Error ? error.message : 'Export failed.');
+    } finally {
+      setExportBusy(false);
     }
   };
 
@@ -1147,9 +1218,137 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               borderTop: '1px solid rgba(255, 255, 255, 0.08)',
               fontSize: '12px',
               color: 'rgba(255, 255, 255, 0.6)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
             }}>
-              Words not typed: {totalWordCount !== null ? totalWordCount.toLocaleString() : '…'}
+              <span>Words not typed: {totalWordCount !== null ? totalWordCount.toLocaleString() : '…'}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (exportOpen) {
+                    setExportOpen(false);
+                    setExportStatus(null);
+                  } else {
+                    void openExportPicker();
+                  }
+                }}
+                style={{
+                  border: 0,
+                  padding: 0,
+                  color: primary,
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  font: 'inherit',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Export JSON
+              </button>
             </div>
+
+            {exportOpen && (
+              <div
+                role="dialog"
+                aria-label="Export transcriptions"
+                style={{
+                  marginTop: '10px',
+                  padding: '12px',
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '10px',
+                }}
+              >
+                <div style={{ fontSize: '12px', fontWeight: 650, marginBottom: '10px' }}>
+                  Export transcriptions
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '10px', color: 'rgba(255, 255, 255, 0.55)' }}>
+                    From
+                    <input
+                      type="datetime-local"
+                      value={exportFrom}
+                      onChange={(event) => setExportFrom(event.target.value)}
+                      disabled={exportBusy}
+                      style={{
+                        minWidth: 0,
+                        width: '100%',
+                        padding: '6px',
+                        color: '#fff',
+                        colorScheme: 'dark',
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '6px',
+                        fontSize: '10px',
+                      }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '10px', color: 'rgba(255, 255, 255, 0.55)' }}>
+                    To
+                    <input
+                      type="datetime-local"
+                      value={exportTo}
+                      onChange={(event) => setExportTo(event.target.value)}
+                      disabled={exportBusy}
+                      style={{
+                        minWidth: 0,
+                        width: '100%',
+                        padding: '6px',
+                        color: '#fff',
+                        colorScheme: 'dark',
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '6px',
+                        fontSize: '10px',
+                      }}
+                    />
+                  </label>
+                </div>
+                {exportStatus && (
+                  <div role="status" style={{ marginTop: '8px', fontSize: '10px', color: 'rgba(255, 255, 255, 0.65)' }}>
+                    {exportStatus}
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
+                  <button
+                    type="button"
+                    disabled={exportBusy}
+                    onClick={() => { void exportTranscriptions(true); }}
+                    style={{
+                      padding: '6px 9px',
+                      color: primary,
+                      background: 'transparent',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '6px',
+                      cursor: exportBusy ? 'default' : 'pointer',
+                      fontSize: '11px',
+                      opacity: exportBusy ? 0.5 : 1,
+                    }}
+                  >
+                    Export all
+                  </button>
+                  <button
+                    type="button"
+                    disabled={exportBusy || !exportFrom || !exportTo}
+                    onClick={() => { void exportTranscriptions(false); }}
+                    style={{
+                      padding: '6px 9px',
+                      color: '#000',
+                      background: primary,
+                      border: 0,
+                      borderRadius: '6px',
+                      cursor: exportBusy || !exportFrom || !exportTo ? 'default' : 'pointer',
+                      fontSize: '11px',
+                      fontWeight: 650,
+                      opacity: exportBusy || !exportFrom || !exportTo ? 0.5 : 1,
+                    }}
+                  >
+                    {exportBusy ? 'Preparing…' : 'Export range'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
