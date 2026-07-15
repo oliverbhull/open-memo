@@ -461,9 +461,9 @@ export class MemoSttService extends EventEmitter {
       }
       // System mic: optional substring to match CoreAudio device name (e.g. "AirPods")
       if (inputSource === 'system') {
-        const micLabel = store.get('fallbackMicLabel');
+        const micLabel = store.get('selectedSystemMicName');
         if (typeof micLabel === 'string' && micLabel.trim()) {
-          env.MEMO_SYSTEM_INPUT_DEVICE = micLabel.trim();
+          env.MEMO_SYSTEM_INPUT_DEVICE = micLabel.trim().slice(0, 200);
           logger.info(`[MemoSttService] MEMO_SYSTEM_INPUT_DEVICE=${env.MEMO_SYSTEM_INPUT_DEVICE}`);
         }
       }

@@ -5,6 +5,8 @@ import { loadSettings, saveSettings, store as persistentStore } from './Settings
 import { BrowserWindow } from 'electron';
 import type { MemoSttService } from './MemoSttService';
 import type { BleManager } from './BleManager';
+import type { AudioSourceManager } from './AudioSourceManager';
+import { audioInputService } from './AudioInputService';
 
 // Track menu open state to prevent rebuilding while open
 let menuIsOpen = false;
@@ -26,6 +28,7 @@ let lastTranscript: string | null = null;
 let mainWindow: BrowserWindow | null = null;
 let memoSttService: MemoSttService | null = null;
 let bleManager: BleManager | null = null;
+let audioSourceManager: AudioSourceManager | null = null;
 
 /**
  * Set main window reference
@@ -48,6 +51,10 @@ export function setBleManager(manager: BleManager | null) {
   bleManager = manager;
 }
 
+export function setAudioSourceManager(manager: AudioSourceManager | null) {
+  audioSourceManager = manager;
+}
+
 /**
  * Set last transcript for copy functionality
  */
@@ -57,6 +64,79 @@ export function setLastTranscript(text: string | null) {
 
 function restartMemoStt(): void {
   memoSttService?.restart();
+}
+
+export async function refreshAudioInputDevices(): Promise<boolean> {
+  const devices = await audioInputService.refresh();
+  const selectedName = persistentStore.get('selectedSystemMicName');
+  const settings = loadSettings();
+  let fellBackToDefault = false;
+
+  // A manually pinned microphone may disappear when headphones are unplugged.
+  // Fall back to the live macOS default instead of repeatedly starting against a stale name.
+  if (
+    selectedName &&
+    devices.length > 0 &&
+    !devices.some((device) => device.name === selectedName)
+  ) {
+    console.log(`[Tray] Selected microphone is unavailable: ${selectedName}; using system default`);
+    if (settings.inputSource === 'system' && audioSourceManager) {
+      audioSourceManager.selectSystemMic(null);
+    } else {
+      persistentStore.set('selectedSystemMicName', null);
+    }
+    if (settings.inputSource === 'system') {
+      restartMemoStt();
+      fellBackToDefault = true;
+    }
+  }
+
+  updateMenuState();
+  return fellBackToDefault;
+}
+
+async function selectSystemInput(deviceName: string | null): Promise<void> {
+  if (deviceName && !audioInputService.getDevices().some((device) => device.name === deviceName)) {
+    console.warn(`[Tray] Ignoring unavailable microphone selection: ${deviceName}`);
+    return;
+  }
+
+  const settings = loadSettings();
+  const previousName = persistentStore.get('selectedSystemMicName') || null;
+  const changed = settings.inputSource !== 'system' || previousName !== deviceName;
+
+  // Set the explicit-system flag before disconnecting BLE so its asynchronous
+  // disconnect event cannot restore BLE as the preferred source.
+  if (audioSourceManager) {
+    audioSourceManager.selectSystemMic(deviceName);
+  } else {
+    persistentStore.set('selectedSystemMicName', deviceName);
+    settings.inputSource = 'system';
+    saveSettings(settings);
+  }
+
+  if ((settings.inputSource === 'ble' || isBleConnected) && bleManager) {
+    try {
+      await bleManager.disconnect();
+    } catch (error) {
+      console.error('[Tray] Failed to disconnect from BLE:', error);
+    }
+  }
+
+  if (changed) restartMemoStt();
+  updateMenuState();
+}
+
+async function refreshAudioInputsFromMenu(): Promise<void> {
+  const alreadyRestarted = await refreshAudioInputDevices();
+  const settings = loadSettings();
+  if (
+    !alreadyRestarted &&
+    settings.inputSource === 'system' &&
+    !persistentStore.get('selectedSystemMicName')
+  ) {
+    restartMemoStt();
+  }
 }
 
 /**
@@ -148,6 +228,7 @@ export function createTray() {
   }
   
   updateMenuState();
+  void refreshAudioInputDevices();
 }
 
 /**
@@ -232,15 +313,42 @@ export function updateMenuState() {
   }
   
   const inputSrc = s.inputSource || 'system';
+  const selectedSystemMic = persistentStore.get('selectedSystemMicName') || null;
+  const availableSystemMics = audioInputService.getDevices();
+  const defaultSystemMic = audioInputService.getDefaultDevice();
   const lastMic = persistentStore.get('lastSystemMicDevice') as string | null | undefined;
   const lastRate = persistentStore.get('lastSystemMicSampleRate') as number | null | undefined;
-  let currentInputSummary = 'Default microphone';
+  let currentInputSummary = defaultSystemMic
+    ? `System Default — ${defaultSystemMic.name}`
+    : 'System Default';
   if (inputSrc === 'ble') {
     currentInputSummary = isBleConnected && bleDeviceName ? bleDeviceName : 'Bluetooth (not connected)';
   } else if (inputSrc === 'radio') {
     currentInputSummary = 'Aux / line-in';
-  } else if (lastMic) {
+  } else if (selectedSystemMic) {
+    currentInputSummary = selectedSystemMic;
+  } else if (!defaultSystemMic && lastMic) {
     currentInputSummary = lastRate ? `${lastMic} @ ${lastRate} Hz` : lastMic;
+  }
+
+  const systemMicrophoneItems: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: defaultSystemMic
+        ? `System Default — ${defaultSystemMic.name}`
+        : 'System Default',
+      type: 'radio',
+      checked: inputSrc === 'system' && !selectedSystemMic,
+      click: () => { void selectSystemInput(null); },
+    },
+    ...availableSystemMics.map((device): Electron.MenuItemConstructorOptions => ({
+      label: device.name,
+      type: 'radio',
+      checked: inputSrc === 'system' && selectedSystemMic === device.name,
+      click: () => { void selectSystemInput(device.name); },
+    })),
+  ];
+  if (availableSystemMics.length === 0) {
+    systemMicrophoneItems.push({ label: 'Loading audio inputs…', enabled: false });
   }
 
   const contextMenu = Menu.buildFromTemplate([
@@ -257,38 +365,16 @@ export function updateMenuState() {
           enabled: false,
         },
         { type: 'separator' },
+        ...systemMicrophoneItems,
+        { type: 'separator' },
         {
-          label: 'System Microphone',
-          type: 'radio',
-          checked: (s.inputSource || 'system') === 'system',
-          click: async () => {
-            const cfg = loadSettings();
-            if (cfg.inputSource !== 'system') {
-              cfg.inputSource = 'system';
-              saveSettings(cfg);
-              
-              // Disconnect from BLE if connected
-              if (isBleConnected && bleManager) {
-                try {
-                  await bleManager.disconnect();
-                } catch (error) {
-                  console.error('[Tray] Failed to disconnect from BLE:', error);
-                }
-              }
-              
-              // Restart memo-stt service with new input source
-              restartMemoStt();
-              updateMenuState();
-            }
-          }
-        },
-        {
-          label: 'Bluetooth Device',
+          label: 'Memo Bluetooth Device',
           type: 'radio',
           checked: (s.inputSource || 'system') === 'ble',
           click: async () => {
             const cfg = loadSettings();
             if (cfg.inputSource !== 'ble') {
+              audioSourceManager?.resetUserSelection();
               cfg.inputSource = 'ble';
               saveSettings(cfg);
               
@@ -356,7 +442,12 @@ export function updateMenuState() {
               updateMenuState();
             }
           }
-        }
+        },
+        { type: 'separator' },
+        {
+          label: 'Refresh Audio Inputs',
+          click: () => { void refreshAudioInputsFromMenu(); },
+        },
       ]
     },
     { type: 'separator' },

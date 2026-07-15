@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, systemPreferences, shell, Menu, clipboard 
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { MemoSttService, TranscriptionData } from './services/MemoSttService';
-import { createTray, setMainWindow, setLastTranscript, setRecordingState, setProcessingState, setBleConnectionState, updateMenuState, setBleManager, setMemoSttService } from './services/TrayService';
+import { createTray, refreshAudioInputDevices, setAudioSourceManager, setMainWindow, setLastTranscript, setRecordingState, setProcessingState, setBleConnectionState, updateMenuState, setBleManager, setMemoSttService } from './services/TrayService';
 import {
   loadSettings,
   loadUserSettings,
@@ -289,12 +289,6 @@ function setupMemoSttService(): void {
       }
     });
 
-    audioSourceManager.on('sourceChanged', (source) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('audio:sourceChanged', source);
-      }
-    });
-
     // Handle BLE disconnect: force BleManager + tray to disconnected, start reconnect loop, then restart
     // (so tray is correct even when DISCONNECTED: was never received from Rust)
     audioSourceManager.on('bleDisconnectRestartRequested', () => {
@@ -334,10 +328,7 @@ function setupMemoSttService(): void {
       updateMenuState();
     });
 
-    // When AudioSourceManager signals a system mic device change, do a debounced restart
-    audioSourceManager.on('systemMicDeviceChanged', () => {
-      scheduleSystemMicRestart('AudioSourceManager systemMicDeviceChanged');
-    });
+    setAudioSourceManager(audioSourceManager);
   }
 
   logger.info('Creating new MemoSttService instance');
@@ -614,7 +605,7 @@ function setupMemoSttService(): void {
   // Clear the pinned device label so the next start uses the OS default input, then restart.
   memoSttService.on('micDeviceError', (detail: string) => {
     logger.warn(`[Main] mic device error: ${detail} — clearing fallback device and restarting`);
-    audioSourceManager?.clearFallbackDevice();
+    audioSourceManager?.clearSystemMicSelection();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('audio:showToast', {
         message: 'Microphone reconnecting…',
@@ -1004,42 +995,6 @@ ipcMain.handle('device:clearSavedDevice', async () => {
 });
 
 // Audio Source Management IPC Handlers
-ipcMain.handle('audio:getSource', () => {
-  if (!audioSourceManager) {
-    return { source: 'system' };
-  }
-
-  return { source: audioSourceManager.getCurrentSource() };
-});
-
-ipcMain.handle('audio:setFallbackMic', async (_event, micId: string, label?: string | null) => {
-  try {
-    if (!audioSourceManager) {
-      return { success: false, error: 'Audio Source Manager not initialized' };
-    }
-
-    audioSourceManager.setFallbackMic(micId, label);
-    return { success: true };
-  } catch (error) {
-    logger.error('[Audio] Failed to set fallback mic:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
-ipcMain.handle('audio:switchToSystemMic', async () => {
-  try {
-    if (!audioSourceManager) {
-      return { success: false, error: 'Audio Source Manager not initialized' };
-    }
-
-    await audioSourceManager.switchToSystemMic('manual');
-    return { success: true };
-  } catch (error) {
-    logger.error('[Audio] Failed to switch to system mic:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
 // Debounce timer for input-device-change restarts (avoids rapid-fire restarts when the OS
 // fires multiple devicechange events during a single plug/unplug event).
 let inputDeviceChangeTimer: NodeJS.Timeout | null = null;
@@ -1070,8 +1025,11 @@ function scheduleSystemMicRestart(reason: string): void {
   }, 600);
 }
 
-ipcMain.handle('audio:inputDeviceChanged', () => {
-  scheduleSystemMicRestart('devicechange event');
+ipcMain.handle('audio:inputDeviceChanged', async () => {
+  const alreadyRestarted = await refreshAudioInputDevices();
+  if (!alreadyRestarted && !store.get('selectedSystemMicName')) {
+    scheduleSystemMicRestart('devicechange event');
+  }
 });
 
 // Interface settings handlers

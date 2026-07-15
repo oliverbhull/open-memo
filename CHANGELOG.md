@@ -15,6 +15,7 @@ This project follows semantic versioning once public releases begin.
 - Record application bundle identity and render native macOS icons for dictation history.
 - Export active transcriptions as JSON for either a selected date-time range or the complete history.
 - Simplify saved-audio controls to a borderless play/pause toggle and remove feed deletion.
+- List live macOS audio inputs in the tray with system-default following and explicit device selection.
 
 ## 0.1.2 - 2026-07-15
 

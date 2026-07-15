@@ -45,6 +45,8 @@ Open Memo is designed around local transcription. Dictation audio is processed o
 
 Audio retention is off by default. Enable **Save dictation audio** in Settings to keep future recordings under Memo's local application-data folder. Each WAV filename uses the same ID as its transcript, is playable from the feed, and is removed when that transcript is deleted. Existing recordings are not removed when the setting is turned off.
 
+The menu-bar **Microphone** submenu follows the macOS system-default input unless you explicitly select an available microphone. Explicit choices persist while that input remains available; disconnecting it safely returns Memo to the current system default.
+
 ## Development
 
 Prerequisites:

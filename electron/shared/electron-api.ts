@@ -159,10 +159,6 @@ export interface ElectronAPI {
     onConnectionChanged(callback: (state: DeviceConnectionState) => void): () => void;
   };
   audioSource: {
-    getSource(): Promise<{ source: 'ble' | 'system' }>;
-    setFallbackMic(micId: string, label?: string | null): Promise<{ success: boolean; error?: string }>;
-    switchToSystemMic(): Promise<{ success: boolean; error?: string }>;
-    onSourceChanged(callback: (source: 'ble' | 'system') => void): () => void;
     onShowToast(callback: (toast: ToastData) => void): () => void;
     notifyInputDeviceChanged(): Promise<void>;
   };

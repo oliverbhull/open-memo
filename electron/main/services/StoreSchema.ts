@@ -4,9 +4,7 @@ export interface StoreSchema {
   memoUid: string | null;
   preferBleWhenAvailable: boolean;
   autoReconnect: boolean;
-  fallbackMicId: string | null;
-  fallbackMicLabel: string | null;
-  lastUsedMicId: string | null;
+  selectedSystemMicName: string | null;
   lastSystemMicDevice: string | null;
   lastSystemMicSampleRate: number | null;
   pauseMediaWhileRecording: boolean;
@@ -30,9 +28,7 @@ export const storeDefaults: StoreSchema = {
   memoUid: null,
   preferBleWhenAvailable: true,
   autoReconnect: true,
-  fallbackMicId: null,
-  fallbackMicLabel: null,
-  lastUsedMicId: null,
+  selectedSystemMicName: null,
   lastSystemMicDevice: null,
   lastSystemMicSampleRate: null,
   pauseMediaWhileRecording: true,

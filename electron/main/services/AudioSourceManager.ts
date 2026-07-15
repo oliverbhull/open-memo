@@ -7,8 +7,7 @@ export type AudioSource = 'ble' | 'system';
 
 export interface AudioSourceState {
   current: AudioSource;
-  preferred: AudioSource;
-  systemMicId: string | null;
+  systemMicName: string | null;
   isTransitioning: boolean;
   userSelectedSystemMic: boolean; // Prevents auto-switch back to BLE
 }
@@ -24,25 +23,37 @@ export class AudioSourceManager extends EventEmitter {
     // Initialize state
     this.state = {
       current: 'system', // Always start with system mic
-      preferred: 'ble',
-      systemMicId: store.get('fallbackMicId') || null,
+      systemMicName: store.get('selectedSystemMicName') || null,
       isTransitioning: false,
       userSelectedSystemMic: false,
     };
   }
 
   /**
-   * Get current audio source state
+   * Persist a specific CoreAudio input name, or null to follow the macOS default.
+   * The caller owns restarting memo-stt after any BLE disconnect has been requested.
    */
-  getState(): AudioSourceState {
-    return { ...this.state };
-  }
+  selectSystemMic(deviceName: string | null): boolean {
+    const normalizedName = deviceName?.trim().slice(0, 200) || null;
+    const settings = loadSettings();
+    const previousName = this.store.get('selectedSystemMicName') || null;
+    const changed = settings.inputSource !== 'system' || previousName !== normalizedName;
 
-  /**
-   * Get current audio source
-   */
-  getCurrentSource(): AudioSource {
-    return this.state.current;
+    this.store.set('selectedSystemMicName', normalizedName);
+    this.state.current = 'system';
+    this.state.systemMicName = normalizedName;
+    this.state.userSelectedSystemMic = true;
+
+    if (settings.inputSource !== 'system') {
+      settings.inputSource = 'system';
+      saveSettings(settings);
+    }
+
+    this.emit('settingsUpdated');
+    console.log(
+      `[AudioSourceManager] Selected ${normalizedName || 'macOS system default'} microphone`,
+    );
+    return changed;
   }
 
   /**
@@ -66,8 +77,6 @@ export class AudioSourceManager extends EventEmitter {
 
       this.state.current = 'ble';
       this.state.userSelectedSystemMic = false;
-      this.emit('sourceChanged', 'ble');
-
       console.log('[AudioSourceManager] Switched to BLE successfully');
     } catch (error) {
       console.error('[AudioSourceManager] Failed to switch to BLE:', error);
@@ -88,27 +97,23 @@ export class AudioSourceManager extends EventEmitter {
       return;
     }
 
-    const fallbackMicId = this.store.get('fallbackMicId') ||
-                          this.store.get('lastUsedMicId') ||
-                          'default';
+    const selectedMicName = this.store.get('selectedSystemMicName') || 'default';
 
-    console.log('[AudioSourceManager] Switching to system mic:', fallbackMicId, 'reason:', reason, force ? '(forced)' : '');
+    console.log('[AudioSourceManager] Switching to system mic:', selectedMicName, 'reason:', reason, force ? '(forced)' : '');
     this.state.isTransitioning = true;
 
     try {
       // Send command to Rust to switch input source
-      this.emit('commandSetInputSource', 'system', fallbackMicId);
+      this.emit('commandSetInputSource', 'system');
 
       this.state.current = 'system';
-      this.state.systemMicId = fallbackMicId;
+      this.state.systemMicName = selectedMicName === 'default' ? null : selectedMicName;
 
       // Mark if user manually selected system mic (prevents auto-switch back)
       if (reason === 'manual') {
         this.state.userSelectedSystemMic = true;
         console.log('[AudioSourceManager] User manually selected system mic');
       }
-
-      this.emit('sourceChanged', 'system');
 
       // Update settings file when switching to system mic (especially on disconnect)
       // This ensures the tray menu and UI reflect the correct state
@@ -148,6 +153,15 @@ export class AudioSourceManager extends EventEmitter {
   async handleBleDisconnect(): Promise<void> {
     console.log('[AudioSourceManager] Handling BLE disconnect');
 
+    // A tray selection sets this flag before intentionally disconnecting BLE.
+    // Do not overwrite that explicit system-microphone choice with BLE fallback state.
+    if (this.state.userSelectedSystemMic) {
+      this.state.current = 'system';
+      this.emit('settingsUpdated');
+      console.log('[AudioSourceManager] BLE disconnected after explicit system mic selection');
+      return;
+    }
+
     // IMPORTANT: Do NOT switch to system mic here. If we switch inputSource to 'system',
     // memo-stt will run in system mode and BLE reconnect attempts (CONNECT_UID) won't work.
     try {
@@ -169,9 +183,6 @@ export class AudioSourceManager extends EventEmitter {
     // before restart (ensures tray shows disconnected even if bleDisconnected was never emitted)
     this.emit('bleDisconnectRestartRequested');
 
-    // Emit source changed event
-    this.emit('sourceChanged', 'ble');
-    
     // Emit settings updated event so UI can refresh
     this.emit('settingsUpdated');
     
@@ -216,37 +227,14 @@ export class AudioSourceManager extends EventEmitter {
   }
 
   /**
-   * Set fallback microphone ID (browser deviceId) and optional label substring for CoreAudio matching.
-   */
-  setFallbackMic(micId: string, label?: string | null): void {
-    this.store.set('fallbackMicId', micId);
-    this.state.systemMicId = micId;
-    if (label !== undefined) {
-      const t = label && String(label).trim() ? String(label).trim() : null;
-      this.store.set('fallbackMicLabel', t);
-    }
-    console.log('[AudioSourceManager] Set fallback mic:', micId, label ?? '(label unchanged)');
-  }
-
-  /**
-   * Clear the saved fallback device label and ID from the store.
+   * Clear the explicitly selected CoreAudio device name from the store.
    * Called when the previously-saved device is no longer available so the
    * next start of memo-stt falls back to the macOS default input device.
    */
-  clearFallbackDevice(): void {
-    this.store.set('fallbackMicId', null);
-    this.store.set('fallbackMicLabel', null);
-    this.state.systemMicId = null;
-    console.log('[AudioSourceManager] Cleared fallback device (will use OS default input)');
-  }
-
-  /**
-   * React to an OS-level audio input device change (e.g. headphones plugged in/out).
-   * Clears any pinned device label so memo-stt re-opens the current OS default input.
-   */
-  handleSystemMicDeviceChange(): void {
-    console.log('[AudioSourceManager] System mic device change detected — will restart to use new default input');
-    this.emit('systemMicDeviceChanged');
+  clearSystemMicSelection(): void {
+    this.store.set('selectedSystemMicName', null);
+    this.state.systemMicName = null;
+    console.log('[AudioSourceManager] Cleared system mic selection (will use OS default input)');
   }
 
   /**

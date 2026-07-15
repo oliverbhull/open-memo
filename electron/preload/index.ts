@@ -240,21 +240,6 @@ const electronAPI = {
   },
   // Audio Source Management
   audioSource: {
-    getSource: (): Promise<{ source: 'ble' | 'system' }> => {
-      return ipcRenderer.invoke('audio:getSource');
-    },
-    setFallbackMic: (micId: string, label?: string | null): Promise<{ success: boolean; error?: string }> => {
-      return ipcRenderer.invoke('audio:setFallbackMic', micId, label);
-    },
-    switchToSystemMic: (): Promise<{ success: boolean; error?: string }> => {
-      return ipcRenderer.invoke('audio:switchToSystemMic');
-    },
-    onSourceChanged: (callback: (source: 'ble' | 'system') => void) => {
-      ipcRenderer.on('audio:sourceChanged', (_event, source) => callback(source));
-      return () => {
-        ipcRenderer.removeAllListeners('audio:sourceChanged');
-      };
-    },
     onShowToast: (callback: (toast: ToastData) => void) => {
       ipcRenderer.on('audio:showToast', (_event, toast) => callback(toast));
       return () => {
