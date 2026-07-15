@@ -32,9 +32,9 @@ if [[ ! -x "${PYTHON_BIN}" ]]; then
   exit 1
 fi
 
-PYTHONNOUSERSITE=1 "${PYTHON_BIN}" -c \
+PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 "${PYTHON_BIN}" -B -c \
   'import numpy, onnxruntime_genai; print("Nemotron runtime imports OK")'
-WORKER_OUTPUT="$(PYTHONNOUSERSITE=1 "${PYTHON_BIN}" "${WORKER}" \
+WORKER_OUTPUT="$(PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 "${PYTHON_BIN}" -B "${WORKER}" \
   --model-path "${MODEL_DIR}" --worker < /dev/null)"
 if [[ "${WORKER_OUTPUT}" != *"READY"* ]]; then
   echo "Nemotron worker did not load the packaged model: ${WORKER_OUTPUT}" >&2
