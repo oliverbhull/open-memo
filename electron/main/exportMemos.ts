@@ -80,9 +80,11 @@ function formatEntry(entry: ExportEntry) {
       wasProcessedByLLM: ctx.wasProcessedByLLM ?? null,
       appName: appContext.appName ?? null,
       windowTitle: appContext.windowTitle ?? null,
+      bundleId: appContext.bundleId ?? null,
+      audio: ctx.audio ?? null,
       ...Object.fromEntries(
         Object.entries(ctx).filter(([k]) =>
-          !['source', 'rawTranscript', 'wasProcessedByLLM', 'appContext'].includes(k)
+          !['source', 'rawTranscript', 'wasProcessedByLLM', 'appContext', 'audio'].includes(k)
         )
       ),
     },
@@ -91,7 +93,7 @@ function formatEntry(entry: ExportEntry) {
 
 function hasContextField(entry: ExportEntry, key: string): boolean {
   if (!isRecord(entry.context)) return false;
-  if (key === 'appName' || key === 'windowTitle') {
+  if (key === 'appName' || key === 'windowTitle' || key === 'bundleId') {
     const appContext = entry.context.appContext;
     return isRecord(appContext) && typeof appContext[key] === 'string' && appContext[key] !== '';
   }
@@ -165,6 +167,8 @@ export async function runMemoExport(): Promise<void> {
       newestMemo: newestDate === undefined ? null : new Date(newestDate).toISOString(),
       withAppName: active.filter((entry) => hasContextField(entry, 'appName')).length,
       withWindowTitle: active.filter((entry) => hasContextField(entry, 'windowTitle')).length,
+      withApplicationBundleId: active.filter((entry) => hasContextField(entry, 'bundleId')).length,
+      withAudio: active.filter((entry) => hasContextField(entry, 'audio')).length,
       withRawTranscript: active.filter((entry) => hasContextField(entry, 'rawTranscript')).length,
     },
     entries: formatted,

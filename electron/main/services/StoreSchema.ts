@@ -14,6 +14,7 @@ export interface StoreSchema {
   sayEnterToPressEnter: boolean;
   pushToTalkMode: boolean;
   handsFreeMode: boolean;
+  saveAudio: boolean;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
   inputSource: 'system' | 'ble' | 'radio';
@@ -39,6 +40,7 @@ export const storeDefaults: StoreSchema = {
   sayEnterToPressEnter: false,
   pushToTalkMode: false,
   handsFreeMode: false,
+  saveAudio: false,
   vocabWords: [],
   phraseReplacements: [],
   inputSource: 'system',

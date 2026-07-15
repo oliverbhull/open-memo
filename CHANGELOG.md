@@ -6,10 +6,13 @@ This project follows semantic versioning once public releases begin.
 
 ## Unreleased
 
-- Remove unfinished sync, legacy BLE, audio-storage, and unused renderer subsystems.
+- Remove unfinished sync, legacy BLE state, and unused renderer subsystems.
 - Consolidate settings and typed IPC around a single persisted store and narrow preload bridges.
 - Harden IndexedDB, export, window sandboxing, content security policy, scripts, and release signing checks.
 - Reduce production dependencies to `electron-store`, update the toolchain, and add type-check/test gates.
+- Simplify the menu-bar tray and add direct Open Memo and Settings actions.
+- Add opt-in local WAV retention with transcript-ID linking, feed playback, and deletion cleanup.
+- Record application bundle identity and render native macOS icons for dictation history.
 
 ## 0.1.2 - 2026-07-15
 

@@ -21,6 +21,7 @@ export interface Settings {
   sayEnterToPressEnter: boolean;
   pushToTalkMode: boolean;
   handsFreeMode: boolean;
+  saveAudio: boolean;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
   inputSource: 'system' | 'ble' | 'radio';
@@ -129,6 +130,7 @@ export function loadSettings(): Settings {
     sayEnterToPressEnter: store.get('sayEnterToPressEnter', false),
     pushToTalkMode: store.get('pushToTalkMode', false),
     handsFreeMode: store.get('handsFreeMode', false),
+    saveAudio: store.get('saveAudio', false),
     vocabWords: stringArray(store.get('vocabWords')),
     phraseReplacements: clampPhraseReplacementRulesFromInput(store.get('phraseReplacements')),
     inputSource: ['system', 'ble', 'radio'].includes(store.get('inputSource'))
@@ -147,6 +149,7 @@ export function saveSettings(next: Settings): void {
     sayEnterToPressEnter: next.sayEnterToPressEnter === true,
     pushToTalkMode: next.pushToTalkMode === true,
     handsFreeMode: next.handsFreeMode === true,
+    saveAudio: next.saveAudio === true,
     vocabWords: stringArray(next.vocabWords),
     phraseReplacements: clampPhraseReplacementRulesFromInput(next.phraseReplacements),
     inputSource: ['system', 'ble', 'radio'].includes(next.inputSource) ? next.inputSource : 'system',
@@ -158,6 +161,7 @@ export function saveSettings(next: Settings): void {
   store.set('sayEnterToPressEnter', settings.sayEnterToPressEnter);
   store.set('pushToTalkMode', settings.pushToTalkMode);
   store.set('handsFreeMode', settings.handsFreeMode);
+  store.set('saveAudio', settings.saveAudio);
   store.set('vocabWords', settings.vocabWords);
   store.set('phraseReplacements', settings.phraseReplacements);
   store.set('inputSource', settings.inputSource);
@@ -192,6 +196,7 @@ function migrateSettingsJson(raw: Record<string, unknown>): void {
       : current.sayEnterToPressEnter,
     pushToTalkMode: typeof raw.pushToTalkMode === 'boolean' ? raw.pushToTalkMode : current.pushToTalkMode,
     handsFreeMode: typeof raw.handsFreeMode === 'boolean' ? raw.handsFreeMode : current.handsFreeMode,
+    saveAudio: typeof raw.saveAudio === 'boolean' ? raw.saveAudio : current.saveAudio,
     vocabWords: Array.isArray(raw.vocabWords) ? stringArray(raw.vocabWords) : current.vocabWords,
     phraseReplacements: Array.isArray(raw.phraseReplacements)
       ? clampPhraseReplacementRulesFromInput(raw.phraseReplacements)

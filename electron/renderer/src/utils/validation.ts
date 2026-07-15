@@ -1,6 +1,7 @@
 import { FeedEntryData, AppContext } from '../components/FeedEntry';
 import { MemoEntry } from '../types/storage';
 import { logger } from './logger';
+import type { AudioAttachment } from '../../../shared/electron-api';
 
 interface ValidTranscriptionData {
   id?: string;
@@ -9,6 +10,7 @@ interface ValidTranscriptionData {
   wasProcessedByLLM?: boolean;
   appContext?: AppContext;
   timestamp?: number;
+  audio?: AudioAttachment;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -23,7 +25,8 @@ export function isValidAppContext(obj: unknown): obj is AppContext {
     isRecord(obj) &&
     typeof obj.appName === 'string' &&
     typeof obj.windowTitle === 'string' &&
-    obj.appName.length > 0
+    obj.appName.length > 0 &&
+    (obj.bundleId === undefined || typeof obj.bundleId === 'string')
   );
 }
 
@@ -44,6 +47,17 @@ export function validateTranscriptionData(data: unknown): data is ValidTranscrip
   if (data.appContext && !isValidAppContext(data.appContext)) {
     return false;
   }
+
+  if (data.audio && !(
+    isRecord(data.audio) &&
+    typeof data.audio.fileName === 'string' &&
+    data.audio.mimeType === 'audio/wav' &&
+    (data.audio.duration === undefined || (
+      typeof data.audio.duration === 'number' &&
+      Number.isFinite(data.audio.duration) &&
+      data.audio.duration >= 0
+    ))
+  )) return false;
 
   return true;
 }
@@ -82,6 +96,10 @@ export function createValidEntry(
     return null;
   }
 
+  if (data.audio && data.audio.fileName !== `${id}.wav`) {
+    return null;
+  }
+
   return {
     id,
     text: text.trim(),
@@ -89,6 +107,7 @@ export function createValidEntry(
     rawTranscript: data.rawTranscript,
     wasProcessedByLLM: data.wasProcessedByLLM,
     appContext: data.appContext,
+    audio: data.audio,
   };
 }
 
@@ -112,6 +131,7 @@ export function convertToMemoEntry(
       rawTranscript: entry.rawTranscript,
       wasProcessedByLLM: entry.wasProcessedByLLM,
       appContext: entry.appContext,
+      audio: entry.audio,
     },
   };
 }
@@ -129,7 +149,7 @@ export function convertToFeedEntry(entry: MemoEntry): FeedEntryData {
     rawTranscript: context.rawTranscript as string | undefined,
     wasProcessedByLLM: context.wasProcessedByLLM as boolean | undefined,
     appContext: context.appContext as AppContext | undefined,
+    audio: context.audio as AudioAttachment | undefined,
     context: context, // Include full context for accessing mobile location data
   };
 }
-

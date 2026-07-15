@@ -4,12 +4,11 @@ import { formatAddress, type LocationData } from '../utils/addressFormatter';
 import { AppIcon } from './AppIcon';
 import { useTheme } from '../context/ThemeContext';
 import appIconBase from '../assets/app-icon-base.png';
+import type { AppContext, AudioAttachment } from '../../../shared/electron-api';
+import { PlayButton } from './PlayButton';
 import '../styles/feed.css';
 
-export interface AppContext {
-  appName: string;
-  windowTitle: string;
-}
+export type { AppContext };
 
 export interface FeedEntryData {
   id: string;
@@ -19,6 +18,7 @@ export interface FeedEntryData {
   rawTranscript?: string;
   wasProcessedByLLM?: boolean;
   appContext?: AppContext;
+  audio?: AudioAttachment;
   context?: Record<string, unknown>; // Full context for accessing mobile location data
 }
 
@@ -123,7 +123,7 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
 
     const displayText = isProcessing ? 'Transcribing...' : entry.text;
     const sourceIcon = isDesktopEntry ? (
-      <AppIcon appName={appContext.appName || 'Unknown'} size={14} />
+      <AppIcon appName={appContext.appName || 'Unknown'} bundleId={appContext.bundleId} size={14} />
     ) : (
       <img 
         src={appIconBase} 
@@ -166,6 +166,7 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
           </svg>
         </button>
+        {entry.audio && <PlayButton entryId={entry.id} size={18} />}
         {onDelete && (
           <button
             type="button"
@@ -256,6 +257,7 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
     prevProps.entry.text === nextProps.entry.text &&
     prevProps.entry.timestamp === nextProps.entry.timestamp &&
     prevProps.entry.createdAt === nextProps.entry.createdAt &&
+    prevProps.entry.audio?.fileName === nextProps.entry.audio?.fileName &&
     prevProps.isExpanded === nextProps.isExpanded
   );
 });

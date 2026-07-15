@@ -180,6 +180,10 @@ export class EntryService extends EventEmitter {
 
     try {
       await storageService.deleteEntry(id);
+      const audioResult = await window.electronAPI.audio.delete(id);
+      if (!audioResult.success) {
+        logger.warn(`Memo ${id} was deleted, but its audio cleanup failed: ${audioResult.error}`);
+      }
       
       // Remove from cache
       this.recentEntries = this.recentEntries.filter(e => e.id !== id);

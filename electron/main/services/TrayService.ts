@@ -194,6 +194,11 @@ function openMainWindow() {
   }
 }
 
+function openSettings() {
+  openMainWindow();
+  mainWindow?.webContents.send('settings:open');
+}
+
 /**
  * Update tray menu state based on current application state
  */
@@ -209,7 +214,7 @@ export function updateMenuState() {
   const s = loadSettings();
   
   // Build status text (transcription state)
-  const statusText = `Status: ${isProcessing ? 'Processing' : (isRecording ? 'Recording' : 'Idle')}  ●`;
+  const statusText = `Memo — ${isProcessing ? 'Processing' : (isRecording ? 'Recording' : 'Ready')}`;
   // Update tray icon based on state
   // Priority: Processing > Recording > BLE Connected > Base
   try {
@@ -240,11 +245,12 @@ export function updateMenuState() {
 
   const contextMenu = Menu.buildFromTemplate([
     { label: statusText, enabled: false },
-    { label: 'Dashboard', accelerator: 'Command+,', click: () => openMainWindow() },
+    { label: 'Open Memo', click: () => openMainWindow() },
+    { label: 'Settings…', click: () => openSettings() },
     { type: 'separator' },
-    { label: 'Copy Last Transcript', click: () => copyLastTranscript(), enabled: !!lastTranscript },
+    { label: 'Copy Last Dictation', click: () => copyLastTranscript(), enabled: !!lastTranscript },
     {
-      label: 'Audio Input',
+      label: 'Microphone',
       submenu: [
         {
           label: `Current: ${currentInputSummary}`,
@@ -327,7 +333,7 @@ export function updateMenuState() {
           }
         },
         {
-          label: 'Aux',
+          label: 'Aux / Line In',
           type: 'radio',
           checked: (s.inputSource || 'system') === 'radio',
           click: async () => {
@@ -353,66 +359,14 @@ export function updateMenuState() {
         }
       ]
     },
-    {
-      label: 'Options',
-      submenu: [
-        { 
-          label: 'Start at Login', 
-          type: 'checkbox', 
-          checked: app.getLoginItemSettings().openAtLogin,
-          click: () => toggleAutoStart()
-        },
-        { 
-          label: 'Press Enter After Paste', 
-          type: 'checkbox', 
-          checked: s.postEnter || false,
-          click: () => {
-            const cfg = loadSettings();
-            cfg.postEnter = !cfg.postEnter;
-            saveSettings(cfg);
-            // Send command to memo-stt process
-            memoSttService?.setPressEnterAfterPaste(cfg.postEnter);
-            updateMenuState(); // Refresh menu to show new state
-          }
-        },
-        {
-          label: "Say 'enter' to press Enter",
-          type: 'checkbox',
-          checked: s.sayEnterToPressEnter ?? false,
-          click: () => {
-            const cfg = loadSettings();
-            cfg.sayEnterToPressEnter = !(cfg.sayEnterToPressEnter ?? false);
-            saveSettings(cfg);
-            updateMenuState();
-          }
-        },
-        {
-          label: 'Hands Free',
-          type: 'checkbox',
-          checked: s.handsFreeMode ?? false,
-          click: () => {
-            const cfg = loadSettings();
-            const next = !(cfg.handsFreeMode ?? false);
-            cfg.handsFreeMode = next;
-            saveSettings(cfg);
-            restartMemoStt();
-            updateMenuState();
-          }
-        },
-        {
-          label: 'Mute all output while dictating',
-          type: 'checkbox',
-          checked: persistentStore.get('pauseMediaWhileRecording', true) !== false,
-          click: () => {
-            const next = !(persistentStore.get('pauseMediaWhileRecording', true) !== false);
-            persistentStore.set('pauseMediaWhileRecording', next);
-            updateMenuState();
-          }
-        }
-      ]
-    },
     { type: 'separator' },
-    { role: 'quit', accelerator: 'Command+Q' },
+    {
+      label: 'Start at Login',
+      type: 'checkbox',
+      checked: app.getLoginItemSettings().openAtLogin,
+      click: () => toggleAutoStart(),
+    },
+    { label: 'Quit Memo', role: 'quit', accelerator: 'Command+Q' },
   ]);
   
   tray.setContextMenu(contextMenu);

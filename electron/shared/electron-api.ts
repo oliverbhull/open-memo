@@ -1,14 +1,23 @@
 export interface AppContext {
   appName: string;
   windowTitle: string;
+  bundleId?: string;
+}
+
+export interface AudioAttachment {
+  fileName: string;
+  mimeType: 'audio/wav';
+  duration?: number;
 }
 
 export interface TranscriptionData {
+  id?: string;
   rawTranscript?: string;
   processedText?: string;
   wasProcessedByLLM?: boolean;
   timestamp?: number;
   appContext?: AppContext;
+  audio?: AudioAttachment;
 }
 
 export interface MemoSttError {
@@ -90,6 +99,7 @@ export interface ElectronAPI {
       sayEnterToPressEnter: boolean;
       pushToTalkMode: boolean;
       handsFreeMode: boolean;
+      saveAudio: boolean;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
       startAtLogin: boolean;
@@ -100,8 +110,18 @@ export interface ElectronAPI {
     setSayEnterToPressEnter(enabled: boolean): Promise<boolean>;
     setPushToTalkMode(enabled: boolean): Promise<boolean>;
     setHandsFreeMode(enabled: boolean): Promise<boolean>;
+    setSaveAudio(enabled: boolean): Promise<boolean>;
     setStartAtLogin(enabled: boolean): Promise<boolean>;
   };
+  audio: {
+    get(entryId: string): Promise<{ success: boolean; data?: Uint8Array; error?: string }>;
+    delete(entryId: string): Promise<{ success: boolean; error?: string }>;
+    openFolder(): Promise<{ success: boolean; error?: string }>;
+  };
+  appIcons: {
+    get(appName: string, bundleId?: string): Promise<string | null>;
+  };
+  onOpenSettings(callback: () => void): () => void;
   voiceCommands: {
     getSettings(): Promise<VoiceCommandSettings>;
     saveSettings(settings: VoiceCommandSettings): Promise<boolean>;

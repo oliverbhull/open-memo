@@ -136,6 +136,7 @@ const electronAPI = {
       sayEnterToPressEnter: boolean;
       pushToTalkMode: boolean;
       handsFreeMode: boolean;
+      saveAudio: boolean;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
       startAtLogin: boolean;
@@ -160,9 +161,31 @@ const electronAPI = {
     setHandsFreeMode: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setHandsFreeMode', enabled);
     },
+    setSaveAudio: (enabled: boolean): Promise<boolean> => {
+      return ipcRenderer.invoke('settings:setSaveAudio', enabled);
+    },
     setStartAtLogin: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setStartAtLogin', enabled);
     },
+  },
+  audio: {
+    get: (entryId: string): Promise<{ success: boolean; data?: Uint8Array; error?: string }> => (
+      ipcRenderer.invoke('audio:get', entryId)
+    ),
+    delete: (entryId: string): Promise<{ success: boolean; error?: string }> => (
+      ipcRenderer.invoke('audio:delete', entryId)
+    ),
+    openFolder: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('audio:openFolder'),
+  },
+  appIcons: {
+    get: (appName: string, bundleId?: string): Promise<string | null> => (
+      ipcRenderer.invoke('app-icon:get', appName, bundleId)
+    ),
+  },
+  onOpenSettings: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('settings:open', handler);
+    return () => ipcRenderer.removeListener('settings:open', handler);
   },
   voiceCommands: {
     getSettings: (): Promise<VoiceCommandSettings> => {

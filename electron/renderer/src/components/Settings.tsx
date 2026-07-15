@@ -27,6 +27,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [handsFreeMode, setHandsFreeMode] = useState(false);
   const [sayEnterToPressEnter, setSayEnterToPressEnter] = useState(false);
   const [startAtLogin, setStartAtLogin] = useState(false);
+  const [saveAudio, setSaveAudio] = useState(false);
   const [vocabWords, setVocabWords] = useState<string[]>([]);
   const [isAddingVocabWord, setIsAddingVocabWord] = useState(false);
   const [vocabWordDraft, setVocabWordDraft] = useState('');
@@ -70,6 +71,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       setPushToTalkMode(settings.pushToTalkMode ?? false);
       setHandsFreeMode(settings.handsFreeMode ?? false);
       setStartAtLogin(settings.startAtLogin);
+      setSaveAudio(settings.saveAudio ?? false);
       setVocabWords(Array.isArray(settings.vocabWords) ? settings.vocabWords : []);
       setPhraseReplacementRules(
         Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : []
@@ -515,6 +517,55 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     Start at Login
                   </span>
                 </label>
+
+                <div style={{ padding: '2px 4px' }}>
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={saveAudio}
+                      onChange={async (event) => {
+                        const enabled = event.target.checked;
+                        setSaveAudio(enabled);
+                        await window.electronAPI.interface.setSaveAudio(enabled);
+                      }}
+                      style={{
+                        width: '16px',
+                        height: '16px',
+                        cursor: 'pointer',
+                        accentColor: primary,
+                      }}
+                    />
+                    <span style={{ fontSize: '12px', userSelect: 'none' }}>Save dictation audio</span>
+                  </label>
+                  <div style={{
+                    margin: '2px 0 0 24px',
+                    color: 'rgba(255, 255, 255, 0.5)',
+                    fontSize: '10px',
+                    lineHeight: 1.4,
+                  }}>
+                    New recordings are stored locally and linked to their transcripts.
+                    {' '}
+                    <button
+                      type="button"
+                      onClick={() => { void window.electronAPI.audio.openFolder(); }}
+                      style={{
+                        border: 0,
+                        padding: 0,
+                        color: primary,
+                        background: 'transparent',
+                        cursor: 'pointer',
+                        font: 'inherit',
+                      }}
+                    >
+                      Open folder
+                    </button>
+                  </div>
+                </div>
 
                 {/* Vocab (STT boosting) */}
                 <div style={{

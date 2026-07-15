@@ -25,6 +25,8 @@ import { logger } from './utils/logger';
 import { pauseCompanionMedia, resumeCompanionMedia } from './services/CompanionMediaPause';
 import { stripLeadingDashSpace, stripTrailingEnter } from './services/textProcessing';
 import { runMemoExport } from './exportMemos';
+import { audioStorageService } from './services/AudioStorageService';
+import { applicationIconService } from './services/ApplicationIconService';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
 
@@ -77,6 +79,7 @@ let isRecording = false;
 let pendingBlePostStopEnter = false;
 let lastTextPasteAtMs = 0;
 let awaitingTranscriptionAfterStop = false;
+let isQuitting = false;
 
 app.on('second-instance', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -150,6 +153,14 @@ function createWindow(): void {
     mainWindow = null;
   });
 
+  mainWindow.on('close', (event) => {
+    if (process.platform === 'darwin' && !isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+      app.dock?.hide();
+    }
+  });
+
   // Set main window in tray service
   setMainWindow(mainWindow);
 }
@@ -165,6 +176,16 @@ function createMenuBar() {
       label: app.getName(),
       submenu: [
         { role: 'about' },
+        { type: 'separator' },
+        {
+          label: 'Settings…',
+          accelerator: 'Command+,',
+          click: () => {
+            mainWindow?.show();
+            mainWindow?.focus();
+            mainWindow?.webContents.send('settings:open');
+          },
+        },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
@@ -426,17 +447,35 @@ function setupMemoSttService(): void {
     // Transcription completes processing, so clear processing state
     setProcessingState(false);
 
-    // Generate the canonical entry ID before sending the memo to the renderer.
+    // Generate one canonical ID for both the memo and its optional WAV file.
     const entryId = randomUUID();
+    const { audioCapture, ...transcription } = data;
+    const appContext = applicationIconService.enrichContext(data.appContext);
+    let audio: Awaited<ReturnType<typeof audioStorageService.save>> | undefined;
+    const rendererAvailable = !!mainWindow && !mainWindow.isDestroyed();
+    if (rendererAvailable && settings.saveAudio && audioCapture?.wavBuffer) {
+      try {
+        audio = await audioStorageService.save(entryId, audioCapture.wavBuffer, audioCapture.duration);
+      } catch (error) {
+        logger.error(`[AudioStorage] Failed to retain audio for memo ${entryId}:`, error);
+        mainWindow?.webContents.send('audio:showToast', {
+          message: 'Transcript saved, but its audio could not be saved',
+          severity: 'warning',
+          duration: 4000,
+        });
+      }
+    }
 
     // Send transcription to renderer (use stripped text so feed does not show "enter")
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('transcription:new', {
-        ...data,
+        ...transcription,
         processedText: textToPaste,
         rawTranscript: pressEnterThisTime ? textToPaste : (data.rawTranscript ?? ''),
         id: entryId,
         timestamp: Date.now(),
+        ...(appContext ? { appContext } : {}),
+        ...(audio ? { audio } : {}),
       });
     }
     
@@ -697,6 +736,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  isQuitting = true;
   cleanupMemoStt();
 });
 
@@ -1042,6 +1082,7 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
     sayEnterToPressEnter: settings.sayEnterToPressEnter ?? false,
     pushToTalkMode: settings.pushToTalkMode ?? false,
     handsFreeMode: settings.handsFreeMode ?? false,
+    saveAudio: settings.saveAudio ?? false,
     vocabWords: Array.isArray(settings.vocabWords) ? settings.vocabWords : [],
     phraseReplacements: Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : [],
     startAtLogin: loginItemSettings.openAtLogin || false,
@@ -1114,6 +1155,16 @@ ipcMain.handle('settings:setHandsFreeMode', async (_event, enabled: boolean) => 
   return true;
 });
 
+ipcMain.handle('settings:setSaveAudio', async (_event, enabled: boolean) => {
+  const settings = loadSettings();
+  const changed = settings.saveAudio !== (enabled === true);
+  settings.saveAudio = enabled === true;
+  saveSettings(settings);
+  if (changed) memoSttService?.restart();
+  updateMenuState();
+  return true;
+});
+
 ipcMain.handle('settings:setStartAtLogin', async (_event, enabled: boolean) => {
   app.setLoginItemSettings({
     openAtLogin: enabled,
@@ -1125,6 +1176,41 @@ ipcMain.handle('settings:setStartAtLogin', async (_event, enabled: boolean) => {
   updateMenuState();
   
   return true;
+});
+
+ipcMain.handle('audio:get', async (_event, entryId: string) => {
+  try {
+    const data = await audioStorageService.read(entryId);
+    return data ? { success: true, data } : { success: false, error: 'Audio not found' };
+  } catch (error) {
+    logger.error(`[AudioStorage] Failed to read memo ${entryId}:`, error);
+    return { success: false, error: 'Audio could not be loaded' };
+  }
+});
+
+ipcMain.handle('audio:delete', async (_event, entryId: string) => {
+  try {
+    await audioStorageService.delete(entryId);
+    return { success: true };
+  } catch (error) {
+    logger.error(`[AudioStorage] Failed to delete memo ${entryId}:`, error);
+    return { success: false, error: 'Audio could not be deleted' };
+  }
+});
+
+ipcMain.handle('audio:openFolder', async () => {
+  try {
+    const directory = await audioStorageService.openDirectory();
+    const error = await shell.openPath(directory);
+    return error ? { success: false, error } : { success: true };
+  } catch (error) {
+    logger.error('[AudioStorage] Failed to open recordings folder:', error);
+    return { success: false, error: 'Recordings folder could not be opened' };
+  }
+});
+
+ipcMain.handle('app-icon:get', (_event, appName: string, bundleId?: string) => {
+  return applicationIconService.getIconDataUrl(appName, bundleId);
 });
 
 // Voice command handlers

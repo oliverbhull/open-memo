@@ -12,6 +12,12 @@ import { AudioSourceManager } from './AudioSourceManager';
 export interface AppContext {
   appName: string;
   windowTitle: string;
+  bundleId?: string;
+}
+
+export interface CapturedAudio {
+  wavBuffer: Buffer;
+  duration?: number;
 }
 
 export interface TranscriptionData {
@@ -19,12 +25,12 @@ export interface TranscriptionData {
   processedText: string;
   wasProcessedByLLM: boolean;
   appContext?: AppContext;
+  audioCapture?: CapturedAudio;
 }
 
 export type MemoSttStatus = 'stopped' | 'running' | 'error';
 
-// Track instances for debugging
-let instanceCount = 0;
+let nextInstanceId = 0;
 
 export class MemoSttService extends EventEmitter {
   private process: ChildProcess | null = null;
@@ -36,25 +42,24 @@ export class MemoSttService extends EventEmitter {
   private restartTimeout: NodeJS.Timeout | null = null;
   private readonly MAX_RESTART_ATTEMPTS = 5;
   private readonly RESTART_DELAY_BASE = 2000;
-  private readonly MAX_BUFFER_SIZE = 1024 * 1024; // 1MB max buffer size
+  // A WAV line is base64 encoded by the trusted native recorder. Allow long
+  // dictations while still putting a hard ceiling on malformed output.
+  private readonly MAX_BUFFER_SIZE = 64 * 1024 * 1024;
   private readonly instanceId: number;
   private isBleConnected = false;
   private commandDetector: CommandDetector;
   private commandExecutor: CommandExecutor;
   private audioSourceManager: AudioSourceManager | null = null;
+  private pendingAudioData: { wavBuffer?: Buffer; duration?: number } | null = null;
+  private readonly audioWaiters = new Set<() => void>();
   /** Timestamp (ms) when the current process was spawned — used to detect quick-exit device errors */
   private processStartedAt: number | null = null;
   /** Quick-exit threshold: if process exits within this many ms with non-zero code, assume audio device error */
   private readonly QUICK_EXIT_THRESHOLD_MS = 4000;
   constructor(audioSourceManager?: AudioSourceManager) {
     super();
-    instanceCount++;
-    this.instanceId = instanceCount;
-    logger.info(`[MemoSttService] Creating instance #${this.instanceId} (total instances: ${instanceCount})`);
-
-    if (instanceCount > 1) {
-      logger.warn(`[MemoSttService] WARNING: Multiple instances detected! Current: #${this.instanceId}, Total: ${instanceCount}`);
-    }
+    this.instanceId = ++nextInstanceId;
+    logger.info(`[MemoSttService] Creating instance #${this.instanceId}`);
 
     // Store references to state managers
     this.audioSourceManager = audioSourceManager || null;
@@ -409,6 +414,7 @@ export class MemoSttService extends EventEmitter {
       // NOTE: We do NOT set MEMO_DEVICE_NAME - Electron handles all connections via CONNECT_UID command
       const env: NodeJS.ProcessEnv = {
         ...process.env,
+        MEMO_EMIT_AUDIO: settings.saveAudio ? '1' : '0',
         INPUT_SOURCE: inputSource,
         MEMO_HANDS_FREE: handsFreeMode ? '1' : '0',
       };
@@ -621,12 +627,6 @@ export class MemoSttService extends EventEmitter {
     }
   }
   
-  // Cleanup method to track instance destruction
-  private cleanup(): void {
-    instanceCount--;
-    logger.info(`[MemoSttService #${this.instanceId}] Instance destroyed (remaining instances: ${instanceCount})`);
-  }
-
   stop(): void {
     // Clear any pending restart
     if (this.restartTimeout) {
@@ -681,8 +681,6 @@ export class MemoSttService extends EventEmitter {
     // Clear buffer on stop
     this.buffer = '';
     
-    // Cleanup tracking
-    this.cleanup();
   }
 
   getStatus(): MemoSttStatus {
@@ -817,10 +815,42 @@ export class MemoSttService extends EventEmitter {
       }
       return;
     }
+
+    // memo-stt emits both OPUS and WAV. WAV is the only retained format because
+    // browsers decode it reliably without another codec dependency.
+    if (line.startsWith('AUDIO_DATA:')) {
+      if (loadSettings().saveAudio) this.pendingAudioData = {};
+      return;
+    }
+
+    if (line.startsWith('AUDIO_DURATION:')) {
+      if (!loadSettings().saveAudio) return;
+      const duration = Number.parseFloat(line.slice('AUDIO_DURATION:'.length));
+      if (Number.isFinite(duration) && duration >= 0) {
+        this.pendingAudioData ??= {};
+        this.pendingAudioData.duration = duration;
+      }
+      return;
+    }
+
+    if (line.startsWith('AUDIO_WAV:')) {
+      if (!loadSettings().saveAudio) return;
+      const wavBuffer = Buffer.from(line.slice('AUDIO_WAV:'.length), 'base64');
+      if (wavBuffer.length < 44 || wavBuffer.subarray(0, 4).toString('ascii') !== 'RIFF') {
+        logger.warn('[MemoSttService] Ignored invalid WAV data from recorder');
+        return;
+      }
+      this.pendingAudioData ??= {};
+      this.pendingAudioData.wavBuffer = wavBuffer;
+      this.audioWaiters.forEach((resolve) => resolve());
+      this.audioWaiters.clear();
+      return;
+    }
     
     // Detect recording start - memo-stt outputs "🎤 Recording..." when recording starts
     if (line.includes('🎤 Recording...') || line.includes('Recording...')) {
       logger.debug('[MemoSttService] Recording started');
+      this.pendingAudioData = null;
       this.emit('recordingStarted');
       return;
     }
@@ -842,6 +872,7 @@ export class MemoSttService extends EventEmitter {
     // No-speech path: memo-stt does not print FINAL — unblock UI and restore system output mute
     if (line.includes('📝 (no speech detected)')) {
       logger.debug('[MemoSttService] No speech detected (ASR finished)');
+      this.pendingAudioData = null;
       this.emit('processingCompleted');
       return;
     }
@@ -853,6 +884,7 @@ export class MemoSttService extends EventEmitter {
     // These can appear in stdout as well (though usually in stderr)
     if (line.includes('❌ Error:') || line.includes('Error: Audio too short')) {
       logger.debug('[MemoSttService] Transcription error detected in stdout, clearing processing state');
+      this.pendingAudioData = null;
       this.emit('processingFailed');
       return;
     }
@@ -901,13 +933,16 @@ export class MemoSttService extends EventEmitter {
           // If there's remaining text after stripping the command, inject it
           if (remainingText.trim().length > 0) {
             logger.debug(`[MemoSttService] Injecting remaining text after command: "${remainingText}"`);
+            const audioCapture = await this.takePendingAudio();
             this.emit('transcription', {
               ...transcription,
               processedText: remainingText,
+              ...(audioCapture ? { audioCapture } : {}),
             });
             this.emit('processingCompleted');
           } else {
             // No remaining text, just emit processing completed
+            this.pendingAudioData = null;
             this.emit('processingCompleted');
           }
           return;
@@ -919,9 +954,11 @@ export class MemoSttService extends EventEmitter {
       }
 
       // Emit transcription event (normal flow)
+      const audioCapture = await this.takePendingAudio();
       this.emit('transcription', {
         ...transcription,
         processedText: text,
+        ...(audioCapture ? { audioCapture } : {}),
       });
       
       this.emit('processingCompleted');
@@ -930,6 +967,31 @@ export class MemoSttService extends EventEmitter {
       logger.error('Line was:', line);
       this.emit('processingFailed');
     }
+  }
+
+  private async takePendingAudio(): Promise<CapturedAudio | undefined> {
+    if (!loadSettings().saveAudio) {
+      this.pendingAudioData = null;
+      return undefined;
+    }
+
+    if (!this.pendingAudioData?.wavBuffer) {
+      await new Promise<void>((resolve) => {
+        const finish = () => {
+          clearTimeout(timeout);
+          this.audioWaiters.delete(finish);
+          resolve();
+        };
+        const timeout = setTimeout(finish, 1_500);
+        this.audioWaiters.add(finish);
+      });
+    }
+
+    const pending = this.pendingAudioData;
+    this.pendingAudioData = null;
+    return pending?.wavBuffer
+      ? { wavBuffer: pending.wavBuffer, ...(pending.duration !== undefined ? { duration: pending.duration } : {}) }
+      : undefined;
   }
 
 }

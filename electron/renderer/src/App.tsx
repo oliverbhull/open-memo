@@ -13,14 +13,12 @@ import type { MemoSttError, TranscriptionData } from '../../shared/electron-api'
 import './styles/glass.css';
 
 // Settings Icon Component
-const SettingsIcon: React.FC = () => {
+const SettingsIcon: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
   const { primary } = useTheme();
-  const [showSettings, setShowSettings] = useState(false);
 
   return (
-    <>
       <button
-        onClick={() => setShowSettings(true)}
+        onClick={onOpen}
         title="Settings"
         className="settings-icon"
         style={{
@@ -48,8 +46,6 @@ const SettingsIcon: React.FC = () => {
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
       </button>
-      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
-    </>
   );
 };
 
@@ -59,6 +55,7 @@ function App() {
   const [toast, setToast] = useState<ToastData | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   
   // Track if listeners are registered to prevent duplicates (especially in StrictMode)
   const listenersRegisteredRef = useRef(false);
@@ -85,6 +82,8 @@ function App() {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => window.electronAPI.onOpenSettings(() => setShowSettings(true)), []);
 
   // Notify the main process when audio input devices change (e.g. headphones plugged in/out)
   // so memo-stt can restart and open a stream to the new default input device.
@@ -200,6 +199,9 @@ function App() {
         if (!entry) throw new Error('Transcription did not contain a valid memo');
         setError(null); // Clear any previous errors
       } catch (err) {
+        if (data.id && data.audio) {
+          void window.electronAPI.audio.delete(data.id);
+        }
         logger.error('Failed to add entry:', err);
         setError('Failed to save entry');
       }
@@ -253,9 +255,10 @@ function App() {
         <GlassContainer>
           <div className="title-bar" style={{ paddingLeft: '78px' }}>
             <div className="title-bar-right">
-              <SettingsIcon />
+              <SettingsIcon onOpen={() => setShowSettings(true)} />
             </div>
           </div>
+          {showSettings && <Settings onClose={() => setShowSettings(false)} />}
           
           {displayError && (
             <div className="error-message">
