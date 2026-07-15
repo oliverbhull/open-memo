@@ -1,13 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { FeedEntryData } from '../components/FeedEntry';
 import { entryService } from '../services/EntryService';
-import { syncOrchestrator } from '../services/SyncOrchestrator';
 
 export function useEntries() {
   const [entries, setEntries] = useState<FeedEntryData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const [totalCount, setTotalCount] = useState(0);
   const mountedRef = useRef(true);
 
   // Initialize and load entries
@@ -26,11 +24,7 @@ export function useEntries() {
           setEntries(recentEntries);
         }
         
-        const count = await entryService.getTotalCount();
-        if (!abortController.signal.aborted && mountedRef.current) {
-          setTotalCount(count);
-          setLoading(false);
-        }
+        if (!abortController.signal.aborted && mountedRef.current) setLoading(false);
       } catch (err) {
         if (abortController.signal.aborted || !mountedRef.current) return;
         setError(err instanceof Error ? err : new Error('Failed to initialize'));
@@ -44,7 +38,6 @@ export function useEntries() {
     const handleEntryAdded = (entry: FeedEntryData) => {
       if (!abortController.signal.aborted && mountedRef.current) {
         setEntries(prev => [entry, ...prev]);
-        setTotalCount(prev => prev + 1);
       }
     };
 
@@ -73,7 +66,7 @@ export function useEntries() {
       return entry;
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to add entry'));
-      return null;
+      throw err;
     }
   }, []);
 
@@ -95,7 +88,6 @@ export function useEntries() {
       const success = await entryService.deleteEntry(id);
       if (success) {
         setEntries(prev => prev.filter(e => e.id !== id));
-        setTotalCount(prev => Math.max(0, prev - 1));
       }
       return success;
     } catch (err) {
@@ -104,42 +96,12 @@ export function useEntries() {
     }
   }, []);
 
-  // Refresh entries and trigger sync
-  const refresh = useCallback(async () => {
-    try {
-      // Trigger sync if connected
-      const isConnected = await syncOrchestrator.isConnected();
-      if (isConnected) {
-        try {
-          await syncOrchestrator.syncNow();
-        } catch (syncError) {
-          // Continue with reload even if sync fails
-          console.error('Error syncing on refresh:', syncError);
-        }
-      }
-      
-      // Reload entries from storage
-      await entryService.init();
-      const recentEntries = entryService.getRecentEntries();
-      setEntries(recentEntries);
-      
-      const count = await entryService.getTotalCount();
-      setTotalCount(count);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to refresh entries'));
-    }
-  }, []);
-
   return {
     entries,
     loading,
     error,
-    totalCount,
     addEntry,
     loadMore,
     deleteEntry,
-    refresh,
   };
 }
-
-

@@ -46,14 +46,15 @@ Open Memo is designed around local transcription. Dictation audio is processed o
 Prerequisites:
 
 - macOS.
-- Node.js 20+ and npm.
-- Rust 1.74+ and Cargo.
+- Node.js 22.12+ and npm.
+- Rust 1.85.1+ and Cargo.
 - Xcode Command Line Tools.
 
 ```bash
 git clone https://github.com/oliverbhull/open-memo.git
 cd open-memo
 npm install
+npm run check
 npm run dev
 ```
 
@@ -65,6 +66,8 @@ npm run build:dir
 ```
 
 `npm run dev` runs this STT build step automatically before starting Electron.
+
+`npm run export-memos` writes an atomic JSON backup to `~/Desktop/memo-full-export.json`. Quit any running Memo instance before exporting; set `MEMO_EXPORT_OUT` to choose another destination.
 
 `npm run build:dir` creates an unsigned app bundle for smoke testing. Maintainer signing and release notes live in [docs/maintainers/signing-and-release.md](docs/maintainers/signing-and-release.md).
 

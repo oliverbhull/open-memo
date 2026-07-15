@@ -1,24 +1,11 @@
-import { DB_NAME, DB_VERSION, STORE_NAME, StoredEntry, MemoEntry } from '../types/storage';
+import { DB_NAME, DB_VERSION, STORE_NAME, MemoEntry } from '../types/storage';
 import { logger } from '../utils/logger';
-import { getMigrationsToRun, migrations } from './migrations';
+import { getMigrationsToRun } from './migrations';
 import { getDeviceId } from './DeviceIdService';
-
-// Ensure storage API is available
-declare global {
-  interface Window {
-    electronAPI?: {
-      storage?: {
-        clearIndexedDB: () => Promise<boolean>;
-      };
-    };
-  }
-}
 
 export class StorageService {
   private db: IDBDatabase | null = null;
   private initPromise: Promise<void> | null = null;
-  private readonly isDev = process.env.NODE_ENV === 'development' || 
-                           (typeof window !== 'undefined' && window.location.hostname === 'localhost');
   private readonly MAX_RETRY_ATTEMPTS = 5;
   private readonly INITIAL_RETRY_DELAY = 100; // Start with 100ms
   private readonly MAX_RETRY_DELAY = 5000; // Cap at 5 seconds
@@ -26,21 +13,19 @@ export class StorageService {
   /**
    * Initialize the IndexedDB database with retry logic
    */
-  async init(attempt: number = 0): Promise<void> {
+  async init(): Promise<void> {
     if (this.db) {
       return;
     }
 
-    if (this.initPromise && attempt === 0) {
+    if (this.initPromise) {
       return this.initPromise;
     }
 
-    // If this is a retry, create a new promise
-    if (attempt > 0) {
+    this.initPromise = this.initWithRetry(0).catch((error) => {
       this.initPromise = null;
-    }
-
-    this.initPromise = this.initWithRetry(attempt);
+      throw error;
+    });
     return this.initPromise;
   }
 
@@ -54,7 +39,7 @@ export class StorageService {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isLockError = errorMessage.includes('LOCK') || 
                          errorMessage.includes('backing store') ||
-                         (error as any)?.name === 'UnknownError';
+                         (error instanceof DOMException && error.name === 'UnknownError');
       
       if (isLockError && attempt < this.MAX_RETRY_ATTEMPTS) {
         // Calculate exponential backoff delay
@@ -91,135 +76,16 @@ export class StorageService {
       request.onerror = () => {
         const error = request.error || new Error('Unknown IndexedDB error');
         const errorMessage = error.message || '';
-        const errorName = (error as any).name || '';
-        
+        const errorName = error.name || 'UnknownError';
+
         logger.error(`[StorageService] Failed to open IndexedDB:`, {
           name: errorName,
           message: errorMessage,
-          error: error
+          error,
         });
-        
-        // Check for corruption or LOCK file issues
-        const isCorruptionError = errorName === 'UnknownError' && 
-                                   (errorMessage.includes('backing store') || 
-                                    errorMessage.includes('LOCK'));
-        
-        if (isCorruptionError) {
-          logger.warn(`[StorageService] Detected database corruption/lock error, attempting recovery...`);
-          const isDev = process.env.NODE_ENV === 'development' || 
-                       (typeof window !== 'undefined' && window.location.hostname === 'localhost');
-          
-          logger.warn(`Database error detected${isDev ? ' (dev mode)' : ''}, attempting to clear...`);
-          
-          // Handle async clear operation
-          (async () => {
-            try {
-              // Use Electron's session API to clear IndexedDB (more powerful than deleteDatabase)
-              if (window.electronAPI?.storage?.clearIndexedDB) {
-                await window.electronAPI.storage.clearIndexedDB();
-                logger.info('IndexedDB cleared via session API, recreating...');
-                
-                // Wait longer in dev mode for file system operations
-                const waitTime = isDev ? 1000 : 200;
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-                
-                // Retry opening after clearing
-                const retryRequest = indexedDB.open(DB_NAME, DB_VERSION);
-                
-                retryRequest.onsuccess = () => {
-                  this.db = retryRequest.result;
-                  resolve();
-                };
-                
-                retryRequest.onerror = () => {
-                  const retryError = retryRequest.error;
-                  logger.error('Failed to recreate database after clear:', retryError);
-                  
-                  // In dev mode, if it still fails, suggest restarting
-                  if (isDev) {
-                    logger.warn('Database still corrupted after clear. In dev mode, try:');
-                    logger.warn('1. Close all instances of the app');
-                    logger.warn('2. Delete: ~/Library/Application Support/memo-web/IndexedDB');
-                    logger.warn('3. Restart the app');
-                  }
-                  
-                  reject(new Error('Failed to recreate database after clear. Please restart the app.'));
-                };
-                
-                retryRequest.onupgradeneeded = (event) => {
-                  const db = (event.target as IDBOpenDBRequest).result;
-                  const transaction = (event.target as IDBOpenDBRequest).transaction;
-                  const migrationsToRun = getMigrationsToRun(0, DB_VERSION);
-                  
-                  for (const migration of migrationsToRun) {
-                    if (transaction) {
-                      try {
-                        migration.migrate(db, transaction);
-                      } catch (migrationError) {
-                        logger.error(`Migration ${migration.version} failed:`, migrationError);
-                        // Continue with other migrations
-                      }
-                    }
-                  }
-                };
-                
-                return;
-              }
-            } catch (clearError) {
-              logger.error('Failed to clear IndexedDB via session API:', clearError);
-            }
-            
-            // Fallback: try deleteDatabase (may not work if database is too corrupted)
-            logger.warn('Falling back to deleteDatabase...');
-            const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
-            
-            deleteRequest.onsuccess = () => {
-              logger.info('Database deleted, recreating...');
-              // Retry opening after deletion
-              const retryRequest = indexedDB.open(DB_NAME, DB_VERSION);
-              
-              retryRequest.onsuccess = () => {
-                this.db = retryRequest.result;
-                resolve();
-              };
-              
-              retryRequest.onerror = () => {
-                logger.error('Failed to recreate database:', retryRequest.error);
-                reject(new Error('Failed to recreate database'));
-              };
-              
-              retryRequest.onupgradeneeded = (event) => {
-                const db = (event.target as IDBOpenDBRequest).result;
-                const transaction = (event.target as IDBOpenDBRequest).transaction;
-                const migrationsToRun = getMigrationsToRun(0, DB_VERSION);
-                
-                for (const migration of migrationsToRun) {
-                  if (transaction) {
-                    try {
-                      migration.migrate(db, transaction);
-                    } catch (migrationError) {
-                      logger.error(`Migration ${migration.version} failed:`, migrationError);
-                    }
-                  }
-                }
-              };
-            };
-            
-            deleteRequest.onerror = () => {
-              logger.error('Failed to delete corrupted database:', deleteRequest.error);
-              reject(new Error('Database is corrupted. Please restart the app to clear it automatically.'));
-            };
-            
-            deleteRequest.onblocked = () => {
-              logger.warn('Database deletion blocked, please close other tabs/windows');
-              reject(new Error('Database deletion blocked'));
-            };
-          })();
-          
-          return;
-        }
-        
-        // Reject with error that will trigger retry logic if it's a lock error
+
+        // Never delete user data automatically. Lock errors are retried by
+        // initWithRetry; all other failures are surfaced to the UI.
         const isLockError = errorMessage.includes('LOCK') || 
                            errorMessage.includes('backing store');
         if (isLockError) {
@@ -249,7 +115,10 @@ export class StorageService {
           await this.migrateDataIfNeeded();
         } catch (error) {
           logger.error('[StorageService] Data migration failed:', error);
-          // Don't reject - schema is upgraded, data migration can retry later
+          this.db.close();
+          this.db = null;
+          reject(error);
+          return;
         }
         
         resolve();
@@ -277,6 +146,7 @@ export class StorageService {
           }
         } catch (error) {
           logger.error('[StorageService] Migration failed:', error);
+          (event.target as IDBOpenDBRequest).transaction?.abort();
           reject(error);
         }
       };
@@ -325,37 +195,12 @@ export class StorageService {
       
       const request = store.put(entryToSave);
 
-      request.onsuccess = () => resolve();
       request.onerror = () => {
         logger.error('[StorageService] Failed to save entry:', request.error);
-        reject(new Error('Failed to save entry'));
       };
-    });
-  }
-
-  /**
-   * Get an entry by ID
-   */
-  async getEntry(id: string): Promise<MemoEntry | null> {
-    const db = await this.ensureInit();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.get(id);
-
-      request.onsuccess = () => {
-        const entry = request.result as MemoEntry | undefined;
-        // Don't return deleted entries
-        if (entry && !entry.deletedAt) {
-          resolve(entry);
-        } else {
-          resolve(null);
-        }
-      };
-      request.onerror = () => {
-        logger.error('[StorageService] Failed to get entry:', request.error);
-        reject(new Error('Failed to get entry'));
-      };
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error('Failed to save entry'));
+      transaction.onabort = () => reject(transaction.error || new Error('Save transaction was aborted'));
     });
   }
 
@@ -450,24 +295,6 @@ export class StorageService {
   }
 
   /**
-   * Get total count of entries
-   */
-  async getEntryCount(): Promise<number> {
-    const db = await this.ensureInit();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.count();
-
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => {
-        logger.error('[StorageService] Failed to get entry count:', request.error);
-        reject(new Error('Failed to get entry count'));
-      };
-    });
-  }
-
-  /**
    * Delete an entry by ID
    */
   async deleteEntry(id: string): Promise<void> {
@@ -475,31 +302,11 @@ export class StorageService {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([STORE_NAME], 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
-      const request = store.delete(id);
+      store.delete(id);
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => {
-        logger.error('[StorageService] Failed to delete entry:', request.error);
-        reject(new Error('Failed to delete entry'));
-      };
-    });
-  }
-
-  /**
-   * Clear all entries (use with caution)
-   */
-  async clearAll(): Promise<void> {
-    const db = await this.ensureInit();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.clear();
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => {
-        logger.error('[StorageService] Failed to clear entries:', request.error);
-        reject(new Error('Failed to clear entries'));
-      };
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error('Failed to delete entry'));
+      transaction.onabort = () => reject(transaction.error || new Error('Delete transaction was aborted'));
     });
   }
 
@@ -512,22 +319,20 @@ export class StorageService {
       return;
     }
 
+    const deviceId = await getDeviceId();
+
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
       const getAllRequest = store.getAll();
 
-      getAllRequest.onsuccess = async () => {
-        const entries = getAllRequest.result;
-        const needsMigration = entries.some((e: any) => !e.deviceId);
+      getAllRequest.onsuccess = () => {
+        const entries = getAllRequest.result as Array<Record<string, unknown>>;
+        const needsMigration = entries.some((entry) => !entry.deviceId);
         
-        if (!needsMigration) {
-          resolve();
-          return;
-        }
+        if (!needsMigration) return;
 
         logger.info(`[StorageService] Migrating ${entries.length} entries to new schema`);
-        const deviceId = await getDeviceId();
         const now = Date.now();
 
         for (const entry of entries) {
@@ -537,11 +342,11 @@ export class StorageService {
           }
 
           const migratedEntry: MemoEntry = {
-            id: entry.id,
+            id: String(entry.id),
             deviceId,
-            text: entry.text,
-            createdAt: entry.timestamp || now,
-            updatedAt: entry.timestamp || now,
+            text: typeof entry.text === 'string' ? entry.text : '',
+            createdAt: typeof entry.timestamp === 'number' ? entry.timestamp : now,
+            updatedAt: typeof entry.timestamp === 'number' ? entry.timestamp : now,
             deletedAt: undefined,
             context: {
               source: 'desktop',
@@ -553,19 +358,18 @@ export class StorageService {
 
           store.put(migratedEntry);
         }
-
-        resolve();
       };
 
       getAllRequest.onerror = () => {
         logger.error('[StorageService] Failed to migrate data:', getAllRequest.error);
-        reject(getAllRequest.error);
+        transaction.abort();
       };
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error('Migration failed'));
+      transaction.onabort = () => reject(transaction.error || new Error('Migration was aborted'));
     });
   }
 }
 
 // Singleton instance
 export const storageService = new StorageService();
-
-

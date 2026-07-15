@@ -1,5 +1,3 @@
-import React from 'react';
-
 interface KeyboardKeyProps {
   label: string;
   size?: 'small' | 'medium' | 'large';

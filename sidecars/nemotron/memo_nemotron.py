@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 
 _LANG_TAG = re.compile(r"<[a-z]{2}(?:-[A-Z]{2})?>")
+_MAX_AUDIO_MESSAGE_BYTES = 2 * 1024 * 1024
 
 
 def log(message: str) -> None:
@@ -29,7 +30,14 @@ def emit(prefix: str, text: str) -> None:
 
 
 def decode_pcm(message: dict) -> np.ndarray:
-    raw = base64.b64decode(message["pcm16le"])
+    encoded = message.get("pcm16le")
+    if not isinstance(encoded, str):
+        raise ValueError("audio event requires a base64 pcm16le string")
+    raw = base64.b64decode(encoded, validate=True)
+    if len(raw) > _MAX_AUDIO_MESSAGE_BYTES:
+        raise ValueError("audio event exceeds the 2 MiB limit")
+    if len(raw) % 2:
+        raise ValueError("pcm16le audio must contain complete 16-bit samples")
     return np.frombuffer(raw, dtype="<i2")
 
 
@@ -47,9 +55,11 @@ class OnnxGenAIModel:
         config_path = model_dir / "genai_config.json"
         if config_path.exists():
             data = json.loads(config_path.read_text())
-            self.chunk_samples = int(
+            configured_chunk_samples = int(
                 data.get("model", {}).get("chunk_samples", self.chunk_samples)
             )
+            if 160 <= configured_chunk_samples <= 160_000:
+                self.chunk_samples = configured_chunk_samples
 
     def new_session(self) -> "OnnxStreamingSession":
         return OnnxStreamingSession(self)

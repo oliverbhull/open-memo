@@ -1,6 +1,6 @@
 /**
  * Device ID service - generates and persists a unique device identifier
- * Used for sync conflict resolution
+ * Stored with entries so exports retain their source device.
  */
 
 const DEVICE_ID_KEY = 'memo-device-id';
@@ -26,4 +26,3 @@ export async function getDeviceId(): Promise<string> {
   localStorage.setItem(DEVICE_ID_KEY, deviceId);
   return deviceId;
 }
-

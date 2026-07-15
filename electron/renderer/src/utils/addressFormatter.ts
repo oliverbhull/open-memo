@@ -1,12 +1,12 @@
-interface LocationData {
-  lat: number;
-  lng: number;
+export interface LocationData {
+  lat?: number;
+  lng?: number;
   street?: string;
   neighborhood?: string;
   city?: string;
   state?: string;
   country?: string;
-  formattedAddress: string;
+  formattedAddress?: string;
 }
 
 export function formatAddress(location: LocationData): string {
@@ -33,10 +33,8 @@ export function formatAddress(location: LocationData): string {
   }
 
   if (parts.length === 0) {
-    return 'Unknown Location';
+    return location.formattedAddress?.trim() || 'Unknown Location';
   }
 
   return parts.join(', ');
 }
-
-

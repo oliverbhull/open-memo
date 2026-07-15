@@ -1,24 +1,26 @@
-import { format, isToday, isYesterday, formatDistanceToNow } from 'date-fns';
+const timeFormatter = new Intl.DateTimeFormat(undefined, {
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
+function startOfDay(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
 
 export function formatTimestamp(timestamp: number): string {
   const date = new Date(timestamp);
-  const now = new Date();
+  if (!Number.isFinite(date.getTime())) return 'Unknown time';
 
-  if (isToday(date)) {
-    // Today: "2:34 PM"
-    return format(date, 'h:mm a');
-  } else if (isYesterday(date)) {
-    // Yesterday: "Yesterday 3:15 PM"
-    return `Yesterday ${format(date, 'h:mm a')}`;
-  } else {
-    // Older: "Dec 20, 2024 10:30 AM"
-    return format(date, 'MMM d, yyyy h:mm a');
-  }
+  const dayDifference = Math.round((startOfDay(new Date()) - startOfDay(date)) / 86_400_000);
+  if (dayDifference === 0) return timeFormatter.format(date);
+  if (dayDifference === 1) return `Yesterday ${timeFormatter.format(date)}`;
+  return dateTimeFormatter.format(date);
 }
-
-export function formatTimestampRelative(timestamp: number): string {
-  const date = new Date(timestamp);
-  return formatDistanceToNow(date, { addSuffix: true });
-}
-
-

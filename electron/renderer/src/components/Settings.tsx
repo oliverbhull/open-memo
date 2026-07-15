@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { QRCodeDisplay } from './QRCodeDisplay';
-import { syncOrchestrator, SyncStatus } from '../services/SyncOrchestrator';
-import { createPortal } from 'react-dom';
 import { VoiceCommandSettings, AppConfig, AppCommand } from './VoiceCommandSettings';
 import { hexToHsl, hslToHex } from '../utils/colorUtils';
 import { storageService } from '../services/StorageService';
+import type { PhraseReplacementRule } from '../../../shared/electron-api';
 import '../styles/glass.css';
 import '../styles/color-picker.css';
 
@@ -13,18 +11,8 @@ interface SettingsProps {
   onClose: () => void;
 }
 
-interface PhraseReplacementRule {
-  id: string;
-  find: string;
-  replace: string;
-  enabled?: boolean;
-}
-
 export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const { primary, setPrimary } = useTheme();
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
-  const [showSyncQR, setShowSyncQR] = useState(false);
-  const [connectionInfo, setConnectionInfo] = useState<{ ip: string; port: number; token: string } | null>(null);
   const [voiceCommandsEnabled, setVoiceCommandsEnabled] = useState(false);
   const [voiceCommandApps, setVoiceCommandApps] = useState<AppConfig[]>([]);
   const [globalCommands, setGlobalCommands] = useState<AppCommand[]>([]);
@@ -32,7 +20,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [connectedDeviceName, setConnectedDeviceName] = useState<string | null>(null);
-  const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [pressEnterAfterPaste, setPressEnterAfterPaste] = useState(false);
   const [pushToTalkMode, setPushToTalkMode] = useState(false);
@@ -63,7 +51,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
         console.log('[Settings] Loaded connection state:', state);
         setIsConnected(state.connected);
         setConnectedDeviceName(state.deviceName);
-        setBatteryLevel(state.batteryLevel ?? null);
         // Always set deviceUid if available (for display in input field)
         if (state.deviceUid) {
           setDeviceUid(state.deviceUid);
@@ -89,23 +76,18 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       );
     });
     
-    // Also refresh state periodically (every 2 seconds) to catch any missed updates
-    const refreshInterval = setInterval(() => {
-      loadConnectionState();
-    }, 2000);
-    
     // Listen for connection changes - this will update UI in real-time
     const unsubscribeConnection = window.electronAPI.device.onConnectionChanged((state) => {
       console.log('[Settings] Connection changed event received:', state);
       setIsConnected(state.connected);
       setConnectedDeviceName(state.deviceName);
-      setBatteryLevel(state.batteryLevel ?? null);
       // Always update deviceUid if provided
       if (state.deviceUid) {
         setDeviceUid(state.deviceUid);
       }
       // Clear connecting state when device is actually connected
       if (state.connected) {
+        setConnectionError(null);
         setIsConnecting(false);
         // Clear any pending timeout
         if (connectTimeoutRef.current) {
@@ -117,7 +99,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     
     return () => {
       unsubscribeConnection();
-      clearInterval(refreshInterval);
       // Clean up any pending connection timeout
       if (connectTimeoutRef.current) {
         clearTimeout(connectTimeoutRef.current);
@@ -169,31 +150,23 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   };
 
   const commitPhraseFindBlur = async (id: string) => {
-    let next: PhraseReplacementRule[] = [];
-    setPhraseReplacementRules((prev) => {
-      const row = prev.find((r) => r.id === id);
-      if (!row) {
-        next = prev;
-        return prev;
-      }
-      const trimmed = row.find.trim();
-      next = !trimmed ? prev.filter((r) => r.id !== id) : prev.map((r) => (r.id === id ? { ...r, find: trimmed } : r));
-      return next;
-    });
+    const row = phraseReplacementRules.find((rule) => rule.id === id);
+    if (!row) return;
+    const trimmed = row.find.trim();
+    const next = !trimmed
+      ? phraseReplacementRules.filter((rule) => rule.id !== id)
+      : phraseReplacementRules.map((rule) => rule.id === id ? { ...rule, find: trimmed } : rule);
+    setPhraseReplacementRules(next);
     await persistPhraseRulesToDisk(next);
   };
 
   const commitPhraseReplaceBlur = async (id: string) => {
-    let next: PhraseReplacementRule[] = [];
-    setPhraseReplacementRules((prev) => {
-      const row = prev.find((r) => r.id === id);
-      if (!row) {
-        next = prev;
-        return prev;
-      }
-      next = prev.map((r) => (r.id === id ? { ...r, replace: row.replace } : r));
-      return next;
-    });
+    const row = phraseReplacementRules.find((rule) => rule.id === id);
+    if (!row) return;
+    const next = phraseReplacementRules.map((rule) =>
+      rule.id === id ? { ...rule, replace: row.replace } : rule
+    );
+    setPhraseReplacementRules(next);
     await persistPhraseRulesToDisk(next);
   };
 
@@ -211,7 +184,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     await persistVocabWords(next);
   };
 
-  // Sync color bar state from primary
+  // Keep the color bar state aligned with the active theme.
   useEffect(() => {
     if (primary) {
       const [h, s, l] = hexToHsl(primary);
@@ -295,39 +268,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     });
   };
 
-  // Monitor sync status
-  useEffect(() => {
-    syncOrchestrator.getStatus().then(setSyncStatus);
-
-    const unsubscribe = syncOrchestrator.onStatusChange((newStatus) => {
-      setSyncStatus(newStatus);
-      if (newStatus === 'listening') {
-        syncOrchestrator.getConnectionInfo().then((info) => {
-          if (info) {
-            setConnectionInfo(info);
-            setShowSyncQR(true);
-          }
-        });
-      } else if (newStatus === 'connected' || newStatus === 'idle') {
-        setShowSyncQR(false);
-        if (newStatus === 'idle') {
-          setConnectionInfo(null);
-        }
-      }
-    });
-
-    return unsubscribe;
-  }, []);
-
-  const handleStopSync = useCallback(async () => {
-    await syncOrchestrator.stopListening();
-    setShowSyncQR(false);
-    setConnectionInfo(null);
-  }, []);
-
   const handleConnect = async () => {
     if (!deviceUid || deviceUid.length !== 5) {
-      alert('Please enter a 5-digit UID');
+      setConnectionError('Enter a 5-digit UID.');
       return;
     }
     
@@ -338,12 +281,13 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     }
     
     setIsConnecting(true);
+    setConnectionError(null);
     
     // Set a timeout to clear connecting state if connection takes too long (30 seconds)
     connectTimeoutRef.current = setTimeout(() => {
       setIsConnecting(false);
       connectTimeoutRef.current = null;
-      alert('Connection timed out. Please try again.');
+      setConnectionError('Connection timed out. Try again.');
     }, 30000);
     
     try {
@@ -354,7 +298,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
           connectTimeoutRef.current = null;
         }
         setIsConnecting(false);
-        alert(`Failed to connect: ${result.error || 'Unknown error'}`);
+        setConnectionError(result.error || 'Could not connect to the device.');
         return;
       }
       // Connection state will be updated via connectionChanged event
@@ -367,7 +311,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       }
       setIsConnecting(false);
       console.error('Failed to connect:', error);
-      alert('Failed to connect to device');
+      setConnectionError('Could not connect to the device.');
     }
     // Note: We don't clear isConnecting here - it will be cleared when
     // the connectionChanged event fires with connected: true, or on timeout/error above
@@ -380,11 +324,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       if (result.success) {
         setIsConnected(false);
         setConnectedDeviceName(null);
+        setConnectionError(null);
       } else {
         console.error('Failed to disconnect:', result.error);
+        setConnectionError(result.error || 'Could not disconnect from the device.');
       }
     } catch (error) {
       console.error('Failed to disconnect:', error);
+      setConnectionError('Could not disconnect from the device.');
     } finally {
       setIsDisconnecting(false);
     }
@@ -397,11 +344,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
         setDeviceUid('');
         setConnectedDeviceName(null);
         setIsConnected(false);
+        setConnectionError(null);
       } else {
         console.error('Failed to reset saved device:', result.error);
+        setConnectionError(result.error || 'Could not reset the saved device.');
       }
     } catch (error) {
       console.error('Failed to reset saved device:', error);
+      setConnectionError('Could not reset the saved device.');
     }
   };
 
@@ -922,11 +872,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               )}
             </div>
 
-            {/* Bluetooth (collapsed by default) */}
-            <div style={{
-              display: 'none',
-            }} />
-
             <div className="settings-section">
               <button
                 type="button"
@@ -1065,6 +1010,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       </div>
                     </>
                   )}
+                  {connectionError && (
+                    <div role="alert" style={{ marginTop: '6px', color: '#ff8a8a', fontSize: '11px' }}>
+                      {connectionError}
+                    </div>
+                  )}
 
                   <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.08)', margin: '10px 0' }} />
 
@@ -1154,46 +1104,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
         </div>
       </div>
 
-      {/* QR Code Modal Portal */}
-      {showSyncQR && connectionInfo && createPortal(
-        <>
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0, 0, 0, 0.95)',
-              backdropFilter: 'blur(20px)',
-              zIndex: 999999,
-            }}
-            onClick={handleStopSync}
-          />
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 1000000,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              pointerEvents: 'none',
-            }}
-          >
-            <div style={{ pointerEvents: 'auto' }}>
-              <QRCodeDisplay
-                connectionInfo={connectionInfo}
-                onClose={handleStopSync}
-              />
-            </div>
-          </div>
-        </>,
-        document.body
-      )}
     </>
   );
 };

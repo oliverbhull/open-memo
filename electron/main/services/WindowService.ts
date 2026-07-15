@@ -2,6 +2,7 @@ import { app, BrowserWindow, screen } from 'electron';
 import type { Display } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 let overlayWindow: BrowserWindow | null = null;
 let overlayRecordingState = false; // Track last recording state to prevent unnecessary updates
@@ -90,14 +91,19 @@ export function createOverlayWindow() {
     show: false, // Create hidden, we'll show it inactive later
     backgroundColor: '#00000000', // Transparent - will be styled by HTML
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      preload: app.isPackaged
+        ? path.join(app.getAppPath(), 'dist', 'overlay-preload.cjs')
+        : path.join(process.cwd(), 'dist', 'overlay-preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
       webSecurity: true,
       backgroundThrottling: false,
     },
   });
   
   overlayWindow = newOverlayWindow;
+  newOverlayWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   newOverlayWindow.setBackgroundColor('#00000000');
   newOverlayWindow.setHasShadow(false);
   
@@ -124,6 +130,10 @@ export function createOverlayWindow() {
   }) || overlayHtmlDev;
   
   console.log('[Overlay] Loading overlay HTML from:', overlayHtmlPath);
+  const overlayUrl = pathToFileURL(overlayHtmlPath).toString();
+  newOverlayWindow.webContents.on('will-navigate', (event, targetUrl) => {
+    if (targetUrl !== overlayUrl) event.preventDefault();
+  });
   newOverlayWindow.loadFile(overlayHtmlPath).catch(err => {
     console.error('[Overlay] Failed to load overlay HTML:', err);
     console.error('[Overlay] Tried paths:', overlayHtmlPaths);
@@ -297,4 +307,3 @@ export function sendCommandToOverlay(label: string, mainWindow: BrowserWindow | 
 export function getOverlayWindow(): BrowserWindow | null {
   return overlayWindow;
 }
-

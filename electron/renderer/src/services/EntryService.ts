@@ -1,36 +1,40 @@
-import { v4 as uuidv4 } from 'uuid';
 import { FeedEntryData } from '../components/FeedEntry';
 import { storageService } from './StorageService';
-import { createValidEntry, isValidEntry, convertToMemoEntry, convertToFeedEntry } from '../utils/validation';
+import { createValidEntry, convertToMemoEntry, convertToFeedEntry } from '../utils/validation';
 import { getDeviceId } from './DeviceIdService';
 import { logger } from '../utils/logger';
 
-// Simple EventEmitter for browser environment
+interface EntryEventMap {
+  initialized: [];
+  error: [unknown];
+  entriesLoaded: [FeedEntryData[]];
+  entryAdded: [FeedEntryData];
+  moreEntriesLoaded: [FeedEntryData[]];
+  entryDeleted: [string];
+}
+
+type EntryEvent = keyof EntryEventMap;
+type StoredListener = (...args: never[]) => void;
+
+// Minimal typed event emitter for the browser environment.
 class EventEmitter {
-  private listeners: Map<string, Function[]> = new Map();
+  private listeners = new Map<EntryEvent, Set<StoredListener>>();
 
-  on(event: string, callback: Function) {
+  on<Event extends EntryEvent>(event: Event, callback: (...args: EntryEventMap[Event]) => void): void {
     if (!this.listeners.has(event)) {
-      this.listeners.set(event, []);
+      this.listeners.set(event, new Set());
     }
-    this.listeners.get(event)!.push(callback);
+    this.listeners.get(event)!.add(callback as StoredListener);
   }
 
-  off(event: string, callback: Function) {
-    const callbacks = this.listeners.get(event);
-    if (callbacks) {
-      const index = callbacks.indexOf(callback);
-      if (index > -1) {
-        callbacks.splice(index, 1);
-      }
-    }
+  off<Event extends EntryEvent>(event: Event, callback: (...args: EntryEventMap[Event]) => void): void {
+    this.listeners.get(event)?.delete(callback as StoredListener);
   }
 
-  emit(event: string, ...args: any[]) {
-    const callbacks = this.listeners.get(event);
-    if (callbacks) {
-      callbacks.forEach(callback => callback(...args));
-    }
+  emit<Event extends EntryEvent>(event: Event, ...args: EntryEventMap[Event]): void {
+    this.listeners.get(event)?.forEach((callback) => {
+      (callback as (...values: EntryEventMap[Event]) => void)(...args);
+    });
   }
 }
 
@@ -85,6 +89,7 @@ export class EntryService extends EventEmitter {
     } catch (error) {
       logger.error('Failed to load recent entries:', error);
       this.emit('error', error);
+      throw error;
     }
   }
 
@@ -105,7 +110,10 @@ export class EntryService extends EventEmitter {
     }
 
     // Use provided ID if available (from main process), otherwise generate one
-    const id = (data as any)?.id || uuidv4();
+    const suppliedId = typeof data === 'object' && data !== null && 'id' in data
+      ? (data as { id?: unknown }).id
+      : undefined;
+    const id = typeof suppliedId === 'string' && suppliedId ? suppliedId : crypto.randomUUID();
     const feedEntry = createValidEntry(data, id);
 
     if (!feedEntry) {
@@ -115,7 +123,7 @@ export class EntryService extends EventEmitter {
     try {
       // Convert to MemoEntry and save to IndexedDB
       const deviceId = await getDeviceId();
-      const memoEntry = await convertToMemoEntry(feedEntry, deviceId);
+      const memoEntry = convertToMemoEntry(feedEntry, deviceId);
       await storageService.saveEntry(memoEntry);
 
       // Add to recent entries cache (at the beginning)
@@ -131,7 +139,7 @@ export class EntryService extends EventEmitter {
     } catch (error) {
       logger.error('Failed to add entry:', error);
       this.emit('error', error);
-      return null;
+      throw error;
     }
   }
 
@@ -157,24 +165,7 @@ export class EntryService extends EventEmitter {
     } catch (error) {
       logger.error('Failed to load more entries:', error);
       this.emit('error', error);
-      return [];
-    }
-  }
-
-  /**
-   * Get total entry count
-   */
-  async getTotalCount(): Promise<number> {
-    // Ensure initialization is complete (handles concurrent calls)
-    if (!this.initialized) {
-      await this.init();
-    }
-
-    try {
-      return await storageService.getEntryCount();
-    } catch (error) {
-      logger.error('Failed to get entry count:', error);
-      return this.recentEntries.length;
+      throw error;
     }
   }
 
@@ -198,99 +189,11 @@ export class EntryService extends EventEmitter {
     } catch (error) {
       logger.error('Failed to delete entry:', error);
       this.emit('error', error);
-      return false;
+      throw error;
     }
   }
 
-  /**
-   * Get an entry by ID
-   */
-  async getEntry(id: string): Promise<FeedEntryData | null> {
-    // Ensure initialization is complete (handles concurrent calls)
-    if (!this.initialized) {
-      await this.init();
-    }
-
-    // Check cache first
-    const cached = this.recentEntries.find(e => e.id === id);
-    if (cached) {
-      return cached;
-    }
-
-    // Load from storage
-    try {
-      const memoEntry = await storageService.getEntry(id);
-      return memoEntry ? convertToFeedEntry(memoEntry) : null;
-    } catch (error) {
-      logger.error('Failed to get entry:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Add or update an entry from sync (used by SyncService)
-   * This bypasses the normal addEntry flow but still updates cache and emits events
-   */
-  addEntryFromSync(memoEntry: MemoEntry, isNew: boolean): void {
-    // Ensure initialization is complete
-    if (!this.initialized) {
-      // If not initialized, queue this for later or initialize synchronously
-      // For now, we'll just log a warning and return
-      logger.warn('[EntryService] Cannot add entry from sync: service not initialized');
-      return;
-    }
-
-    try {
-      // Convert MemoEntry to FeedEntryData
-      const feedEntry = convertToFeedEntry(memoEntry);
-
-      if (isNew) {
-        // New entry: add to beginning of cache
-        // Remove existing entry with same ID if present (shouldn't happen for new entries)
-        this.recentEntries = this.recentEntries.filter(e => e.id !== feedEntry.id);
-        this.recentEntries.unshift(feedEntry);
-
-        // Keep cache size reasonable
-        if (this.recentEntries.length > 200) {
-          this.recentEntries = this.recentEntries.slice(0, 200);
-        }
-
-        // Emit event for UI to update
-        this.emit('entryAdded', feedEntry);
-        logger.info('[EntryService] Added entry from sync:', feedEntry.id);
-      } else {
-        // Updated entry: update in cache if present
-        const existingIndex = this.recentEntries.findIndex(e => e.id === feedEntry.id);
-        if (existingIndex >= 0) {
-          // Update existing entry in cache
-          this.recentEntries[existingIndex] = feedEntry;
-          // Re-sort to maintain newest-first order (in case updatedAt changed)
-          this.recentEntries.sort((a, b) => {
-            const timeA = a.createdAt || a.timestamp;
-            const timeB = b.createdAt || b.timestamp;
-            return timeB - timeA;
-          });
-          logger.info('[EntryService] Updated entry from sync:', feedEntry.id);
-        } else {
-          // Entry not in cache but was updated - add it if it's recent enough
-          // Only add if it's within the first 200 entries by timestamp
-          this.recentEntries.unshift(feedEntry);
-          if (this.recentEntries.length > 200) {
-            this.recentEntries = this.recentEntries.slice(0, 200);
-          }
-          logger.info('[EntryService] Added updated entry from sync to cache:', feedEntry.id);
-        }
-        // Emit entryAdded event even for updates so UI refreshes
-        // The UI will handle deduplication
-        this.emit('entryAdded', feedEntry);
-      }
-    } catch (error) {
-      logger.error('[EntryService] Failed to add entry from sync:', error);
-    }
-  }
 }
 
 // Singleton instance
 export const entryService = new EntryService();
-
-

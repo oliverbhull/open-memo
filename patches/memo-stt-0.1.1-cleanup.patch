@@ -1,0 +1,95 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -265,7 +265,7 @@ fn select_input_config(
+ ) -> Result<cpal::SupportedStreamConfig, Box<dyn std::error::Error>> {
+     use cpal::SampleRate;
+     let default = device.default_input_config()?;
+-    let Ok(mut configs) = device.supported_input_configs() else {
++    let Ok(configs) = device.supported_input_configs() else {
+         return Ok(default);
+     };
+     let candidates: Vec<cpal::SupportedStreamConfigRange> = configs.collect();
+diff --git a/src/ble.rs b/src/ble.rs
+--- a/src/ble.rs
++++ b/src/ble.rs
+@@ -14,7 +14,6 @@ use std::time::Duration;
+ use uuid::Uuid;
+
+ const DEVICE_NAME_PATTERN: &str = "memo_";
+-const DEVICE_ADDRESS: &str = "64D5A7E1-B149-191F-9B11-96F5CCF590BF"; // From memory
+ const SCAN_TIMEOUT: Duration = Duration::from_secs(30);
+
+ // Service and characteristic UUIDs (from firmware bluetooth.c)
+@@ -64,6 +63,7 @@ impl BleAudioReceiver {
+
+     /// Scan for memo devices matching a specific UID pattern
+     /// Outputs DEVICE_FOUND events to stdout for Electron to consume
++    #[allow(dead_code)]
+     pub async fn scan_for_uid(&self, uid: &str) -> Result<()> {
+         info!("Scanning for memo device with UID: {}", uid);
+         println!("SCAN_STARTED:{}", uid);
+@@ -409,6 +409,7 @@ impl BleAudioReceiver {
+     /// Connect in trigger-only mode (only subscribes to Control TX, not Audio Data)
+     /// This allows using BLE device as a remote trigger while audio comes from system mic
+     /// If preferred_device_name is provided, it will be prioritized during scanning
++    #[allow(dead_code)]
+     pub async fn connect_trigger_only(
+         &mut self,
+         preferred_device_name: Option<&str>,
+diff --git a/src/opus_decoder.rs b/src/opus_decoder.rs
+--- a/src/opus_decoder.rs
++++ b/src/opus_decoder.rs
+@@ -14,7 +14,6 @@ use log::{debug, warn};
+ /// Frame size is 320 samples (20ms at 16kHz); must match firmware encoder.
+ pub struct OpusDecoder {
+     decoder: Decoder,
+-    sample_rate: u32,
+     /// 320 samples = 20ms at 16kHz (must match firmware)
+     frame_size_samples: usize,
+ }
+@@ -43,7 +42,6 @@ impl OpusDecoder {
+
+         Ok(Self {
+             decoder,
+-            sample_rate,
+             frame_size_samples,
+         })
+     }
+@@ -182,18 +180,12 @@ impl OpusDecoder {
+         let mut bundle_pcm = self.decode_bundle(bundle_data)?;
+         fec_pcm.append(&mut bundle_pcm);
+         Ok(fec_pcm)
+-    }
+-
+-    /// Get the frame size in samples
+-    pub fn frame_size_samples(&self) -> usize {
+-        self.frame_size_samples
+     }
+ }
+
+ /// Opus encoder wrapper
+ pub struct OpusEncoder {
+     encoder: Encoder,
+-    sample_rate: u32,
+     frame_size_samples: usize,
+ }
+
+@@ -234,7 +226,6 @@ impl OpusEncoder {
+
+         Ok(Self {
+             encoder,
+-            sample_rate,
+             frame_size_samples,
+         })
+     }
+@@ -313,9 +304,4 @@ impl OpusEncoder {
+         );
+         Ok(opus_data)
+     }
+-
+-    /// Get the frame size in samples
+-    pub fn frame_size_samples(&self) -> usize {
+-        self.frame_size_samples
+-    }
+ }

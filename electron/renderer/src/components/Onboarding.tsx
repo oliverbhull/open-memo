@@ -1,28 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { GlassContainer } from './GlassContainer';
 import { useTheme } from '../context/ThemeContext';
 import { KeyboardKey } from './KeyboardKey';
 import titleLogo from '../assets/title.png';
 import './Onboarding.css';
-
-declare global {
-  interface Window {
-    electronAPI: {
-      checkMicrophonePermission: () => Promise<boolean>;
-      requestMicrophonePermission: () => Promise<boolean>;
-      checkInputMonitoringPermission: () => Promise<boolean>;
-      openInputMonitoringPreferences: () => Promise<void>;
-      checkAccessibilityPermission: () => Promise<boolean>;
-      openSystemPreferences: () => Promise<void>;
-      restartApp: () => Promise<void>;
-      startMemoSttService: () => Promise<void>;
-      saveUserName: (name: string) => Promise<void>;
-      getUserName: () => Promise<string | null>;
-      isUserOnboarded: (userName: string) => Promise<boolean>;
-      markUserOnboarded: (userName: string) => Promise<void>;
-    };
-  }
-}
 
 type OnboardingStep = 'name' | 'welcome' | 'microphone' | 'inputMonitoring' | 'accessibility' | 'ready';
 
@@ -52,7 +33,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   const [welcomeName, setWelcomeName] = useState('');
   const [tryItText, setTryItText] = useState('');
 
-  // Load saved name if exists and handle ready step
+  // Load a partially completed name once.
   useEffect(() => {
     if (window.electronAPI?.getUserName) {
       window.electronAPI.getUserName().then((savedName) => {
@@ -61,7 +42,10 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         }
       });
     }
-    
+  }, []);
+
+  // Resume at the ready step after the permission-triggered restart.
+  useEffect(() => {
     // Check if we should show ready step after restart
     // This is a backup check in case the initial step check didn't catch it
     const showReadyStep = localStorage.getItem('show_ready_step');
@@ -129,6 +113,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       // Reset when leaving input monitoring step
       setInputMonitoringPermissionGranted(false);
     }
+    return undefined;
   }, [step]);
 
   // Check accessibility permission when on accessibility step
@@ -153,6 +138,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       // Reset when leaving accessibility step
       setAccessibilityPermissionGranted(false);
     }
+    return undefined;
   }, [step]);
 
   // Capitalize name properly (title case)
@@ -169,12 +155,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     if (trimmedName && window.electronAPI?.saveUserName) {
       const capitalizedName = capitalizeName(trimmedName);
       await window.electronAPI.saveUserName(capitalizedName);
-      
-      // Mark user as onboarded when they complete name step (unless memodev)
-      if (window.electronAPI?.markUserOnboarded) {
-        await window.electronAPI.markUserOnboarded(capitalizedName);
-      }
-      
+
       // Show welcome step
       setWelcomeName(capitalizedName);
       setStep('welcome');
@@ -190,15 +171,11 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   };
 
   const handleSkipName = async () => {
-    // Even when skipping, if there's a name entered, save it and mark as onboarded
+    // Preserve a partially entered name, but only mark onboarding complete at the final step.
     const trimmedName = name.trim();
     if (trimmedName && window.electronAPI?.saveUserName) {
       const capitalizedName = capitalizeName(trimmedName);
       await window.electronAPI.saveUserName(capitalizedName);
-      // Mark as onboarded unless it's memodev
-      if (window.electronAPI?.markUserOnboarded) {
-        await window.electronAPI.markUserOnboarded(capitalizedName);
-      }
     }
     setStep('microphone');
   };
@@ -253,17 +230,10 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   };
 
   const handleCompleteOnboarding = async () => {
-    // Mark user as onboarded (unless it's memodev)
     const trimmedName = name.trim();
-    if (trimmedName && window.electronAPI?.markUserOnboarded) {
-      const capitalizedName = capitalizeName(trimmedName);
-      await window.electronAPI.markUserOnboarded(capitalizedName);
-    } else if (!trimmedName) {
-      // If no name was provided, still mark as onboarded with a default
-      if (window.electronAPI?.markUserOnboarded) {
-        await window.electronAPI.markUserOnboarded('User');
-      }
-    }
+    const userName = trimmedName ? capitalizeName(trimmedName) : 'User';
+    await window.electronAPI.saveUserName(userName);
+    await window.electronAPI.markUserOnboarded(userName);
     
     // Also set localStorage for backwards compatibility
     localStorage.setItem('onboarding_complete', 'true');
@@ -293,16 +263,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
   return (
     <GlassContainer>
-      <div className="title-bar" style={{ paddingLeft: navigator.platform.includes('Mac') ? '78px' : '12px' }}>
-        <div className="title-bar-left" style={{ display: navigator.platform.includes('Mac') ? 'none' : 'flex' }}>
-          <div className="title-bar-button close" />
-          <div className="title-bar-button minimize" />
-          <div className="title-bar-button maximize" />
-        </div>
-        <div className="title-bar-right">
-          {/* Empty for now - could add settings or other controls */}
-        </div>
-      </div>
+      <div className="title-bar" />
       <div className="onboarding-container">
         <div className="onboarding-content">
           {step === 'name' && (
@@ -712,4 +673,3 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     </GlassContainer>
   );
 }
-

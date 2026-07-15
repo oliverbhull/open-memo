@@ -3,8 +3,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { loadSettings, saveSettings, store as persistentStore } from './SettingsService.js';
 import { BrowserWindow } from 'electron';
-import Store from 'electron-store';
-import { StoreSchema } from './StoreSchema';
+import type { MemoSttService } from './MemoSttService';
+import type { BleManager } from './BleManager';
 
 // Track menu open state to prevent rebuilding while open
 let menuIsOpen = false;
@@ -24,9 +24,8 @@ let isBleConnected = false;
 let bleDeviceName: string | null = null;
 let lastTranscript: string | null = null;
 let mainWindow: BrowserWindow | null = null;
-let memoSttService: any = null; // MemoSttService instance
-let bleManager: any = null; // BleManager instance
-let store: Store<StoreSchema> | null = null; // Store instance for accessing saved UID
+let memoSttService: MemoSttService | null = null;
+let bleManager: BleManager | null = null;
 
 /**
  * Set main window reference
@@ -38,16 +37,15 @@ export function setMainWindow(window: BrowserWindow | null) {
 /**
  * Set MemoSttService reference for sending commands
  */
-export function setMemoSttService(service: any) {
+export function setMemoSttService(service: MemoSttService | null) {
   memoSttService = service;
 }
 
 /**
  * Set BleManager reference for connection operations
  */
-export function setBleManager(manager: any, storeInstance: Store<StoreSchema>) {
+export function setBleManager(manager: BleManager | null) {
   bleManager = manager;
-  store = storeInstance;
 }
 
 /**
@@ -55,6 +53,10 @@ export function setBleManager(manager: any, storeInstance: Store<StoreSchema>) {
  */
 export function setLastTranscript(text: string | null) {
   lastTranscript = text;
+}
+
+function restartMemoStt(): void {
+  memoSttService?.restart();
 }
 
 /**
@@ -131,9 +133,7 @@ export function createTray() {
   // ONLY set template image on the base white icon
   // Colored icons should NOT be template images (they need to show color!)
   try {
-    if (baseIcon && (baseIcon as any).setTemplateImage) {
-      (baseIcon as any).setTemplateImage(true);
-    }
+    baseIcon?.setTemplateImage(true);
   } catch (e) {
     console.error('[Tray] Failed to set template images:', e);
   }
@@ -210,11 +210,6 @@ export function updateMenuState() {
   
   // Build status text (transcription state)
   const statusText = `Status: ${isProcessing ? 'Processing' : (isRecording ? 'Recording' : 'Idle')}  ●`;
-  // Bluetooth connection status for visibility
-  const bleStatusText = isBleConnected && bleDeviceName
-    ? `Bluetooth: Connected (${bleDeviceName})`
-    : 'Bluetooth: Disconnected';
-  
   // Update tray icon based on state
   // Priority: Processing > Recording > BLE Connected > Base
   try {
@@ -276,14 +271,7 @@ export function updateMenuState() {
               }
               
               // Restart memo-stt service with new input source
-              if (memoSttService && typeof memoSttService.restart === 'function') {
-                memoSttService.restart();
-              } else if (memoSttService && typeof memoSttService.stop === 'function' && typeof memoSttService.start === 'function') {
-                memoSttService.stop();
-                setTimeout(() => {
-                  memoSttService?.start();
-                }, 500);
-              }
+              restartMemoStt();
               updateMenuState();
             }
           }
@@ -299,23 +287,17 @@ export function updateMenuState() {
               saveSettings(cfg);
               
               // Restart memo-stt service with new input source
-              if (memoSttService && typeof memoSttService.restart === 'function') {
-                memoSttService.restart();
-              } else if (memoSttService && typeof memoSttService.stop === 'function' && typeof memoSttService.start === 'function') {
-                memoSttService.stop();
-                setTimeout(() => {
-                  memoSttService?.start();
-                }, 500);
-              }
+              restartMemoStt();
               
               // Connect/reconnect to BLE device if not already connected
-              if (bleManager && store) {
-                const savedUid = store.get('memoUid');
+              if (bleManager) {
+                const manager = bleManager;
+                const savedUid = persistentStore.get('memoUid');
                 if (savedUid && !isBleConnected) {
                   // Wait a moment for the service to restart, then connect
                   setTimeout(async () => {
                     try {
-                      const result = await bleManager.connect(savedUid);
+                      const result = await manager.connect(savedUid);
                       if (!result.success) {
                         console.error('[Tray] Failed to connect to BLE device:', result.error);
                       }
@@ -327,9 +309,9 @@ export function updateMenuState() {
               }
               
               updateMenuState();
-            } else if (cfg.inputSource === 'ble' && !isBleConnected && bleManager && store) {
+            } else if (cfg.inputSource === 'ble' && !isBleConnected && bleManager) {
               // Already set to BLE but not connected - try to reconnect
-              const savedUid = store.get('memoUid');
+              const savedUid = persistentStore.get('memoUid');
               if (savedUid) {
                 try {
                   const result = await bleManager.connect(savedUid);
@@ -364,14 +346,7 @@ export function updateMenuState() {
               }
 
               // Restart memo-stt service with new input source
-              if (memoSttService && typeof memoSttService.restart === 'function') {
-                memoSttService.restart();
-              } else if (memoSttService && typeof memoSttService.stop === 'function' && typeof memoSttService.start === 'function') {
-                memoSttService.stop();
-                setTimeout(() => {
-                  memoSttService?.start();
-                }, 500);
-              }
+              restartMemoStt();
               updateMenuState();
             }
           }
@@ -396,9 +371,7 @@ export function updateMenuState() {
             cfg.postEnter = !cfg.postEnter;
             saveSettings(cfg);
             // Send command to memo-stt process
-            if (memoSttService && typeof memoSttService.setPressEnterAfterPaste === 'function') {
-              memoSttService.setPressEnterAfterPaste(cfg.postEnter);
-            }
+            memoSttService?.setPressEnterAfterPaste(cfg.postEnter);
             updateMenuState(); // Refresh menu to show new state
           }
         },
@@ -422,9 +395,7 @@ export function updateMenuState() {
             const next = !(cfg.handsFreeMode ?? false);
             cfg.handsFreeMode = next;
             saveSettings(cfg);
-            if (memoSttService && typeof memoSttService.restart === 'function') {
-              memoSttService.restart();
-            }
+            restartMemoStt();
             updateMenuState();
           }
         },
@@ -447,15 +418,11 @@ export function updateMenuState() {
   tray.setContextMenu(contextMenu);
   
   // Track menu open/close events to prevent rebuilding while open
-  // Remove existing listeners to avoid duplicates
-  tray.removeAllListeners('menu-will-show');
-  tray.removeAllListeners('menu-will-hide');
-  
-  tray.on('menu-will-show', () => {
+  contextMenu.on('menu-will-show', () => {
     menuIsOpen = true;
   });
   
-  tray.on('menu-will-hide', () => {
+  contextMenu.on('menu-will-close', () => {
     menuIsOpen = false;
     // If there was a pending update, apply it now
     if (pendingMenuUpdate) {
@@ -499,4 +466,3 @@ export function setBleConnectionState(connected: boolean, deviceName?: string) {
 export function getTray(): Tray | null {
   return tray;
 }
-

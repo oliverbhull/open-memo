@@ -2,13 +2,25 @@ import { FeedEntryData, AppContext } from '../components/FeedEntry';
 import { MemoEntry } from '../types/storage';
 import { logger } from './logger';
 
+interface ValidTranscriptionData {
+  id?: string;
+  rawTranscript?: string;
+  processedText?: string;
+  wasProcessedByLLM?: boolean;
+  appContext?: AppContext;
+  timestamp?: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * Validates that an object has the required properties of AppContext
  */
-export function isValidAppContext(obj: any): obj is AppContext {
+export function isValidAppContext(obj: unknown): obj is AppContext {
   return (
-    obj &&
-    typeof obj === 'object' &&
+    isRecord(obj) &&
     typeof obj.appName === 'string' &&
     typeof obj.windowTitle === 'string' &&
     obj.appName.length > 0
@@ -18,15 +30,8 @@ export function isValidAppContext(obj: any): obj is AppContext {
 /**
  * Validates incoming transcription data from memo-stt
  */
-export function validateTranscriptionData(data: any): data is {
-  id?: string;
-  rawTranscript?: string;
-  processedText?: string;
-  wasProcessedByLLM?: boolean;
-  appContext?: AppContext;
-  timestamp?: number;
-} {
-  if (!data || typeof data !== 'object') {
+export function validateTranscriptionData(data: unknown): data is ValidTranscriptionData {
+  if (!isRecord(data)) {
     return false;
   }
 
@@ -46,10 +51,9 @@ export function validateTranscriptionData(data: any): data is {
 /**
  * Validates a FeedEntryData object
  */
-export function isValidEntry(entry: any): entry is FeedEntryData {
+export function isValidEntry(entry: unknown): entry is FeedEntryData {
   return (
-    entry &&
-    typeof entry === 'object' &&
+    isRecord(entry) &&
     typeof entry.id === 'string' &&
     entry.id.length > 0 &&
     typeof entry.text === 'string' &&
@@ -61,11 +65,10 @@ export function isValidEntry(entry: any): entry is FeedEntryData {
 }
 
 /**
- * Creates a validated FeedEntryData from raw transcription data
- * Returns legacy format for backward compatibility with UI components
+ * Creates a validated FeedEntryData from raw transcription data.
  */
 export function createValidEntry(
-  data: any,
+  data: unknown,
   id: string
 ): FeedEntryData | null {
   if (!validateTranscriptionData(data)) {
@@ -92,10 +95,10 @@ export function createValidEntry(
 /**
  * Converts FeedEntryData to MemoEntry for storage
  */
-export async function convertToMemoEntry(
+export function convertToMemoEntry(
   entry: FeedEntryData,
   deviceId: string
-): Promise<MemoEntry> {
+): MemoEntry {
   const now = Date.now();
   return {
     id: entry.id,
@@ -129,5 +132,4 @@ export function convertToFeedEntry(entry: MemoEntry): FeedEntryData {
     context: context, // Include full context for accessing mobile location data
   };
 }
-
 

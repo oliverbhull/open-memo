@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { PhraseReplacementRule } from './SettingsService';
+import type { PhraseReplacementRule } from '../../shared/electron-api';
 
 export const MAX_PHRASE_REPLACEMENT_RULES = 50;
 
@@ -18,12 +18,12 @@ export function tokenizeFind(find: string): string[] {
 function buildMatcherRegex(tokens: string[]): RegExp | null {
   if (tokens.length === 0) return null;
   const body = tokens.map(escapeRegex).join('[^\\p{L}\\p{N}]*');
-  return new RegExp(body, 'iu');
+  return new RegExp(body, 'giu');
 }
 
 /**
  * Apply ordered phrase rules: case-insensitive, ignores punctuation/spacing between tokens.
- * Each rule replaces every non-overlapping occurrence (left-to-right, repeat until no match).
+ * Each rule replaces every non-overlapping occurrence from left to right.
  */
 export function applyPhraseReplacements(
   text: string,
@@ -40,16 +40,7 @@ export function applyPhraseReplacements(
     const re = buildMatcherRegex(tokens);
     if (!re) continue;
     const replace = rule.replace;
-    let guard = 0;
-    while (guard++ < 1000) {
-      re.lastIndex = 0;
-      const m = re.exec(out);
-      if (!m) break;
-      const full = m[0];
-      const idx = m.index;
-      if (full === replace) break;
-      out = out.slice(0, idx) + replace + out.slice(idx + full.length);
-    }
+    out = out.replace(re, () => replace);
   }
   return out;
 }
@@ -62,10 +53,10 @@ export function clampPhraseReplacementRulesFromInput(raw: unknown): PhraseReplac
     const row = raw[i];
     if (!row || typeof row !== 'object') continue;
     const r = row as Record<string, unknown>;
-    const find = typeof r.find === 'string' ? r.find.trim() : '';
+    const find = typeof r.find === 'string' ? r.find.trim().slice(0, 200) : '';
     if (!find) continue;
-    const id = typeof r.id === 'string' && r.id.trim() ? r.id.trim() : randomUUID();
-    const replace = typeof r.replace === 'string' ? r.replace : '';
+    const id = typeof r.id === 'string' && r.id.trim() ? r.id.trim().slice(0, 100) : randomUUID();
+    const replace = typeof r.replace === 'string' ? r.replace.slice(0, 1000) : '';
     const enabled = r.enabled === false ? false : true;
     out.push({ id, find, replace, enabled });
   }

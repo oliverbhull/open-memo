@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; object-src 'none'; base-uri 'none';">
   <title>Memo Overlay</title>
 
   <style>
@@ -145,8 +146,6 @@
 
   <script>
     // Waveform calibration: expects 7 values in 0–1 from memo-stt (BLE or system mic).
-    const { ipcRenderer } = require("electron");
-
     const body = document.body;
     const waveform = document.getElementById("waveform");
     const toast = document.getElementById("toast");
@@ -279,13 +278,13 @@
 
     // ── IPC listeners ──────────────────────────────────
 
-    ipcRenderer.on("memo:audioLevels", (event, levels) => {
+    window.memoOverlay.onAudioLevels((levels) => {
       audioLevels = levels;
       if (levels && levels.length > 0) body.classList.add("waveform-live");
       updateBars(levels);
     });
 
-    ipcRenderer.on("memo:status", (event, status) => {
+    window.memoOverlay.onStatus((status) => {
       const wasRecording = isRecording;
       isRecording = status.isRecording;
 
@@ -312,7 +311,7 @@
       }
     });
 
-    ipcRenderer.on("memo:commandToast", (event, { label, primaryColor: color }) => {
+    window.memoOverlay.onCommandToast(({ label, primaryColor: color }) => {
       showToast(label, color);
     });
 

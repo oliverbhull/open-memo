@@ -1,5 +1,4 @@
 import { AppConfig, AppCommand } from './SettingsService';
-import { CommandIntent, CommandIntentEmbeddings } from './CommandIntentEmbeddings';
 import { logger } from '../utils/logger';
 
 export interface DetectedCommand {
@@ -34,36 +33,22 @@ interface UrlMatch {
 export class CommandDetector {
   private apps: AppConfig[];
   private globalCommands: AppCommand[];
-  private intentEmbeddings: CommandIntentEmbeddings;
-  private readonly semanticThreshold = 0.78;
   private readonly maxCommandChainLength = 5;
   
   constructor(apps: AppConfig[] = [], globalCommands: AppCommand[] = []) {
     this.apps = apps;
     this.globalCommands = globalCommands;
-    this.intentEmbeddings = new CommandIntentEmbeddings();
-    this.intentEmbeddings.updateCatalog(this.apps, this.globalCommands);
   }
 
   updateApps(apps: AppConfig[]): void {
     this.apps = apps;
-    this.updateIntentCatalog();
   }
 
   updateGlobalCommands(globalCommands: AppCommand[]): void {
     this.globalCommands = globalCommands;
-    this.updateIntentCatalog();
   }
 
-  detect(transcription: string, activeApp: string): DetectedCommand {
-    return this.detectLexical(transcription, activeApp);
-  }
-
-  async detectWithIntent(transcription: string, activeApp: string): Promise<DetectedCommand> {
-    return this.detectSingleWithIntent(transcription, activeApp);
-  }
-
-  async detectSequenceWithIntent(transcription: string, activeApp: string): Promise<DetectedCommandSequence> {
+  detectSequence(transcription: string, activeApp: string): DetectedCommandSequence {
     const trimmed = transcription.trim();
     if (!trimmed) {
       return { commands: [], remainingText: '' };
@@ -86,9 +71,12 @@ export class CommandDetector {
         continue;
       }
 
-      const detected = await this.detectSingleWithIntent(segment.text, currentApp, {
+      const detected = this.detectLexical(segment.text, currentApp, {
         allowBareUrl: commands.length > 0,
       });
+      if (detected.type !== 'none') {
+        logger.debug(`[CommandDetector] Command match: type=${detected.type}, confidence=${detected.confidence}`);
+      }
 
       if (detected.type === 'none' || detected.confidence <= 0.7) {
         if (commands.length === 0) {
@@ -126,28 +114,6 @@ export class CommandDetector {
       commands,
       remainingText: this.cleanRemainingText(transcription.slice(lastConsumedEnd)),
     };
-  }
-
-  private async detectSingleWithIntent(
-    transcription: string,
-    activeApp: string,
-    options: DetectionOptions = {}
-  ): Promise<DetectedCommand> {
-    const lexical = this.detectLexical(transcription, activeApp, options);
-    if (lexical.type !== 'none') {
-      logger.debug(`[CommandDetector] Lexical command match: type=${lexical.type}, confidence=${lexical.confidence}`);
-      return lexical;
-    }
-
-    const semantic = await this.detectSemantic(transcription, activeApp);
-    if (semantic.type !== 'none') {
-      logger.debug(`[CommandDetector] Semantic command match: type=${semantic.type}, confidence=${semantic.confidence}`);
-    }
-    return semantic;
-  }
-
-  private updateIntentCatalog(): void {
-    this.intentEmbeddings.updateCatalog(this.apps, this.globalCommands);
   }
 
   private detectLexical(
@@ -194,90 +160,6 @@ export class CommandDetector {
     return { type: 'none', confidence: 0 };
   }
 
-  private async detectSemantic(transcription: string, activeApp: string): Promise<DetectedCommand> {
-    const candidateText = this.extractCommandCandidate(transcription);
-    if (!candidateText) {
-      logger.debug('[CommandDetector] No lexical candidate for semantic command detection');
-      return { type: 'none', confidence: 0 };
-    }
-
-    const scopedIntents = this.intentEmbeddings.getIntentsForScope(activeApp);
-    const candidateIntents = scopedIntents.filter(intent => this.hasCandidateSignal(candidateText, intent));
-    if (candidateIntents.length === 0) {
-      logger.debug('[CommandDetector] No scoped intents passed semantic candidate filtering');
-      return { type: 'none', confidence: 0 };
-    }
-
-    const match = await this.intentEmbeddings.findBestMatch(candidateText, candidateIntents);
-    if (!match) {
-      logger.debug('[CommandDetector] Semantic embedding match unavailable');
-      return { type: 'none', confidence: 0 };
-    }
-
-    logger.debug(
-      `[CommandDetector] Semantic score=${match.score.toFixed(3)}, threshold=${this.semanticThreshold}, intent=${match.intent.id}`
-    );
-
-    if (match.score < this.semanticThreshold) {
-      return { type: 'none', confidence: match.score };
-    }
-
-    if (match.intent.type === 'open_app') {
-      return {
-        type: 'open_app',
-        app: match.intent.app,
-        confidence: match.score,
-        matchedText: candidateText,
-      };
-    }
-
-    return {
-      type: 'app_command',
-      app: match.intent.app,
-      command: match.intent.command,
-      confidence: match.score,
-      matchedText: candidateText,
-    };
-  }
-
-  private extractCommandCandidate(transcription: string): string | null {
-    const trimmed = transcription.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    const commandLikeMatch = trimmed.match(
-      /^(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:open|launch|start|run|switch to|bring up|execute|trigger|do|make|create|new|close|save|search|find)\b[\w\s'’-]*/i
-    );
-
-    if (!commandLikeMatch) {
-      return null;
-    }
-
-    return commandLikeMatch[0]
-      .replace(/\b(?:and then|then|after that)\b.*$/i, '')
-      .replace(/[.,!?;:]+$/g, '')
-      .trim();
-  }
-
-  private hasCandidateSignal(candidateText: string, intent: CommandIntent): boolean {
-    const normalizedCandidate = this.normalize(candidateText);
-
-    if (intent.type === 'open_app') {
-      return /\b(open|launch|start|run|switch to|bring up)\b/.test(normalizedCandidate);
-    }
-
-    const phraseTokens = this.contentTokens(intent.phrase);
-    if (phraseTokens.length === 0) {
-      return false;
-    }
-
-    const matchingTokens = phraseTokens.filter(token => this.hasToken(normalizedCandidate, token));
-    const hasCommandVerb = /\b(execute|trigger|do|make|create|new|open|close|save|search|find|switch|run)\b/.test(normalizedCandidate);
-
-    return matchingTokens.length > 0 && (hasCommandVerb || matchingTokens.length >= Math.min(2, phraseTokens.length));
-  }
-  
   private findMatchedCommandText(transcription: string, command: AppCommand): string {
     const normalized = transcription.toLowerCase();
     const triggerLower = command.trigger.toLowerCase();
@@ -334,21 +216,6 @@ export class CommandDetector {
   
   private escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  private normalize(text: string): string {
-    return text.toLowerCase().trim().replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ');
-  }
-
-  private contentTokens(text: string): string[] {
-    const stopWords = new Set(['a', 'an', 'the', 'to', 'this', 'that', 'please', 'can', 'you']);
-    return this.normalize(text)
-      .split(' ')
-      .filter(token => token.length > 1 && !stopWords.has(token));
-  }
-
-  private hasToken(text: string, token: string): boolean {
-    return new RegExp(`\\b${this.escapeRegex(token)}\\b`, 'i').test(text);
   }
 
   private detectOpenApp(originalText: string): DetectedCommand | null {
@@ -474,21 +341,6 @@ export class CommandDetector {
       if (!app.enabled) continue;
       for (const appAlias of app.aliases) {
         if (appAlias.toLowerCase() === normalizedAlias) {
-          return app;
-        }
-      }
-    }
-    
-    // Try fuzzy matching (contains)
-    for (const app of this.apps) {
-      if (!app.enabled) continue;
-      if (app.name.toLowerCase().includes(normalizedAlias) || 
-          normalizedAlias.includes(app.name.toLowerCase())) {
-        return app;
-      }
-      for (const appAlias of app.aliases) {
-        if (appAlias.toLowerCase().includes(normalizedAlias) ||
-            normalizedAlias.includes(appAlias.toLowerCase())) {
           return app;
         }
       }

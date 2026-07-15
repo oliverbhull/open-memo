@@ -1,5 +1,4 @@
 import { EventEmitter } from 'events';
-import { spawn } from 'child_process';
 import { logger } from '../utils/logger';
 
 export interface RecordedKeystroke {
@@ -10,7 +9,6 @@ export interface RecordedKeystroke {
 
 export class KeystrokeRecorder extends EventEmitter {
   private isRecording = false;
-  private recordingProcess: ReturnType<typeof spawn> | null = null;
   private recordedKeystrokes: RecordedKeystroke[] = [];
 
   startRecording(): void {
@@ -34,28 +32,7 @@ export class KeystrokeRecorder extends EventEmitter {
   }
 
   private startMacOSRecording(): void {
-    // Use AppleScript with System Events to monitor keyboard events
-    // This script will run in a loop and capture key presses
-    const script = `
-      tell application "System Events"
-        repeat
-          try
-            set keyCode to (do shell script "read -n 1 -t 0.1 key < /dev/tty 2>/dev/null || echo ''")
-            if keyCode is not "" then
-              log keyCode
-            end if
-          end try
-        end repeat
-      end tell
-    `;
-
-    // Actually, a simpler approach: we'll use a background AppleScript
-    // that monitors key events. However, AppleScript can't easily monitor
-    // all keyboard events without a helper application.
-    
-    // For now, we'll emit a ready event and wait for manual keystroke recording
-    // via the recordKeystroke method (called from IPC when user presses keys)
-    
+    // Renderer key events are forwarded through the narrow preload API.
     logger.info('[KeystrokeRecorder] macOS recording started - waiting for keystrokes');
     this.emit('recording-started');
   }
@@ -67,11 +44,6 @@ export class KeystrokeRecorder extends EventEmitter {
     }
 
     this.isRecording = false;
-
-    if (this.recordingProcess) {
-      this.recordingProcess.kill();
-      this.recordingProcess = null;
-    }
 
     logger.info('[KeystrokeRecorder] Stopped recording');
 
@@ -144,28 +116,4 @@ export class KeystrokeRecorder extends EventEmitter {
     return keyLower;
   }
 
-  // Helper method to parse a keystroke string back to components
-  static parseKeystroke(keystroke: string): { modifiers: string[]; key: string } {
-    const parts = keystroke.toLowerCase().split('+');
-    const key = parts.pop() || '';
-    const modifiers = parts.map(m => {
-      switch (m) {
-        case 'cmd':
-        case 'command':
-          return 'command';
-        case 'shift':
-          return 'shift';
-        case 'alt':
-        case 'option':
-          return 'option';
-        case 'ctrl':
-        case 'control':
-          return 'control';
-        default:
-          return m;
-      }
-    });
-
-    return { modifiers, key };
-  }
 }

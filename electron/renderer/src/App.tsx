@@ -7,96 +7,10 @@ import { Onboarding } from './components/Onboarding';
 import { ToastNotification, ToastData } from './components/ToastNotification';
 import { useEntries } from './hooks/useEntries';
 import { logger } from './utils/logger';
-import { syncMessageHandler } from './services/SyncMessageHandler';
 import { storageService } from './services/StorageService';
 import { Settings } from './components/Settings';
+import type { MemoSttError, TranscriptionData } from '../../shared/electron-api';
 import './styles/glass.css';
-
-interface TranscriptionData {
-  rawTranscript?: string;
-  processedText?: string;
-  wasProcessedByLLM?: boolean;
-  timestamp?: number;
-  appContext?: {
-    appName: string;
-    windowTitle: string;
-  };
-}
-
-interface MemoSttError {
-  message: string;
-  name: string;
-}
-
-interface PhraseReplacementRule {
-  id: string;
-  find: string;
-  replace: string;
-  enabled?: boolean;
-}
-
-declare global {
-  interface Window {
-    electronAPI: {
-      onTranscription: (callback: (data: TranscriptionData) => void) => void;
-      removeTranscriptionListener: () => void;
-      onStatus: (callback: (status: string) => void) => void;
-      removeStatusListener: () => void;
-      onError: (callback: (error: MemoSttError) => void) => void;
-      removeErrorListener: () => void;
-      getStatus: () => Promise<string>;
-      restart: () => Promise<void>;
-      getUserName: () => Promise<string | null>;
-      isUserOnboarded: (userName: string) => Promise<boolean>;
-      markUserOnboarded: (userName: string) => Promise<void>;
-      device: {
-        connectByUid: (uid: string) => Promise<{ success: boolean; error?: string }>;
-        disconnect: () => Promise<{ success: boolean }>;
-        getConnectionState: () => Promise<{
-          connected: boolean;
-          deviceUid: string | null;
-          deviceName: string | null;
-          batteryLevel: number | null;
-        }>;
-        onConnectionChanged: (callback: (state: {
-          connected: boolean;
-          deviceUid: string | null;
-          deviceName: string | null;
-          batteryLevel: number | null;
-        }) => void) => () => void;
-      };
-      interface?: {
-        getSettings: () => Promise<{
-          pressEnterAfterPaste: boolean;
-          sayEnterToPressEnter: boolean;
-          pushToTalkMode: boolean;
-          handsFreeMode: boolean;
-          vocabWords: string[];
-          phraseReplacements: PhraseReplacementRule[];
-          startAtLogin: boolean;
-        }>;
-        setPressEnterAfterPaste: (enabled: boolean) => Promise<boolean>;
-        setVocabWords: (vocabWords: string[]) => Promise<boolean>;
-        setPhraseReplacements: (rules: PhraseReplacementRule[]) => Promise<boolean>;
-        setSayEnterToPressEnter: (enabled: boolean) => Promise<boolean>;
-        setPushToTalkMode: (enabled: boolean) => Promise<boolean>;
-        setHandsFreeMode: (enabled: boolean) => Promise<boolean>;
-        setStartAtLogin: (enabled: boolean) => Promise<boolean>;
-      };
-      voiceCommands?: {
-        getSettings: () => Promise<any>;
-        saveSettings: (settings: any) => Promise<boolean>;
-        onCommandExecuted: (callback: (command: any) => void) => () => void;
-      };
-      keystroke?: {
-        startRecording: () => Promise<{ success: boolean; error?: string }>;
-        stopRecording: () => Promise<{ success: boolean; keystroke?: { modifiers: string[]; key: string; formatted: string } | null; error?: string }>;
-        isRecording: () => Promise<{ success: boolean; isRecording: boolean }>;
-        record: (modifiers: string[], key: string) => Promise<{ success: boolean; error?: string }>;
-      };
-    };
-  }
-}
 
 // Settings Icon Component
 const SettingsIcon: React.FC = () => {
@@ -140,8 +54,7 @@ const SettingsIcon: React.FC = () => {
 };
 
 function App() {
-  const { entries, loading, error: storageError, totalCount, addEntry, loadMore, deleteEntry, refresh } = useEntries();
-  const [status, setStatus] = useState<string>('stopped');
+  const { entries, loading, error: storageError, addEntry, loadMore, deleteEntry } = useEntries();
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -208,14 +121,6 @@ function App() {
       setLoadingMore(false);
     }
   }, [loadMore, loadingMore]);
-
-  // Initialize sync message handler
-  useEffect(() => {
-    syncMessageHandler.start();
-    return () => {
-      syncMessageHandler.stop();
-    };
-  }, []);
 
   // Cleanup database on app quit
   useEffect(() => {
@@ -285,18 +190,14 @@ function App() {
       return;
     }
 
-    // Load initial status
-    window.electronAPI.getStatus().then(setStatus).catch((err) => {
-      logger.error('Failed to get status:', err);
-    });
-
     // Set up transcription listener
     const transcriptionCallback = async (data: TranscriptionData) => {
       try {
-        await addEntry({
+        const entry = await addEntry({
           ...data,
           timestamp: data.timestamp || Date.now(),
         });
+        if (!entry) throw new Error('Transcription did not contain a valid memo');
         setError(null); // Clear any previous errors
       } catch (err) {
         logger.error('Failed to add entry:', err);
@@ -307,7 +208,6 @@ function App() {
 
     // Set up status listener
     const statusCallback = (newStatus: string) => {
-      setStatus(newStatus);
       if (newStatus === 'running') {
         setError(null);
       }
@@ -333,21 +233,6 @@ function App() {
     };
   }, [addEntry]);
 
-  const getStatusDisplay = () => {
-    switch (status) {
-      case 'running':
-        return { text: 'Connected', className: 'running' };
-      case 'stopped':
-        return { text: 'Disconnected', className: 'stopped' };
-      case 'error':
-        return { text: 'Error', className: 'error' };
-      default:
-        return { text: 'Unknown', className: 'stopped' };
-    }
-  };
-
-  const statusDisplay = getStatusDisplay();
-
   // Combine storage errors with other errors
   const displayError = error || (storageError ? storageError.message : null);
 
@@ -366,12 +251,7 @@ function App() {
     <ThemeProvider>
       <ErrorBoundary>
         <GlassContainer>
-          <div className="title-bar" style={{ paddingLeft: navigator.platform.includes('Mac') ? '78px' : '12px' }}>
-            <div className="title-bar-left" style={{ display: navigator.platform.includes('Mac') ? 'none' : 'flex' }}>
-              <div className="title-bar-button close" />
-              <div className="title-bar-button minimize" />
-              <div className="title-bar-button maximize" />
-            </div>
+          <div className="title-bar" style={{ paddingLeft: '78px' }}>
             <div className="title-bar-right">
               <SettingsIcon />
             </div>
@@ -410,14 +290,10 @@ function App() {
               onCopy={handleCopy}
               onDelete={deleteEntry}
               onLoadMore={handleLoadMore}
-              onRefresh={refresh}
               loading={loadingMore}
             />
           )}
 
-          <div className="status-bar" style={{ display: 'none' }}>
-            <div>{totalCount} memos</div>
-          </div>
         </GlassContainer>
         
         <ToastNotification toast={toast} onClose={() => setToast(null)} />
