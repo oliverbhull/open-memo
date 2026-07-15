@@ -518,7 +518,13 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   </span>
                 </label>
 
-                <div style={{ padding: '2px 4px' }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  padding: '2px 4px',
+                }}>
                   <label style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -542,29 +548,22 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     />
                     <span style={{ fontSize: '12px', userSelect: 'none' }}>Save dictation audio</span>
                   </label>
-                  <div style={{
-                    margin: '2px 0 0 24px',
-                    color: 'rgba(255, 255, 255, 0.5)',
-                    fontSize: '10px',
-                    lineHeight: 1.4,
-                  }}>
-                    New recordings are stored locally and linked to their transcripts.
-                    {' '}
-                    <button
-                      type="button"
-                      onClick={() => { void window.electronAPI.audio.openFolder(); }}
-                      style={{
-                        border: 0,
-                        padding: 0,
-                        color: primary,
-                        background: 'transparent',
-                        cursor: 'pointer',
-                        font: 'inherit',
-                      }}
-                    >
-                      Open folder
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { void window.electronAPI.audio.openFolder(); }}
+                    style={{
+                      border: 0,
+                      padding: 0,
+                      color: primary,
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      font: 'inherit',
+                      fontSize: '12px',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Open folder
+                  </button>
                 </div>
 
                 {/* Vocab (STT boosting) */}
