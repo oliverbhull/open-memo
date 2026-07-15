@@ -6,10 +6,18 @@ export function useAudioPlayback(entryId: string) {
   const objectUrlRef = useRef<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
 
   const dispose = useCallback(() => {
-    audioRef.current?.pause();
+    if (audioRef.current) {
+      const audio = audioRef.current;
+      audio.onplay = null;
+      audio.onpause = null;
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    }
     audioRef.current = null;
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     objectUrlRef.current = null;
@@ -27,12 +35,10 @@ export function useAudioPlayback(entryId: string) {
       const objectUrl = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
       const audio = new Audio(objectUrl);
       audio.preload = 'auto';
-      audio.ontimeupdate = () => {
-        setProgress(audio.duration > 0 ? Math.min(audio.currentTime / audio.duration, 1) : 0);
-      };
+      audio.onplay = () => setIsPlaying(true);
+      audio.onpause = () => setIsPlaying(false);
       audio.onended = () => {
         setIsPlaying(false);
-        setProgress(0);
         audio.currentTime = 0;
       };
       audio.onerror = () => {
@@ -53,14 +59,17 @@ export function useAudioPlayback(entryId: string) {
   const toggle = useCallback(async () => {
     const audio = await load();
     if (!audio) return;
-    if (audio.paused) {
-      await audio.play();
-      setIsPlaying(true);
-    } else {
-      audio.pause();
+    try {
+      if (audio.paused) {
+        await audio.play();
+      } else {
+        audio.pause();
+      }
+    } catch (error) {
       setIsPlaying(false);
+      logger.error(`Failed to play audio for memo ${entryId}:`, error);
     }
-  }, [load]);
+  }, [entryId, load]);
 
-  return { isPlaying, isLoading, progress, toggle };
+  return { isPlaying, isLoading, toggle };
 }

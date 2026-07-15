@@ -5,12 +5,11 @@ import { FeedEntryData } from './FeedEntry';
 interface FeedProps {
   entries: FeedEntryData[];
   onCopy?: (text: string) => void;
-  onDelete?: (id: string) => void;
   onLoadMore?: () => void;
   loading?: boolean;
 }
 
-export const Feed: React.FC<FeedProps> = ({ entries, onCopy, onDelete, onLoadMore, loading = false }) => {
+export const Feed: React.FC<FeedProps> = ({ entries, onCopy, onLoadMore, loading = false }) => {
   const feedRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
   const [expandedEntries, setExpandedEntries] = useState<Set<string>>(new Set());
@@ -85,7 +84,6 @@ export const Feed: React.FC<FeedProps> = ({ entries, onCopy, onDelete, onLoadMor
           key={entry.id}
           entry={entry}
           onCopy={onCopy}
-          onDelete={onDelete}
           isExpanded={expandedEntries.has(entry.id)}
           onExpandToggle={() => {
             setExpandedEntries((prev) => {
@@ -108,4 +106,3 @@ export const Feed: React.FC<FeedProps> = ({ entries, onCopy, onDelete, onLoadMor
     </div>
   );
 };
-

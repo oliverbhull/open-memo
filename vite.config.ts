@@ -16,6 +16,7 @@ export default defineConfig({
           "script-src 'self'",
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data: blob:",
+          "media-src 'self' blob:",
           "font-src 'self' data:",
           `connect-src ${connectSources}`,
           "object-src 'none'",
@@ -42,4 +43,3 @@ export default defineConfig({
     port: 5173,
   },
 });
-

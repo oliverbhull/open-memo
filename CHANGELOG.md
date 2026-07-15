@@ -14,6 +14,7 @@ This project follows semantic versioning once public releases begin.
 - Add opt-in local WAV retention with transcript-ID linking, feed playback, and deletion cleanup.
 - Record application bundle identity and render native macOS icons for dictation history.
 - Export active transcriptions as JSON for either a selected date-time range or the complete history.
+- Simplify saved-audio controls to a borderless play/pause toggle and remove feed deletion.
 
 ## 0.1.2 - 2026-07-15
 

@@ -50,7 +50,7 @@ const SettingsIcon: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
 };
 
 function App() {
-  const { entries, loading, error: storageError, addEntry, loadMore, deleteEntry } = useEntries();
+  const { entries, loading, error: storageError, addEntry, loadMore } = useEntries();
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -291,7 +291,6 @@ function App() {
             <Feed
               entries={entries}
               onCopy={handleCopy}
-              onDelete={deleteEntry}
               onLoadMore={handleLoadMore}
               loading={loadingMore}
             />

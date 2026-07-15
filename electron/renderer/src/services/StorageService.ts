@@ -312,22 +312,6 @@ export class StorageService {
   }
 
   /**
-   * Delete an entry by ID
-   */
-  async deleteEntry(id: string): Promise<void> {
-    const db = await this.ensureInit();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      store.delete(id);
-
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error || new Error('Failed to delete entry'));
-      transaction.onabort = () => reject(transaction.error || new Error('Delete transaction was aborted'));
-    });
-  }
-
-  /**
    * Migrate existing entries to new schema format
    * Runs after schema upgrade
    */

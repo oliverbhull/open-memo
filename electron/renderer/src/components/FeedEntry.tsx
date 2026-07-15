@@ -25,16 +25,14 @@ export interface FeedEntryData {
 interface FeedEntryProps {
   entry: FeedEntryData;
   onCopy?: (text: string) => void;
-  onDelete?: (id: string) => void;
   isExpanded?: boolean;
   onExpandToggle?: () => void;
 }
 
 export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
-  ({ entry, onCopy, onDelete, isExpanded: controlledIsExpanded, onExpandToggle }, ref) => {
+  ({ entry, onCopy, isExpanded: controlledIsExpanded, onExpandToggle }, ref) => {
     const { primary } = useTheme();
     const [internalIsExpanded, setInternalIsExpanded] = useState(false);
-    const [confirmingDelete, setConfirmingDelete] = useState(false);
     const expandContentRef = useRef<HTMLDivElement>(null);
     const isExpanded = controlledIsExpanded !== undefined ? controlledIsExpanded : internalIsExpanded;
 
@@ -104,23 +102,6 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
       }
     };
 
-    const handleDeleteClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.stopPropagation();
-      if (isProcessing || !onDelete) return;
-      if (confirmingDelete) {
-        onDelete(entry.id);
-        setConfirmingDelete(false);
-      } else {
-        setConfirmingDelete(true);
-      }
-    };
-
-    useEffect(() => {
-      if (!confirmingDelete) return;
-      const timeout = window.setTimeout(() => setConfirmingDelete(false), 3000);
-      return () => window.clearTimeout(timeout);
-    }, [confirmingDelete]);
-
     const displayText = isProcessing ? 'Transcribing...' : entry.text;
     const sourceIcon = isDesktopEntry ? (
       <AppIcon appName={appContext.appName || 'Unknown'} bundleId={appContext.bundleId} size={18} />
@@ -167,32 +148,6 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
           </svg>
         </button>
         {entry.audio && <PlayButton entryId={entry.id} size={18} />}
-        {onDelete && (
-          <button
-            type="button"
-            className="copyButton"
-            aria-label={confirmingDelete ? 'Confirm delete memo' : 'Delete memo'}
-            title={confirmingDelete ? 'Click again to delete' : 'Delete memo'}
-            disabled={isProcessing}
-            onClick={handleDeleteClick}
-            style={confirmingDelete ? { color: '#ff6b6b', opacity: 1 } : undefined}
-          >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M3 6h18" />
-              <path d="M8 6V4h8v2" />
-              <path d="M19 6l-1 14H6L5 6" />
-            </svg>
-          </button>
-        )}
       </div>
     );
 

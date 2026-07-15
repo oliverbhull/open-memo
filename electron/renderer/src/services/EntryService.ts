@@ -10,7 +10,6 @@ interface EntryEventMap {
   entriesLoaded: [FeedEntryData[]];
   entryAdded: [FeedEntryData];
   moreEntriesLoaded: [FeedEntryData[]];
-  entryDeleted: [string];
 }
 
 type EntryEvent = keyof EntryEventMap;
@@ -164,34 +163,6 @@ export class EntryService extends EventEmitter {
       return feedEntries;
     } catch (error) {
       logger.error('Failed to load more entries:', error);
-      this.emit('error', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Delete an entry
-   */
-  async deleteEntry(id: string): Promise<boolean> {
-    // Ensure initialization is complete (handles concurrent calls)
-    if (!this.initialized) {
-      await this.init();
-    }
-
-    try {
-      await storageService.deleteEntry(id);
-      const audioResult = await window.electronAPI.audio.delete(id);
-      if (!audioResult.success) {
-        logger.warn(`Memo ${id} was deleted, but its audio cleanup failed: ${audioResult.error}`);
-      }
-      
-      // Remove from cache
-      this.recentEntries = this.recentEntries.filter(e => e.id !== id);
-      
-      this.emit('entryDeleted', id);
-      return true;
-    } catch (error) {
-      logger.error('Failed to delete entry:', error);
       this.emit('error', error);
       throw error;
     }

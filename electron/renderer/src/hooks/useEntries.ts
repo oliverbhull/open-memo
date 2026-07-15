@@ -82,26 +82,11 @@ export function useEntries() {
     }
   }, []);
 
-  // Delete an entry
-  const deleteEntry = useCallback(async (id: string) => {
-    try {
-      const success = await entryService.deleteEntry(id);
-      if (success) {
-        setEntries(prev => prev.filter(e => e.id !== id));
-      }
-      return success;
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to delete entry'));
-      return false;
-    }
-  }, []);
-
   return {
     entries,
     loading,
     error,
     addEntry,
     loadMore,
-    deleteEntry,
   };
 }
