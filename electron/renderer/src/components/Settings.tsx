@@ -39,7 +39,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [handsFreeMode, setHandsFreeMode] = useState(false);
   const [sayEnterToPressEnter, setSayEnterToPressEnter] = useState(false);
   const [startAtLogin, setStartAtLogin] = useState(false);
-  const [asrModel, setAsrModel] = useState<'whisper' | 'nemotron'>('whisper');
   const [vocabWords, setVocabWords] = useState<string[]>([]);
   const [isAddingVocabWord, setIsAddingVocabWord] = useState(false);
   const [vocabWordDraft, setVocabWordDraft] = useState('');
@@ -84,7 +83,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       setPushToTalkMode(settings.pushToTalkMode ?? false);
       setHandsFreeMode(settings.handsFreeMode ?? false);
       setStartAtLogin(settings.startAtLogin);
-      setAsrModel(settings.asrModel === 'nemotron' ? 'nemotron' : 'whisper');
       setVocabWords(Array.isArray(settings.vocabWords) ? settings.vocabWords : []);
       setPhraseReplacementRules(
         Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : []
@@ -566,56 +564,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   }}>
                     Start at Login
                   </span>
-                </label>
-
-                {/* Local ASR backend */}
-                <label
-                  htmlFor="asr-model"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '12px',
-                    padding: '6px 4px',
-                    marginTop: '6px',
-                    borderRadius: '4px',
-                  }}
-                >
-                  <span style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <span style={{ fontSize: '12px', userSelect: 'none' }}>Model</span>
-                    <span style={{ fontSize: '10px', opacity: 0.55, userSelect: 'none' }}>
-                      Local speech recognition
-                    </span>
-                  </span>
-                  <select
-                    id="asr-model"
-                    value={asrModel}
-                    onChange={async (e) => {
-                      const nextModel = e.target.value as 'whisper' | 'nemotron';
-                      const previousModel = asrModel;
-                      setAsrModel(nextModel);
-                      try {
-                        await window.electronAPI.interface.setAsrModel(nextModel);
-                      } catch (error) {
-                        console.error('[Settings] Failed to change ASR model:', error);
-                        setAsrModel(previousModel);
-                      }
-                    }}
-                    style={{
-                      minWidth: '150px',
-                      padding: '6px 8px',
-                      borderRadius: '6px',
-                      border: '1px solid rgba(255, 255, 255, 0.14)',
-                      background: 'rgba(18, 18, 24, 0.86)',
-                      color: 'rgba(255, 255, 255, 0.92)',
-                      fontSize: '12px',
-                      cursor: 'pointer',
-                      outline: 'none',
-                    }}
-                  >
-                    <option value="whisper">Whisper (GGML)</option>
-                    <option value="nemotron">Nemotron</option>
-                  </select>
                 </label>
 
                 {/* Vocab (STT boosting) */}

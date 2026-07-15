@@ -1,3 +1,53 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index c31db09..469e35b 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -72,14 +72,6 @@ binary = [
+ ]
+ default = []
+
+-[lib]
+-name = "memo_stt"
+-crate-type = [
+-    "cdylib",
+-    "rlib",
+-]
+-path = "src/lib.rs"
+-
+ [[bin]]
+ name = "memo-stt"
+ path = "src/main.rs"
+@@ -123,6 +123,7 @@ optional = true
+
+ [dependencies.dirs]
+ version = "5.0"
++optional = true
+
+ [dependencies.enigo]
+ version = "0.1"
+@@ -138,6 +139,7 @@ optional = true
+
+ [dependencies.num_cpus]
+ version = "1.0"
++optional = true
+
+ [dependencies.rdev]
+ version = "0.5"
+@@ -159,5 +161,6 @@ version = "2.9"
+ features = ["tls"]
+ default-features = false
++optional = true
+
+ [dependencies.uuid]
+ version = "1.0"
+@@ -168,6 +171,7 @@ optional = true
+ [dependencies.whisper-rs]
+ version = "0.12"
+ features = ["metal"]
++optional = true
+
+ [profile.dev]
+ opt-level = 0
 diff --git a/src/main.rs b/src/main.rs
 index 4772659..8b59e51 100644
 --- a/src/main.rs
@@ -178,8 +228,8 @@ index 4772659..8b59e51 100644
 -    let streaming_enabled = std::env::var("STREAMING_TRANSCRIBE")
 -        .map(|v| v != "0" && v.to_lowercase() != "false")
 -        .unwrap_or(true);
-+    // Whisper can pre-transcribe long segments. Nemotron keeps a single
-+    // cache-aware model session for the complete transmission.
++    // Nemotron keeps one cache-aware model session for the complete transmission,
++    // so the legacy segment pre-transcription path stays disabled.
 +    let streaming_enabled = !engine.lock().unwrap().is_nemotron()
 +        && std::env::var("STREAMING_TRANSCRIBE")
 +            .map(|v| v != "0" && v.to_lowercase() != "false")

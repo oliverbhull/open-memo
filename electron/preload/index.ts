@@ -200,7 +200,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
       startAtLogin: boolean;
-      asrModel: 'whisper' | 'nemotron';
     }> => {
       return ipcRenderer.invoke('settings:getInterfaceSettings');
     },
@@ -224,9 +223,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     setStartAtLogin: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setStartAtLogin', enabled);
-    },
-    setAsrModel: (model: 'whisper' | 'nemotron'): Promise<boolean> => {
-      return ipcRenderer.invoke('settings:setAsrModel', model);
     },
   },
   voiceCommands: {
@@ -376,4 +372,3 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 });
-

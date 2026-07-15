@@ -34,12 +34,11 @@ export interface PhraseReplacementRule {
 }
 
 export interface Settings {
-  asrModel?: 'whisper' | 'nemotron';
   postEnter?: boolean;
   sayEnterToPressEnter?: boolean; // When enabled, saying "enter" at end of speech triggers Enter after paste
   pushToTalkMode?: boolean; // When enabled, the Memo device button is hold-to-talk instead of tap-to-toggle
   handsFreeMode?: boolean; // When enabled, VAD starts/stops dictation automatically
-  /** User-provided words/phrases to bias STT (Whisper prompt hints). */
+  /** User-provided words/phrases used by Memo's command and replacement layers. */
   vocabWords?: string[];
   /** Replace spoken phrases with fixed text before paste (case/punctuation-tolerant). */
   phraseReplacements?: PhraseReplacementRule[];
@@ -85,7 +84,6 @@ export function loadSettings(): Settings {
     if (fs.existsSync(p)) {
       const settings = JSON.parse(fs.readFileSync(p, 'utf8'));
       return {
-        asrModel: settings.asrModel === 'nemotron' ? 'nemotron' : 'whisper',
         postEnter: settings.postEnter ?? false,
         sayEnterToPressEnter: settings.sayEnterToPressEnter ?? false,
         pushToTalkMode: settings.pushToTalkMode ?? false,
@@ -106,7 +104,6 @@ export function loadSettings(): Settings {
     console.error('[Settings] Failed to load:', e);
   }
   return {
-    asrModel: 'whisper',
     postEnter: false,
     sayEnterToPressEnter: false,
     pushToTalkMode: false,

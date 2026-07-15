@@ -50,7 +50,7 @@ function devAutoConnectUid(): string | null {
 }
 
 /**
- * Strip leading dash and space(s) from transcript (e.g. Whisper bullet-style "- Can you...").
+ * Strip a leading dash and spaces from a transcript (for example, "- Can you...").
  */
 function stripLeadingDashSpace(text: string): string {
   const t = text.trim();
@@ -556,7 +556,7 @@ function setupMemoSttService(): void {
       setRecordingState(false);
       updateOverlayVisibility(false, mainWindow);
       sendStatusToOverlay(false, mainWindow);
-      // Do not unmute here — wait until Whisper finishes (transcription / processingCompleted / processingFailed).
+      // Do not unmute here — wait until ASR finishes (transcription / processingCompleted / processingFailed).
     } else {
       logger.warn('[Main] Recording stopped event received but not recording');
     }
@@ -714,7 +714,7 @@ app.whenReady().then(() => {
   });
 });
 
-// Cleanup function to ensure Whisper is closed
+// Cleanup function to ensure the local ASR process is closed
 const cleanupMemoStt = () => {
   if (memoSttService) {
     logger.info('Cleaning up memo-stt service...');
@@ -1261,24 +1261,7 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
     vocabWords: Array.isArray(settings.vocabWords) ? settings.vocabWords : [],
     phraseReplacements: Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : [],
     startAtLogin: loginItemSettings.openAtLogin || false,
-    asrModel: settings.asrModel === 'nemotron' ? 'nemotron' : 'whisper',
   };
-});
-
-ipcMain.handle('settings:setAsrModel', async (_event, model: 'whisper' | 'nemotron') => {
-  if (model !== 'whisper' && model !== 'nemotron') {
-    throw new Error(`Unsupported ASR model: ${String(model)}`);
-  }
-
-  const settings = loadSettings();
-  const previous = settings.asrModel === 'nemotron' ? 'nemotron' : 'whisper';
-  settings.asrModel = model;
-  saveSettings(settings);
-
-  if (memoSttService && previous !== model) {
-    memoSttService.restart();
-  }
-  return true;
 });
 
 ipcMain.handle('settings:setVocabWords', async (_event, vocabWords: string[]) => {
@@ -1286,7 +1269,7 @@ ipcMain.handle('settings:setVocabWords', async (_event, vocabWords: string[]) =>
   settings.vocabWords = Array.isArray(vocabWords) ? vocabWords : [];
   saveSettings(settings);
 
-  // Update memo-stt vocabulary (Whisper prompt hints)
+  // Update memo-stt vocabulary for command and replacement handling.
   if (memoSttService) {
     memoSttService.updateVocabulary();
   }

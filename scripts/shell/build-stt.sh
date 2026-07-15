@@ -68,7 +68,7 @@ else
     printf '%s\n' "${PATCH_HASH}" > "${PATCH_MARKER}"
   fi
 
-  echo "Building patched ${CRATE_NAME} ${CRATE_VERSION} with Whisper and Nemotron backends"
+  echo "Building patched ${CRATE_NAME} ${CRATE_VERSION} with the Nemotron backend"
   CARGO_TARGET_DIR="${LOCAL_TARGET_DIR}" cargo build \
     --release \
     --manifest-path "${SOURCE_DIR}/Cargo.toml" \

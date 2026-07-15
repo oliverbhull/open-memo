@@ -1,6 +1,6 @@
 {
   "name": "open-memo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Open-source push-to-talk dictation for macOS",
   "homepage": "https://github.com/oliverbhull/open-memo",
   "main": "dist/main.cjs",
@@ -27,7 +27,6 @@
     "start": "npm run build:backends && npm run build:ts && electron ."
   },
   "keywords": [
-    "whisper",
     "nemotron",
     "speech-to-text",
     "dictation",

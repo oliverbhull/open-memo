@@ -1,5 +1,4 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use memo_stt::{Error, Result, SttEngine};
 use serde_json::{json, Value};
 use std::env;
 use std::io::{BufRead, BufReader, Write};
@@ -9,77 +8,57 @@ use std::sync::mpsc::{self, Receiver};
 
 const TARGET_SAMPLE_RATE: u32 = 16_000;
 
-pub enum TranscriptionEngine {
-    Whisper(SttEngine),
-    Nemotron(NemotronEngine),
+#[derive(Debug)]
+pub struct Error(pub String);
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
+
+impl std::error::Error for Error {}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+pub struct TranscriptionEngine(NemotronEngine);
 
 impl TranscriptionEngine {
     pub fn from_env(input_sample_rate: u32) -> Result<Self> {
-        match env::var("MEMO_ASR_BACKEND")
-            .unwrap_or_else(|_| "whisper".to_string())
-            .to_lowercase()
-            .as_str()
-        {
-            "whisper" => Ok(Self::Whisper(SttEngine::new_default(input_sample_rate)?)),
-            "nemotron" => Ok(Self::Nemotron(NemotronEngine::new(input_sample_rate)?)),
-            backend => Err(Error(format!(
-                "Unknown ASR backend {backend:?}; expected whisper or nemotron"
-            ))),
-        }
+        Ok(Self(NemotronEngine::new(input_sample_rate)?))
     }
 
     pub fn name(&self) -> &'static str {
-        match self {
-            Self::Whisper(_) => "Whisper GGML",
-            Self::Nemotron(_) => "Nemotron",
-        }
+        "Nemotron"
     }
 
     pub fn is_nemotron(&self) -> bool {
-        matches!(self, Self::Nemotron(_))
+        true
     }
 
     pub fn warmup(&self) -> Result<()> {
-        match self {
-            Self::Whisper(engine) => engine.warmup(),
-            Self::Nemotron(_) => Ok(()),
-        }
+        Ok(())
     }
 
-    pub fn set_prompt(&mut self, prompt: Option<String>) {
-        if let Self::Whisper(engine) = self {
-            engine.set_prompt(prompt);
-        }
+    pub fn set_prompt(&mut self, _prompt: Option<String>) {
         // Nemotron's streaming ONNX runtime has no prompt input. Memo still
         // applies its normal command detection and phrase replacements.
     }
 
     pub fn begin_live_stream(&mut self) -> Result<()> {
-        if let Self::Nemotron(engine) = self {
-            engine.begin_live_stream()?;
-        }
-        Ok(())
+        self.0.begin_live_stream()
     }
 
     pub fn feed_live_audio(&mut self, samples: &[i16]) -> Result<()> {
-        if let Self::Nemotron(engine) = self {
-            engine.feed_live_audio(samples)?;
-        }
-        Ok(())
+        self.0.feed_live_audio(samples)
     }
 
     pub fn abort_live_stream(&mut self) {
-        if let Self::Nemotron(engine) = self {
-            engine.abort_live_stream();
-        }
+        self.0.abort_live_stream();
     }
 
     pub fn transcribe(&mut self, samples: &[i16]) -> Result<String> {
-        match self {
-            Self::Whisper(engine) => engine.transcribe(samples),
-            Self::Nemotron(engine) => engine.finish_transcription(samples),
-        }
+        self.0.finish_transcription(samples)
     }
 }
 
