@@ -1,6 +1,8 @@
-import { app } from 'electron';
+import { app, nativeImage } from 'electron';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 import type { AppContext } from '../../shared/electron-api';
 import { logger } from '../utils/logger';
 
@@ -79,7 +81,7 @@ export class ApplicationIconService {
     }
 
     try {
-      const icon = await app.getFileIcon(appPath, { size: 'small' });
+      const icon = this.loadBundleIcon(appPath) ?? await app.getFileIcon(appPath, { size: 'normal' });
       const dataUrl = icon.isEmpty() ? null : icon.toDataURL();
       this.identities.set(cacheKey, { ...identity, appPath });
       this.iconDataUrls.set(cacheKey, dataUrl);
@@ -88,6 +90,76 @@ export class ApplicationIconService {
       logger.warn(`[AppIcon] Could not load icon for ${appName || bundleId}:`, error);
       this.iconDataUrls.set(cacheKey, null);
       return null;
+    }
+  }
+
+  private loadBundleIcon(appPath: string): Electron.NativeImage | null {
+    const iconPath = this.findBundleIconPath(appPath);
+    if (!iconPath) return null;
+
+    try {
+      const stats = fs.statSync(iconPath);
+      const cacheKey = createHash('sha256')
+        .update(`${iconPath}:${stats.size}:${stats.mtimeMs}`)
+        .digest('hex')
+        .slice(0, 24);
+      const cacheDirectory = path.join(app.getPath('userData'), 'cache', 'app-icons');
+      const pngPath = path.join(cacheDirectory, `${cacheKey}.png`);
+      if (!fs.existsSync(pngPath)) {
+        fs.mkdirSync(cacheDirectory, { recursive: true });
+        const temporaryPath = `${pngPath}.${process.pid}.tmp.png`;
+        try {
+          execFileSync('/usr/bin/sips', [
+            '-s', 'format', 'png',
+            '--resampleHeightWidth', '64', '64',
+            iconPath,
+            '--out', temporaryPath,
+          ], { stdio: 'ignore', timeout: 5_000 });
+          fs.renameSync(temporaryPath, pngPath);
+        } catch (error) {
+          fs.rmSync(temporaryPath, { force: true });
+          throw error;
+        }
+      }
+
+      const icon = nativeImage.createFromPath(pngPath);
+      return icon.isEmpty() ? null : icon;
+    } catch (error) {
+      logger.debug(`[AppIcon] Could not load bundle artwork from ${iconPath}:`, error);
+      return null;
+    }
+  }
+
+  private findBundleIconPath(appPath: string): string | undefined {
+    const infoPath = path.join(appPath, 'Contents', 'Info.plist');
+    const resourcesPath = path.join(appPath, 'Contents', 'Resources');
+    const iconName = this.readPlistString(infoPath, 'CFBundleIconFile')
+      || this.readPlistString(infoPath, 'CFBundleIconName');
+    if (iconName && path.basename(iconName) === iconName) {
+      const fileName = iconName.toLowerCase().endsWith('.icns') ? iconName : `${iconName}.icns`;
+      const iconPath = path.join(resourcesPath, fileName);
+      if (fs.existsSync(iconPath)) return iconPath;
+    }
+
+    try {
+      return fs.readdirSync(resourcesPath)
+        .filter((fileName) => fileName.toLowerCase().endsWith('.icns'))
+        .map((fileName) => path.join(resourcesPath, fileName))
+        .find((candidate) => fs.statSync(candidate).isFile());
+    } catch {
+      return undefined;
+    }
+  }
+
+  private readPlistString(infoPath: string, key: string): string | undefined {
+    try {
+      return bounded(execFileSync('/usr/bin/plutil', ['-extract', key, 'raw', infoPath], {
+        encoding: 'utf8',
+        timeout: 2_000,
+        maxBuffer: 16_384,
+      }), 255);
+    } catch {
+      return undefined;
     }
   }
 

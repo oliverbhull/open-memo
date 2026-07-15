@@ -123,7 +123,7 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
 
     const displayText = isProcessing ? 'Transcribing...' : entry.text;
     const sourceIcon = isDesktopEntry ? (
-      <AppIcon appName={appContext.appName || 'Unknown'} bundleId={appContext.bundleId} size={14} />
+      <AppIcon appName={appContext.appName || 'Unknown'} bundleId={appContext.bundleId} size={18} />
     ) : (
       <img 
         src={appIconBase} 
