@@ -5,8 +5,11 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
+use std::time::Duration;
 
 const TARGET_SAMPLE_RATE: u32 = 16_000;
+const WORKER_READY_TIMEOUT: Duration = Duration::from_secs(120);
+const TRANSCRIPTION_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug)]
 pub struct Error(pub String);
@@ -131,7 +134,7 @@ impl NemotronEngine {
         });
 
         let ready = responses
-            .recv()
+            .recv_timeout(WORKER_READY_TIMEOUT)
             .map_err(|e| Error(format!("Failed waiting for Nemotron worker: {e}")))?;
         if ready.trim() != "READY" {
             let status = child.try_wait().ok().flatten();
@@ -201,12 +204,12 @@ impl NemotronEngine {
         self.streamed_input_samples = 0;
 
         loop {
-            let line = match self.responses.recv() {
+            let line = match self.responses.recv_timeout(TRANSCRIPTION_TIMEOUT) {
                 Ok(line) => line,
-                Err(_) => {
+                Err(error) => {
                     let status = self.child.try_wait().ok().flatten();
                     return Err(Error(format!(
-                        "Nemotron worker exited before returning a transcript: {status:?}"
+                        "Nemotron worker did not return a transcript ({error}; status={status:?})"
                     )));
                 }
             };

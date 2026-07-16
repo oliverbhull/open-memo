@@ -3,8 +3,10 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { loadSettings, saveSettings, store as persistentStore } from './SettingsService.js';
 import { BrowserWindow } from 'electron';
-import Store from 'electron-store';
-import { StoreSchema } from './StoreSchema';
+import type { MemoSttService } from './MemoSttService';
+import type { BleManager } from './BleManager';
+import type { AudioSourceManager } from './AudioSourceManager';
+import { audioInputService } from './AudioInputService';
 
 // Track menu open state to prevent rebuilding while open
 let menuIsOpen = false;
@@ -24,9 +26,9 @@ let isBleConnected = false;
 let bleDeviceName: string | null = null;
 let lastTranscript: string | null = null;
 let mainWindow: BrowserWindow | null = null;
-let memoSttService: any = null; // MemoSttService instance
-let bleManager: any = null; // BleManager instance
-let store: Store<StoreSchema> | null = null; // Store instance for accessing saved UID
+let memoSttService: MemoSttService | null = null;
+let bleManager: BleManager | null = null;
+let audioSourceManager: AudioSourceManager | null = null;
 
 /**
  * Set main window reference
@@ -38,16 +40,19 @@ export function setMainWindow(window: BrowserWindow | null) {
 /**
  * Set MemoSttService reference for sending commands
  */
-export function setMemoSttService(service: any) {
+export function setMemoSttService(service: MemoSttService | null) {
   memoSttService = service;
 }
 
 /**
  * Set BleManager reference for connection operations
  */
-export function setBleManager(manager: any, storeInstance: Store<StoreSchema>) {
+export function setBleManager(manager: BleManager | null) {
   bleManager = manager;
-  store = storeInstance;
+}
+
+export function setAudioSourceManager(manager: AudioSourceManager | null) {
+  audioSourceManager = manager;
 }
 
 /**
@@ -55,6 +60,83 @@ export function setBleManager(manager: any, storeInstance: Store<StoreSchema>) {
  */
 export function setLastTranscript(text: string | null) {
   lastTranscript = text;
+}
+
+function restartMemoStt(): void {
+  memoSttService?.restart();
+}
+
+export async function refreshAudioInputDevices(): Promise<boolean> {
+  const devices = await audioInputService.refresh();
+  const selectedName = persistentStore.get('selectedSystemMicName');
+  const settings = loadSettings();
+  let fellBackToDefault = false;
+
+  // A manually pinned microphone may disappear when headphones are unplugged.
+  // Fall back to the live macOS default instead of repeatedly starting against a stale name.
+  if (
+    selectedName &&
+    devices.length > 0 &&
+    !devices.some((device) => device.name === selectedName)
+  ) {
+    console.log(`[Tray] Selected microphone is unavailable: ${selectedName}; using system default`);
+    if (settings.inputSource === 'system' && audioSourceManager) {
+      audioSourceManager.selectSystemMic(null);
+    } else {
+      persistentStore.set('selectedSystemMicName', null);
+    }
+    if (settings.inputSource === 'system') {
+      restartMemoStt();
+      fellBackToDefault = true;
+    }
+  }
+
+  updateMenuState();
+  return fellBackToDefault;
+}
+
+async function selectSystemInput(deviceName: string | null): Promise<void> {
+  if (deviceName && !audioInputService.getDevices().some((device) => device.name === deviceName)) {
+    console.warn(`[Tray] Ignoring unavailable microphone selection: ${deviceName}`);
+    return;
+  }
+
+  const settings = loadSettings();
+  const previousName = persistentStore.get('selectedSystemMicName') || null;
+  const changed = settings.inputSource !== 'system' || previousName !== deviceName;
+
+  // Set the explicit-system flag before disconnecting BLE so its asynchronous
+  // disconnect event cannot restore BLE as the preferred source.
+  if (audioSourceManager) {
+    audioSourceManager.selectSystemMic(deviceName);
+  } else {
+    persistentStore.set('selectedSystemMicName', deviceName);
+    settings.inputSource = 'system';
+    saveSettings(settings);
+  }
+
+  if ((settings.inputSource === 'ble' || isBleConnected) && bleManager) {
+    try {
+      await bleManager.disconnect();
+    } catch (error) {
+      console.error('[Tray] Failed to disconnect from BLE:', error);
+    }
+  }
+
+  if (changed) restartMemoStt();
+  updateMenuState();
+}
+
+async function refreshAudioInputsFromMenu(): Promise<void> {
+  const alreadyRestarted = await refreshAudioInputDevices();
+  const settings = loadSettings();
+  if (
+    !alreadyRestarted &&
+    settings.inputSource === 'system' &&
+    !persistentStore.get('selectedSystemMicName')
+  ) {
+    restartMemoStt();
+  }
 }
 
 /**
@@ -131,9 +213,7 @@ export function createTray() {
   // ONLY set template image on the base white icon
   // Colored icons should NOT be template images (they need to show color!)
   try {
-    if (baseIcon && (baseIcon as any).setTemplateImage) {
-      (baseIcon as any).setTemplateImage(true);
-    }
+    baseIcon?.setTemplateImage(true);
   } catch (e) {
     console.error('[Tray] Failed to set template images:', e);
   }
@@ -148,6 +228,7 @@ export function createTray() {
   }
   
   updateMenuState();
+  void refreshAudioInputDevices();
 }
 
 /**
@@ -194,6 +275,11 @@ function openMainWindow() {
   }
 }
 
+function openSettings() {
+  openMainWindow();
+  mainWindow?.webContents.send('settings:open');
+}
+
 /**
  * Update tray menu state based on current application state
  */
@@ -209,12 +295,7 @@ export function updateMenuState() {
   const s = loadSettings();
   
   // Build status text (transcription state)
-  const statusText = `Status: ${isProcessing ? 'Processing' : (isRecording ? 'Recording' : 'Idle')}  ●`;
-  // Bluetooth connection status for visibility
-  const bleStatusText = isBleConnected && bleDeviceName
-    ? `Bluetooth: Connected (${bleDeviceName})`
-    : 'Bluetooth: Disconnected';
-  
+  const statusText = `Memo — ${isProcessing ? 'Processing' : (isRecording ? 'Recording' : 'Ready')}`;
   // Update tray icon based on state
   // Priority: Processing > Recording > BLE Connected > Base
   try {
@@ -232,90 +313,83 @@ export function updateMenuState() {
   }
   
   const inputSrc = s.inputSource || 'system';
+  const selectedSystemMic = persistentStore.get('selectedSystemMicName') || null;
+  const availableSystemMics = audioInputService.getDevices();
+  const defaultSystemMic = audioInputService.getDefaultDevice();
   const lastMic = persistentStore.get('lastSystemMicDevice') as string | null | undefined;
   const lastRate = persistentStore.get('lastSystemMicSampleRate') as number | null | undefined;
-  let currentInputSummary = 'Default microphone';
+  let currentInputSummary = defaultSystemMic
+    ? `System Default — ${defaultSystemMic.name}`
+    : 'System Default';
   if (inputSrc === 'ble') {
     currentInputSummary = isBleConnected && bleDeviceName ? bleDeviceName : 'Bluetooth (not connected)';
   } else if (inputSrc === 'radio') {
     currentInputSummary = 'Aux / line-in';
-  } else if (lastMic) {
+  } else if (selectedSystemMic) {
+    currentInputSummary = selectedSystemMic;
+  } else if (!defaultSystemMic && lastMic) {
     currentInputSummary = lastRate ? `${lastMic} @ ${lastRate} Hz` : lastMic;
+  }
+
+  const systemMicrophoneItems: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: defaultSystemMic
+        ? `System Default — ${defaultSystemMic.name}`
+        : 'System Default',
+      type: 'radio',
+      checked: inputSrc === 'system' && !selectedSystemMic,
+      click: () => { void selectSystemInput(null); },
+    },
+    ...availableSystemMics.map((device): Electron.MenuItemConstructorOptions => ({
+      label: device.name,
+      type: 'radio',
+      checked: inputSrc === 'system' && selectedSystemMic === device.name,
+      click: () => { void selectSystemInput(device.name); },
+    })),
+  ];
+  if (availableSystemMics.length === 0) {
+    systemMicrophoneItems.push({ label: 'Loading audio inputs…', enabled: false });
   }
 
   const contextMenu = Menu.buildFromTemplate([
     { label: statusText, enabled: false },
-    { label: 'Dashboard', accelerator: 'Command+,', click: () => openMainWindow() },
+    { label: 'Open Memo', click: () => openMainWindow() },
+    { label: 'Settings…', click: () => openSettings() },
     { type: 'separator' },
-    { label: 'Copy Last Transcript', click: () => copyLastTranscript(), enabled: !!lastTranscript },
+    { label: 'Copy Last Dictation', click: () => copyLastTranscript(), enabled: !!lastTranscript },
     {
-      label: 'Audio Input',
+      label: 'Microphone',
       submenu: [
         {
           label: `Current: ${currentInputSummary}`,
           enabled: false,
         },
         { type: 'separator' },
+        ...systemMicrophoneItems,
+        { type: 'separator' },
         {
-          label: 'System Microphone',
-          type: 'radio',
-          checked: (s.inputSource || 'system') === 'system',
-          click: async () => {
-            const cfg = loadSettings();
-            if (cfg.inputSource !== 'system') {
-              cfg.inputSource = 'system';
-              saveSettings(cfg);
-              
-              // Disconnect from BLE if connected
-              if (isBleConnected && bleManager) {
-                try {
-                  await bleManager.disconnect();
-                } catch (error) {
-                  console.error('[Tray] Failed to disconnect from BLE:', error);
-                }
-              }
-              
-              // Restart memo-stt service with new input source
-              if (memoSttService && typeof memoSttService.restart === 'function') {
-                memoSttService.restart();
-              } else if (memoSttService && typeof memoSttService.stop === 'function' && typeof memoSttService.start === 'function') {
-                memoSttService.stop();
-                setTimeout(() => {
-                  memoSttService?.start();
-                }, 500);
-              }
-              updateMenuState();
-            }
-          }
-        },
-        {
-          label: 'Bluetooth Device',
+          label: 'Memo Bluetooth Device',
           type: 'radio',
           checked: (s.inputSource || 'system') === 'ble',
           click: async () => {
             const cfg = loadSettings();
             if (cfg.inputSource !== 'ble') {
+              audioSourceManager?.resetUserSelection();
               cfg.inputSource = 'ble';
               saveSettings(cfg);
               
               // Restart memo-stt service with new input source
-              if (memoSttService && typeof memoSttService.restart === 'function') {
-                memoSttService.restart();
-              } else if (memoSttService && typeof memoSttService.stop === 'function' && typeof memoSttService.start === 'function') {
-                memoSttService.stop();
-                setTimeout(() => {
-                  memoSttService?.start();
-                }, 500);
-              }
+              restartMemoStt();
               
               // Connect/reconnect to BLE device if not already connected
-              if (bleManager && store) {
-                const savedUid = store.get('memoUid');
+              if (bleManager) {
+                const manager = bleManager;
+                const savedUid = persistentStore.get('memoUid');
                 if (savedUid && !isBleConnected) {
                   // Wait a moment for the service to restart, then connect
                   setTimeout(async () => {
                     try {
-                      const result = await bleManager.connect(savedUid);
+                      const result = await manager.connect(savedUid);
                       if (!result.success) {
                         console.error('[Tray] Failed to connect to BLE device:', result.error);
                       }
@@ -327,9 +401,9 @@ export function updateMenuState() {
               }
               
               updateMenuState();
-            } else if (cfg.inputSource === 'ble' && !isBleConnected && bleManager && store) {
+            } else if (cfg.inputSource === 'ble' && !isBleConnected && bleManager) {
               // Already set to BLE but not connected - try to reconnect
-              const savedUid = store.get('memoUid');
+              const savedUid = persistentStore.get('memoUid');
               if (savedUid) {
                 try {
                   const result = await bleManager.connect(savedUid);
@@ -345,7 +419,7 @@ export function updateMenuState() {
           }
         },
         {
-          label: 'Aux',
+          label: 'Aux / Line In',
           type: 'radio',
           checked: (s.inputSource || 'system') === 'radio',
           click: async () => {
@@ -364,98 +438,36 @@ export function updateMenuState() {
               }
 
               // Restart memo-stt service with new input source
-              if (memoSttService && typeof memoSttService.restart === 'function') {
-                memoSttService.restart();
-              } else if (memoSttService && typeof memoSttService.stop === 'function' && typeof memoSttService.start === 'function') {
-                memoSttService.stop();
-                setTimeout(() => {
-                  memoSttService?.start();
-                }, 500);
-              }
+              restartMemoStt();
               updateMenuState();
             }
           }
-        }
-      ]
-    },
-    {
-      label: 'Options',
-      submenu: [
-        { 
-          label: 'Start at Login', 
-          type: 'checkbox', 
-          checked: app.getLoginItemSettings().openAtLogin,
-          click: () => toggleAutoStart()
         },
-        { 
-          label: 'Press Enter After Paste', 
-          type: 'checkbox', 
-          checked: s.postEnter || false,
-          click: () => {
-            const cfg = loadSettings();
-            cfg.postEnter = !cfg.postEnter;
-            saveSettings(cfg);
-            // Send command to memo-stt process
-            if (memoSttService && typeof memoSttService.setPressEnterAfterPaste === 'function') {
-              memoSttService.setPressEnterAfterPaste(cfg.postEnter);
-            }
-            updateMenuState(); // Refresh menu to show new state
-          }
-        },
+        { type: 'separator' },
         {
-          label: "Say 'enter' to press Enter",
-          type: 'checkbox',
-          checked: s.sayEnterToPressEnter ?? false,
-          click: () => {
-            const cfg = loadSettings();
-            cfg.sayEnterToPressEnter = !(cfg.sayEnterToPressEnter ?? false);
-            saveSettings(cfg);
-            updateMenuState();
-          }
+          label: 'Refresh Audio Inputs',
+          click: () => { void refreshAudioInputsFromMenu(); },
         },
-        {
-          label: 'Hands Free',
-          type: 'checkbox',
-          checked: s.handsFreeMode ?? false,
-          click: () => {
-            const cfg = loadSettings();
-            const next = !(cfg.handsFreeMode ?? false);
-            cfg.handsFreeMode = next;
-            saveSettings(cfg);
-            if (memoSttService && typeof memoSttService.restart === 'function') {
-              memoSttService.restart();
-            }
-            updateMenuState();
-          }
-        },
-        {
-          label: 'Mute all output while dictating',
-          type: 'checkbox',
-          checked: persistentStore.get('pauseMediaWhileRecording', true) !== false,
-          click: () => {
-            const next = !(persistentStore.get('pauseMediaWhileRecording', true) !== false);
-            persistentStore.set('pauseMediaWhileRecording', next);
-            updateMenuState();
-          }
-        }
       ]
     },
     { type: 'separator' },
-    { role: 'quit', accelerator: 'Command+Q' },
+    {
+      label: 'Start at Login',
+      type: 'checkbox',
+      checked: app.getLoginItemSettings().openAtLogin,
+      click: () => toggleAutoStart(),
+    },
+    { label: 'Quit Memo', role: 'quit', accelerator: 'Command+Q' },
   ]);
   
   tray.setContextMenu(contextMenu);
   
   // Track menu open/close events to prevent rebuilding while open
-  // Remove existing listeners to avoid duplicates
-  tray.removeAllListeners('menu-will-show');
-  tray.removeAllListeners('menu-will-hide');
-  
-  tray.on('menu-will-show', () => {
+  contextMenu.on('menu-will-show', () => {
     menuIsOpen = true;
   });
   
-  tray.on('menu-will-hide', () => {
+  contextMenu.on('menu-will-close', () => {
     menuIsOpen = false;
     // If there was a pending update, apply it now
     if (pendingMenuUpdate) {
@@ -499,4 +511,3 @@ export function setBleConnectionState(connected: boolean, deviceName?: string) {
 export function getTray(): Tray | null {
   return tray;
 }
-

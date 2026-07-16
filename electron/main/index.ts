@@ -1,24 +1,39 @@
 import { app, BrowserWindow, ipcMain, systemPreferences, shell, Menu, clipboard } from 'electron';
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { MemoSttService, TranscriptionData } from './services/MemoSttService';
-import { syncOrchestrator } from './services/SyncOrchestrator';
-import { connectionService } from './services/ConnectionService';
-import { createTray, setMainWindow, setLastTranscript, setRecordingState, setProcessingState, setBleConnectionState, updateMenuState, setBleManager } from './services/TrayService';
-import { loadSettings, saveSettings, Settings, AppConfig, store, migrateToElectronStore } from './services/SettingsService';
+import { createTray, refreshAudioInputDevices, setAudioSourceManager, setMainWindow, setLastTranscript, setRecordingState, setProcessingState, setBleConnectionState, updateMenuState, setBleManager, setMemoSttService } from './services/TrayService';
+import {
+  loadSettings,
+  loadUserSettings,
+  migrateToElectronStore,
+  saveSettings,
+  saveUserSettings,
+  Settings,
+  store,
+} from './services/SettingsService';
 import { applyPhraseReplacements, clampPhraseReplacementRulesFromInput } from './services/phraseReplacement';
 import { DEFAULT_APPS } from './services/DefaultApps';
 import { BleManager } from './services/BleManager';
 import { AudioSourceManager } from './services/AudioSourceManager';
 import { updateOverlayVisibility, sendAudioLevels, sendStatusToOverlay, sendCommandToOverlay } from './services/WindowService';
-// Audio storage disabled for open-source release (can be re-enabled)
-// import { audioStorageService } from './services/AudioStorageService';
-// License system removed for open-source release
-// import { licenseService } from './services/LicenseService';
 import { KeystrokeRecorder } from './services/KeystrokeRecorder';
 import path from 'path';
-import fs from 'fs';
 import os from 'os';
+import { pathToFileURL } from 'node:url';
 import { logger } from './utils/logger';
 import { pauseCompanionMedia, resumeCompanionMedia } from './services/CompanionMediaPause';
+import { stripLeadingDashSpace, stripTrailingEnter } from './services/textProcessing';
+import { runMemoExport } from './exportMemos';
+import { audioStorageService } from './services/AudioStorageService';
+import { applicationIconService } from './services/ApplicationIconService';
+import { saveJsonExport } from './services/JsonExportService';
+
+const isExportMode = process.env.MEMO_EXPORT === '1';
+
+if (isExportMode) {
+  app.setPath('userData', path.join(os.homedir(), 'Library/Application Support/Memo'));
+}
 
 // Get __dirname - esbuild bundles to CommonJS, so we calculate it
 // In dev: dist/main.cjs is at process.cwd()/dist/main.cjs
@@ -46,44 +61,12 @@ function devAutoConnectUid(): string | null {
 
   const deviceName = process.env.MEMO_DEV_AUTO_CONNECT_DEVICE_NAME?.trim();
   const match = deviceName?.match(/memo_([0-9A-Fa-f]{5})/i);
-  return match ? match[1].toUpperCase() : null;
-}
-
-/**
- * Strip a leading dash and spaces from a transcript (for example, "- Can you...").
- */
-function stripLeadingDashSpace(text: string): string {
-  const t = text.trim();
-  if (t.startsWith('-')) {
-    return t.slice(1).trimStart();
-  }
-  return t;
-}
-
-/**
- * If text ends with "enter" (fuzzy: case-insensitive, optional punctuation), strip it and return true for pressEnter.
- * Used when "Say 'enter' to press Enter" is enabled.
- */
-function stripTrailingEnter(
-  text: string,
-  sayEnterToPressEnter: boolean
-): { textToPaste: string; pressEnter: boolean } {
-  if (!sayEnterToPressEnter || !text || typeof text !== 'string') {
-    return { textToPaste: text.trim(), pressEnter: false };
-  }
-  const trimmed = text.trim();
-  // Fuzzy match: trailing "enter" (optional punct)
-  const match = trimmed.match(/\s+enter\s*[,.]?\s*$/i);
-  if (match) {
-    const stripped = trimmed.slice(0, -match[0].length).trimEnd();
-    return { textToPaste: stripped, pressEnter: true };
-  }
-  return { textToPaste: trimmed, pressEnter: false };
+  return match?.[1] ? match[1].toUpperCase() : null;
 }
 
 app.setName('Memo');
 
-const gotSingleInstanceLock = app.requestSingleInstanceLock();
+const gotSingleInstanceLock = isExportMode || app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.exit(0);
 }
@@ -97,6 +80,7 @@ let isRecording = false;
 let pendingBlePostStopEnter = false;
 let lastTextPasteAtMs = 0;
 let awaitingTranscriptionAfterStop = false;
+let isQuitting = false;
 
 app.on('second-instance', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -107,8 +91,7 @@ app.on('second-instance', () => {
 });
 
 function pressReturnForBlePostStopEnter(): void {
-  const { execSync } = require('child_process');
-  execSync('osascript -e \'tell application "System Events" to key code 36\'', { stdio: 'ignore' });
+  execFileSync('osascript', ['-e', 'tell application "System Events" to key code 36'], { stdio: 'ignore' });
 }
 
 function createWindow(): void {
@@ -136,22 +119,28 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
     },
-    // Removed vibrancy to allow CSS backdrop-filter to control blur
-    // ...(process.platform === 'darwin' && {
-    //   vibrancy: 'ultra-dark',
-    //   visualEffectState: 'active',
-    // }),
   });
 
-  if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
-  } else {
-    // In production, dist-react is bundled in app.asar
-    const htmlPath = path.join(app.getAppPath(), 'dist-react', 'index.html');
-    mainWindow.loadFile(htmlPath);
-  }
+  const rendererUrl = isDev
+    ? new URL('http://localhost:5173/')
+    : pathToFileURL(path.join(app.getAppPath(), 'dist-react', 'index.html'));
+  const allowRendererNavigation = (event: Electron.Event, targetUrl: string) => {
+    const target = new URL(targetUrl);
+    if (target.origin !== rendererUrl.origin || target.pathname !== rendererUrl.pathname) {
+      event.preventDefault();
+      logger.warn(`[Main] Blocked renderer navigation to ${targetUrl}`);
+    }
+  };
+  mainWindow.webContents.on('will-navigate', allowRendererNavigation);
+  mainWindow.webContents.on('will-redirect', allowRendererNavigation);
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  void mainWindow.loadURL(rendererUrl.toString()).catch((error) => {
+    logger.error('[Main] Failed to load renderer:', error);
+  });
+  if (isDev) mainWindow.webContents.openDevTools();
 
   // Show and focus the window
   mainWindow.show();
@@ -161,13 +150,19 @@ function createWindow(): void {
   }
 
   mainWindow.on('closed', () => {
-    connectionService.setMainWindow(null);
     setMainWindow(null);
     mainWindow = null;
   });
 
-  // Set main window in connection service and tray service
-  connectionService.setMainWindow(mainWindow);
+  mainWindow.on('close', (event) => {
+    if (process.platform === 'darwin' && !isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+      app.dock?.hide();
+    }
+  });
+
+  // Set main window in tray service
   setMainWindow(mainWindow);
 }
 
@@ -182,6 +177,16 @@ function createMenuBar() {
       label: app.getName(),
       submenu: [
         { role: 'about' },
+        { type: 'separator' },
+        {
+          label: 'Settings…',
+          accelerator: 'Command+,',
+          click: () => {
+            mainWindow?.show();
+            mainWindow?.focus();
+            mainWindow?.webContents.send('settings:open');
+          },
+        },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
@@ -232,7 +237,6 @@ function createMenuBar() {
 }
 
 function setMemoSttServiceForTray(service: MemoSttService | null) {
-  const { setMemoSttService } = require('./services/TrayService');
   setMemoSttService(service);
 }
 
@@ -258,9 +262,7 @@ function setupMemoSttService(): void {
       
       // Save UID to settings if connected
       if (state.connected && state.deviceUid) {
-        const settings = loadSettings();
-        settings.memoUid = state.deviceUid;
-        saveSettings(settings);
+        store.set('memoUid', state.deviceUid);
       }
       
       // Send to renderer
@@ -284,12 +286,6 @@ function setupMemoSttService(): void {
     audioSourceManager.on('fallbackToast', (toastData) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('audio:showToast', toastData);
-      }
-    });
-
-    audioSourceManager.on('sourceChanged', (source) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('audio:sourceChanged', source);
       }
     });
 
@@ -332,14 +328,11 @@ function setupMemoSttService(): void {
       updateMenuState();
     });
 
-    // When AudioSourceManager signals a system mic device change, do a debounced restart
-    audioSourceManager.on('systemMicDeviceChanged', () => {
-      scheduleSystemMicRestart('AudioSourceManager systemMicDeviceChanged');
-    });
+    setAudioSourceManager(audioSourceManager);
   }
 
   logger.info('Creating new MemoSttService instance');
-  memoSttService = new MemoSttService(null, audioSourceManager);
+  memoSttService = new MemoSttService(audioSourceManager);
   
   // Set MemoSttService in BleManager
   if (bleManager) {
@@ -351,7 +344,7 @@ function setupMemoSttService(): void {
   
   // Set BleManager reference in TrayService for connection operations
   if (bleManager) {
-    setBleManager(bleManager, store);
+    setBleManager(bleManager);
   }
   
   // Load hotkey from settings, default to 'function'
@@ -359,25 +352,15 @@ function setupMemoSttService(): void {
   const hotkey = userSettings.hotkey || 'function';
   memoSttService.setHotkey(hotkey);
   
-  // Auto-start service if BLE is the input source and we have a saved device name
+  // Resolve connection settings before starting the service once below.
   const settings = loadSettings();
   const devUid = devAutoConnectUid();
   if (devUid) {
     logger.info(`[Main] Dev auto-connect requested for memo_${devUid}`);
-    memoSttService.start();
-  } else if (settings.inputSource === 'ble' && settings.autoConnectDeviceName) {
-    logger.info(`[Main] Auto-starting service with BLE input source and saved device: ${settings.autoConnectDeviceName}`);
-    memoSttService.start();
   }
   
   // Note: postEnter setting is automatically sent by MemoSttService
   // after the process starts (with a delay to ensure stdin is ready)
-
-  // Audio storage disabled for open-source release
-  // let pendingAudioData: { opusBuffer: Buffer; wavBuffer?: Buffer; duration: number; timestamp: number } | null = null;
-  // memoSttService.on('audioData', (audioData) => {
-  //   pendingAudioData = audioData;
-  // });
 
   memoSttService.on('commandExecuted', (command: { type: string; app?: string; command?: string; url?: string }) => {
     logger.info(`[Main] Command executed: ${command.type}`, command);
@@ -432,8 +415,11 @@ function setupMemoSttService(): void {
       const pasteText = ' ' + textToPaste;
       try {
         clipboard.writeText(pasteText);
-        const { execSync } = require('child_process');
-        execSync('osascript -e \'tell application "System Events" to keystroke "v" using command down\'', { stdio: 'ignore' });
+        execFileSync(
+          'osascript',
+          ['-e', 'tell application "System Events" to keystroke "v" using command down'],
+          { stdio: 'ignore' }
+        );
         if (pressEnter) {
           pressReturnForBlePostStopEnter();
         }
@@ -453,22 +439,38 @@ function setupMemoSttService(): void {
     // Transcription completes processing, so clear processing state
     setProcessingState(false);
 
-    // Generate entry ID in main process so we can save audio with it
-    const { randomUUID } = require('crypto');
+    // Generate one canonical ID for both the memo and its optional WAV file.
     const entryId = randomUUID();
+    const { audioCapture, ...transcription } = data;
+    const appContext = applicationIconService.enrichContext(data.appContext);
+    let audio: Awaited<ReturnType<typeof audioStorageService.save>> | undefined;
+    const rendererAvailable = !!mainWindow && !mainWindow.isDestroyed();
+    if (rendererAvailable && settings.saveAudio && audioCapture?.wavBuffer) {
+      try {
+        audio = await audioStorageService.save(entryId, audioCapture.wavBuffer, audioCapture.duration);
+      } catch (error) {
+        logger.error(`[AudioStorage] Failed to retain audio for memo ${entryId}:`, error);
+        mainWindow?.webContents.send('audio:showToast', {
+          message: 'Transcript saved, but its audio could not be saved',
+          severity: 'warning',
+          duration: 4000,
+        });
+      }
+    }
 
     // Send transcription to renderer (use stripped text so feed does not show "enter")
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('transcription:new', {
-        ...data,
+        ...transcription,
         processedText: textToPaste,
         rawTranscript: pressEnterThisTime ? textToPaste : (data.rawTranscript ?? ''),
         id: entryId,
         timestamp: Date.now(),
+        ...(appContext ? { appContext } : {}),
+        ...(audio ? { audio } : {}),
       });
     }
     
-    // Audio storage disabled for open-source release
   });
 
   memoSttService.on('status', (status: string) => {
@@ -603,7 +605,7 @@ function setupMemoSttService(): void {
   // Clear the pinned device label so the next start uses the OS default input, then restart.
   memoSttService.on('micDeviceError', (detail: string) => {
     logger.warn(`[Main] mic device error: ${detail} — clearing fallback device and restarting`);
-    audioSourceManager?.clearFallbackDevice();
+    audioSourceManager?.clearSystemMicSelection();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('audio:showToast', {
         message: 'Microphone reconnecting…',
@@ -614,20 +616,6 @@ function setupMemoSttService(): void {
     // Brief delay so any pending stderr/exit events flush before we restart
     setTimeout(() => memoSttService?.restart(), 800);
   });
-
-  // Handle BLE device discovery events (from memo-stt scanning)
-  // Note: This is a global handler that forwards all discoveries
-  // The scan handler also sets up its own temporary handler
-  memoSttService.on('deviceDiscovered', (device: { name: string; id: string; rssi: number }) => {
-    logger.debug('[Main] Device discovered:', device.name);
-    // Forward to renderer immediately
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('device:deviceFound', device);
-    }
-  });
-
-  // BLE connection events are now handled by BleManager
-  // MemoSttService just emits events, BleManager manages state
 
   // Start memo-stt service
   memoSttService.start();
@@ -655,7 +643,18 @@ function setupMemoSttService(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  if (isExportMode) {
+    try {
+      await runMemoExport();
+      app.exit(0);
+    } catch (err) {
+      console.error('Memo export failed:', err);
+      app.exit(1);
+    }
+    return;
+  }
+
   // Run migration from file-based settings to electron-store
   migrateToElectronStore();
 
@@ -679,12 +678,6 @@ app.whenReady().then(() => {
     logger.info('[Main] User not onboarded yet, skipping memo-stt service start');
   }
   
-  // Audio storage disabled for open-source release
-  // audioStorageService.initialize()
-
-  // License system removed for open-source release
-  // licenseService.initialize()
-
   // Initialize tray. The overlay window is created on demand when recording
   // starts so its transparency context is fresh for the active display.
   createTray();
@@ -715,33 +708,27 @@ app.whenReady().then(() => {
 });
 
 // Cleanup function to ensure the local ASR process is closed
+let cleanupComplete = false;
 const cleanupMemoStt = () => {
+  if (cleanupComplete) return;
+  cleanupComplete = true;
+
   if (memoSttService) {
     logger.info('Cleaning up memo-stt service...');
     memoSttService.stop();
     memoSttService = null;
   }
 
-  // Also cleanup connection service
-  connectionService.stopListening();
-
-  // Audio storage disabled for open-source release
-  // audioStorageService.shutdown()
 };
 
 app.on('window-all-closed', () => {
-  cleanupMemoStt();
-  
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
 
-app.on('before-quit', (event) => {
-  cleanupMemoStt();
-});
-
-app.on('will-quit', (event) => {
+app.on('before-quit', () => {
+  isQuitting = true;
   cleanupMemoStt();
 });
 
@@ -762,58 +749,14 @@ process.on('SIGINT', () => {
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught exception:', error);
   cleanupMemoStt();
+  app.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled rejection at:', promise, 'reason:', reason);
   cleanupMemoStt();
+  app.exit(1);
 });
-
-// User settings file path
-const getUserSettingsPath = (): string => {
-  return path.join(os.homedir(), '.memo-web-settings.json');
-};
-
-// Load user settings
-const loadUserSettings = (): { userName?: string; onboardedUsers?: string[]; hotkey?: string } => {
-  try {
-    const settingsPath = getUserSettingsPath();
-    if (fs.existsSync(settingsPath)) {
-      const data = fs.readFileSync(settingsPath, 'utf-8');
-      return JSON.parse(data);
-    }
-  } catch (error) {
-    logger.error('Failed to load user settings:', error);
-  }
-  return {};
-};
-
-// Save user settings with atomic write to prevent race conditions
-const saveUserSettings = (settings: { userName?: string; onboardedUsers?: string[]; hotkey?: string }): void => {
-  try {
-    const settingsPath = getUserSettingsPath();
-    const tempPath = `${settingsPath}.tmp`;
-    const existing = loadUserSettings();
-    const updated = { ...existing, ...settings };
-    
-    // Write to temporary file first
-    fs.writeFileSync(tempPath, JSON.stringify(updated, null, 2), 'utf-8');
-    
-    // Atomic rename (rename is atomic on most filesystems)
-    fs.renameSync(tempPath, settingsPath);
-  } catch (error) {
-    logger.error('Failed to save user settings:', error);
-    // Clean up temp file if it exists
-    try {
-      const tempPath = `${getUserSettingsPath()}.tmp`;
-      if (fs.existsSync(tempPath)) {
-        fs.unlinkSync(tempPath);
-      }
-    } catch (cleanupError) {
-      logger.error('Failed to cleanup temp settings file:', cleanupError);
-    }
-  }
-};
 
 // IPC handlers
 ipcMain.handle('memo-stt:get-status', () => {
@@ -874,13 +817,9 @@ ipcMain.handle('permissions:check-input-monitoring', async () => {
     // We check by trying to use the permission (indirect check)
     // For now, we'll use a workaround: check if the app can monitor input
     // This is a best-effort check - the actual permission is managed by macOS
-    if (app.isReady() && systemPreferences.isTrustedAccessibilityClient) {
-      // Input Monitoring is separate from Accessibility, but we can't directly check it
-      // Return true if we can't determine (user will need to check manually)
-      // The memo-stt binary will fail if permission isn't granted, which we'll detect
-      return true; // We'll detect the actual status when memo-stt tries to start
-    }
-    return false;
+    // Electron has no API for this distinct macOS permission. The memo-stt
+    // process reports an actionable error if access is missing.
+    return app.isReady();
   } catch (error) {
     logger.error('Failed to check input monitoring permission:', error);
     return false;
@@ -964,8 +903,12 @@ ipcMain.handle('app:start-memo-stt-service', () => {
 });
 
 // User name handlers
-ipcMain.handle('user:save-name', async (_event, name: string) => {
-  saveUserSettings({ userName: name });
+function normalizeUserName(value: unknown): string {
+  return typeof value === 'string' ? value.trim().slice(0, 100) : '';
+}
+
+ipcMain.handle('user:save-name', async (_event, name: unknown) => {
+  saveUserSettings({ userName: normalizeUserName(name) });
 });
 
 ipcMain.handle('user:get-name', async () => {
@@ -973,51 +916,23 @@ ipcMain.handle('user:get-name', async () => {
   return settings.userName || null;
 });
 
-ipcMain.handle('user:is-onboarded', async (_event, userName: string) => {
+ipcMain.handle('user:is-onboarded', async (_event, userName: unknown) => {
   const settings = loadUserSettings();
   const onboardedUsers = settings.onboardedUsers || [];
-  return onboardedUsers.includes(userName);
+  return onboardedUsers.includes(normalizeUserName(userName));
 });
 
-ipcMain.handle('user:mark-onboarded', async (_event, userName: string) => {
+ipcMain.handle('user:mark-onboarded', async (_event, userName: unknown) => {
   const settings = loadUserSettings();
   const onboardedUsers = settings.onboardedUsers || [];
-  
-  if (!onboardedUsers.includes(userName)) {
+  const normalizedName = normalizeUserName(userName);
+
+  if (normalizedName && !onboardedUsers.includes(normalizedName)) {
     saveUserSettings({
       ...settings,
-      onboardedUsers: [...onboardedUsers, userName],
+      onboardedUsers: [...onboardedUsers, normalizedName],
     });
   }
-});
-
-// Sync handlers
-ipcMain.handle('sync:start-listening', () => {
-  return syncOrchestrator.startListening();
-});
-
-ipcMain.handle('sync:stop-listening', () => {
-  syncOrchestrator.stopListening();
-});
-
-ipcMain.handle('sync:get-connection-info', () => {
-  return syncOrchestrator.getConnectionInfo();
-});
-
-ipcMain.handle('sync:sync-now', async () => {
-  return syncOrchestrator.syncNow();
-});
-
-ipcMain.handle('sync:get-status', () => {
-  return syncOrchestrator.getStatus();
-});
-
-ipcMain.handle('sync:get-last-sync-time', () => {
-  return syncOrchestrator.getLastSyncTime();
-});
-
-ipcMain.handle('sync:is-connected', () => {
-  return syncOrchestrator.isConnected();
 });
 
 // Device IPC Handlers - Simplified UID-only connection
@@ -1036,14 +951,7 @@ ipcMain.handle('device:connectByUid', async (_event, uid: string) => {
       
       // Restart memo-stt service with new input source
       if (memoSttService) {
-        if (typeof memoSttService.restart === 'function') {
-          memoSttService.restart();
-        } else if (typeof memoSttService.stop === 'function' && typeof memoSttService.start === 'function') {
-          memoSttService.stop();
-          setTimeout(() => {
-            memoSttService?.start();
-          }, 500);
-        }
+        memoSttService.restart();
         
         // Wait a moment for the service to restart before connecting
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -1086,135 +994,7 @@ ipcMain.handle('device:clearSavedDevice', async () => {
   }
 });
 
-// Legacy BLE IPC Handlers - Updated to use BleManager for backward compatibility
-ipcMain.handle('ble:setUid', async (_event, uid: string) => {
-  try {
-    if (!bleManager) {
-      return { success: false, error: 'BLE Manager not initialized' };
-    }
-    // Connect using the new simplified API
-    return await bleManager.connect(uid);
-  } catch (error) {
-    logger.error('[BLE] Failed to set UID:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
-ipcMain.handle('ble:clearUid', async () => {
-  try {
-    if (!bleManager) {
-      return { success: false, error: 'BLE Manager not initialized' };
-    }
-    await bleManager.disconnect();
-    // Clear UID from store
-    store.set('memoUid', null);
-    return { success: true };
-  } catch (error) {
-    logger.error('[BLE] Failed to clear UID:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
-ipcMain.handle('ble:getState', () => {
-  if (!bleManager) {
-    return {
-      state: 'idle',
-      memoUid: null,
-      connectedDeviceName: null,
-      batteryLevel: null,
-      reconnectAttempts: 0,
-      lastConnectionTime: null,
-      errorMessage: 'BLE Manager not initialized',
-    };
-  }
-  const state = bleManager.getState();
-  // Return in old format for backward compatibility
-  return {
-    state: state.connected ? 'connected' : 'idle',
-    memoUid: state.deviceUid,
-    connectedDeviceName: state.deviceName,
-    batteryLevel: state.batteryLevel,
-    reconnectAttempts: 0,
-    lastConnectionTime: null,
-    errorMessage: null,
-  };
-});
-
-ipcMain.handle('ble:reconnect', async () => {
-  try {
-    if (!bleManager) {
-      return { success: false, error: 'BLE Manager not initialized' };
-    }
-    const state = bleManager.getState();
-    if (state.deviceUid) {
-      return await bleManager.connect(state.deviceUid);
-    }
-    return { success: false, error: 'No UID to reconnect with' };
-  } catch (error) {
-    logger.error('[BLE] Failed to reconnect:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
-ipcMain.handle('ble:disconnect', async () => {
-  try {
-    if (!bleManager) {
-      return { success: false, error: 'BLE Manager not initialized' };
-    }
-    return await bleManager.disconnect();
-  } catch (error) {
-    logger.error('[BLE] Failed to disconnect:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
-ipcMain.handle('ble:setAutoReconnect', async (_event, enabled: boolean) => {
-  try {
-    store.set('autoReconnect', enabled);
-    return { success: true };
-  } catch (error) {
-    logger.error('[BLE] Failed to set auto-reconnect:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
 // Audio Source Management IPC Handlers
-ipcMain.handle('audio:getSource', () => {
-  if (!audioSourceManager) {
-    return { source: 'system' };
-  }
-
-  return { source: audioSourceManager.getCurrentSource() };
-});
-
-ipcMain.handle('audio:setFallbackMic', async (_event, micId: string, label?: string | null) => {
-  try {
-    if (!audioSourceManager) {
-      return { success: false, error: 'Audio Source Manager not initialized' };
-    }
-
-    audioSourceManager.setFallbackMic(micId, label);
-    return { success: true };
-  } catch (error) {
-    logger.error('[Audio] Failed to set fallback mic:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
-ipcMain.handle('audio:switchToSystemMic', async () => {
-  try {
-    if (!audioSourceManager) {
-      return { success: false, error: 'Audio Source Manager not initialized' };
-    }
-
-    await audioSourceManager.switchToSystemMic('manual');
-    return { success: true };
-  } catch (error) {
-    logger.error('[Audio] Failed to switch to system mic:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
 // Debounce timer for input-device-change restarts (avoids rapid-fire restarts when the OS
 // fires multiple devicechange events during a single plug/unplug event).
 let inputDeviceChangeTimer: NodeJS.Timeout | null = null;
@@ -1245,8 +1025,11 @@ function scheduleSystemMicRestart(reason: string): void {
   }, 600);
 }
 
-ipcMain.handle('audio:inputDeviceChanged', () => {
-  scheduleSystemMicRestart('devicechange event');
+ipcMain.handle('audio:inputDeviceChanged', async () => {
+  const alreadyRestarted = await refreshAudioInputDevices();
+  if (!alreadyRestarted && !store.get('selectedSystemMicName')) {
+    scheduleSystemMicRestart('devicechange event');
+  }
 });
 
 // Interface settings handlers
@@ -1258,6 +1041,7 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
     sayEnterToPressEnter: settings.sayEnterToPressEnter ?? false,
     pushToTalkMode: settings.pushToTalkMode ?? false,
     handsFreeMode: settings.handsFreeMode ?? false,
+    saveAudio: settings.saveAudio ?? false,
     vocabWords: Array.isArray(settings.vocabWords) ? settings.vocabWords : [],
     phraseReplacements: Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : [],
     startAtLogin: loginItemSettings.openAtLogin || false,
@@ -1288,9 +1072,7 @@ ipcMain.handle('settings:setSayEnterToPressEnter', async (_event, enabled: boole
   const settings = loadSettings();
   settings.sayEnterToPressEnter = enabled;
   saveSettings(settings);
-  if (trayService) {
-    updateMenuState();
-  }
+  updateMenuState();
   return true;
 });
 
@@ -1332,6 +1114,16 @@ ipcMain.handle('settings:setHandsFreeMode', async (_event, enabled: boolean) => 
   return true;
 });
 
+ipcMain.handle('settings:setSaveAudio', async (_event, enabled: boolean) => {
+  const settings = loadSettings();
+  const changed = settings.saveAudio !== (enabled === true);
+  settings.saveAudio = enabled === true;
+  saveSettings(settings);
+  if (changed) memoSttService?.restart();
+  updateMenuState();
+  return true;
+});
+
 ipcMain.handle('settings:setStartAtLogin', async (_event, enabled: boolean) => {
   app.setLoginItemSettings({
     openAtLogin: enabled,
@@ -1340,12 +1132,53 @@ ipcMain.handle('settings:setStartAtLogin', async (_event, enabled: boolean) => {
     path: process.execPath
   });
   
-  // Update tray menu to reflect the change
-  if (trayService) {
-    updateMenuState();
-  }
+  updateMenuState();
   
   return true;
+});
+
+ipcMain.handle('audio:get', async (_event, entryId: string) => {
+  try {
+    const data = await audioStorageService.read(entryId);
+    return data ? { success: true, data } : { success: false, error: 'Audio not found' };
+  } catch (error) {
+    logger.error(`[AudioStorage] Failed to read memo ${entryId}:`, error);
+    return { success: false, error: 'Audio could not be loaded' };
+  }
+});
+
+ipcMain.handle('audio:delete', async (_event, entryId: string) => {
+  try {
+    await audioStorageService.delete(entryId);
+    return { success: true };
+  } catch (error) {
+    logger.error(`[AudioStorage] Failed to delete memo ${entryId}:`, error);
+    return { success: false, error: 'Audio could not be deleted' };
+  }
+});
+
+ipcMain.handle('audio:openFolder', async () => {
+  try {
+    const directory = await audioStorageService.openDirectory();
+    const error = await shell.openPath(directory);
+    return error ? { success: false, error } : { success: true };
+  } catch (error) {
+    logger.error('[AudioStorage] Failed to open recordings folder:', error);
+    return { success: false, error: 'Recordings folder could not be opened' };
+  }
+});
+
+ipcMain.handle('app-icon:get', (_event, appName: string, bundleId?: string) => {
+  return applicationIconService.getIconDataUrl(appName, bundleId);
+});
+
+ipcMain.handle('export:json', async (_event, document: unknown) => {
+  try {
+    return await saveJsonExport(mainWindow, document);
+  } catch (error) {
+    logger.error('[Export] Failed to save JSON export:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Export failed' };
+  }
 });
 
 // Voice command handlers
@@ -1374,95 +1207,6 @@ ipcMain.handle('settings:saveVoiceCommands', async (_event, voiceCommands: Setti
   
   return true;
 });
-
-// Sync status events
-syncOrchestrator.on('status', (status) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('sync:status', status);
-  }
-});
-
-// Handle incoming sync messages from renderer (responses to WebSocket)
-ipcMain.on('sync:outgoing-message', (_event, message) => {
-  logger.info('Received outgoing message from renderer:', message.type);
-  try {
-    if (connectionService.isConnected()) {
-      logger.info('Forwarding message to WebSocket client:', message.type);
-      connectionService.sendMessage(message);
-    } else {
-      logger.warn('Cannot send message: not connected to client');
-    }
-  } catch (error) {
-    logger.error('Error forwarding message to WebSocket:', error);
-  }
-});
-
-// Handle incoming WebSocket messages - forward to renderer
-ipcMain.handle('sync:handle-message', async (_event, message) => {
-  // This will be called by renderer after processing
-  // Return response to send back via WebSocket
-  return message; // Renderer will send the response via sync:outgoing-message
-});
-
-// Clear IndexedDB storage (for corrupted database recovery)
-ipcMain.handle('storage:clear-indexeddb', async () => {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    throw new Error('Main window not available');
-  }
-  
-  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
-  
-  try {
-    // First, try Electron's session API
-    await mainWindow.webContents.session.clearStorageData({
-      storages: ['indexeddb'],
-    });
-    logger.info('IndexedDB storage cleared via session API');
-    
-    // In development, also try to delete the LOCK file directly
-    if (isDev) {
-      const userDataPath = app.getPath('userData');
-      const indexedDBPath = path.join(userDataPath, 'IndexedDB');
-      
-      // Wait a bit for session clear to complete
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Try to remove LOCK files in development
-      try {
-        const indexedDBDir = path.join(indexedDBPath, 'http_localhost_5173.indexeddb.leveldb');
-        if (fs.existsSync(indexedDBDir)) {
-          const lockFile = path.join(indexedDBDir, 'LOCK');
-          if (fs.existsSync(lockFile)) {
-            logger.warn('Removing stuck LOCK file in development mode...');
-            fs.unlinkSync(lockFile);
-            logger.info('LOCK file removed');
-          }
-          
-          // Also try to remove the entire directory if it's still problematic
-          // (we'll recreate it on next open)
-          try {
-            fs.rmSync(indexedDBDir, { recursive: true, force: true });
-            logger.info('Removed IndexedDB directory in development mode');
-          } catch (rmError) {
-            // Directory might be in use, that's okay
-            logger.debug('Could not remove IndexedDB directory:', rmError);
-          }
-        }
-      } catch (fileError) {
-        logger.warn('Could not remove LOCK file (may be in use):', fileError);
-        // Not critical, session clear should have worked
-      }
-    }
-    
-    return true;
-  } catch (error) {
-    logger.error('Failed to clear IndexedDB storage:', error);
-    throw error;
-  }
-});
-
-// Audio storage and license IPC handlers removed for open-source release.
-// See AudioStorageService.ts to re-enable audio storage.
 
 // Keystroke recording handlers
 if (!keystrokeRecorder) {
@@ -1519,5 +1263,3 @@ ipcMain.handle('keystroke:record', (_event, modifiers: string[], key: string) =>
     return { success: false, error: String(error) };
   }
 });
-
-

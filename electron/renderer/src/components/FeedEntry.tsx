@@ -1,16 +1,14 @@
 import React, { useState, forwardRef, useRef, useEffect } from 'react';
 import { formatTimestamp } from '../utils/formatTimestamp';
-import { formatAddress } from '../utils/addressFormatter';
+import { formatAddress, type LocationData } from '../utils/addressFormatter';
 import { AppIcon } from './AppIcon';
-import { PlayButton } from './PlayButton';
 import { useTheme } from '../context/ThemeContext';
 import appIconBase from '../assets/app-icon-base.png';
+import type { AppContext, AudioAttachment } from '../../../shared/electron-api';
+import { PlayButton } from './PlayButton';
 import '../styles/feed.css';
 
-export interface AppContext {
-  appName: string;
-  windowTitle: string;
-}
+export type { AppContext };
 
 export interface FeedEntryData {
   id: string;
@@ -20,19 +18,19 @@ export interface FeedEntryData {
   rawTranscript?: string;
   wasProcessedByLLM?: boolean;
   appContext?: AppContext;
+  audio?: AudioAttachment;
   context?: Record<string, unknown>; // Full context for accessing mobile location data
 }
 
 interface FeedEntryProps {
   entry: FeedEntryData;
   onCopy?: (text: string) => void;
-  onDelete?: (id: string) => void;
   isExpanded?: boolean;
   onExpandToggle?: () => void;
 }
 
 export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
-  ({ entry, onCopy, onDelete, isExpanded: controlledIsExpanded, onExpandToggle }, ref) => {
+  ({ entry, onCopy, isExpanded: controlledIsExpanded, onExpandToggle }, ref) => {
     const { primary } = useTheme();
     const [internalIsExpanded, setInternalIsExpanded] = useState(false);
     const expandContentRef = useRef<HTMLDivElement>(null);
@@ -41,20 +39,8 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
     // Extract fields from context for backward compatibility
     const context = entry.context || {};
     const recordingState = (context.recordingState as string) || 'completed';
-    const location = context.location as {
-      street?: string;
-      neighborhood?: string;
-      city?: string;
-      state?: string;
-      country?: string;
-      formattedAddress?: string;
-    } | undefined;
+    const location = context.location as LocationData | undefined;
     const appContext = entry.appContext;
-    const source = context.source as string | undefined;
-    
-    // Determine if this is a mobile entry
-    const isMobileEntry = source === 'mobile';
-    
     // Determine if this is a desktop entry (has appContext)
     const isDesktopEntry = !!appContext?.appName;
     
@@ -62,10 +48,9 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
     // For desktop: show windowTitle
     const subtitleText = isDesktopEntry 
       ? appContext.windowTitle || 'Unknown'
-      : (location ? formatAddress(location as any) : 'Unknown Location');
+      : (location ? formatAddress(location) : 'Unknown Location');
     
     const isProcessing = recordingState === 'processing';
-    const isError = entry.text.includes('Transcription failed') || entry.text.includes('failed');
     
     // Use createdAt if available, fallback to timestamp
     const entryTimestamp = entry.createdAt || entry.timestamp;
@@ -117,9 +102,9 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
       }
     };
 
-    const displayText = isProcessing ? 'Transcribing...' : (isError ? entry.text : entry.text);
+    const displayText = isProcessing ? 'Transcribing...' : entry.text;
     const sourceIcon = isDesktopEntry ? (
-      <AppIcon appName={appContext.appName || 'Unknown'} size={14} />
+      <AppIcon appName={appContext.appName || 'Unknown'} bundleId={appContext.bundleId} size={18} />
     ) : (
       <img 
         src={appIconBase} 
@@ -162,14 +147,14 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
           </svg>
         </button>
-        <PlayButton entryId={entry.id} size={24} />
+        {entry.audio && <PlayButton entryId={entry.id} size={18} />}
       </div>
     );
 
     return (
       <div
         ref={ref}
-        className={`container glass-card ${isProcessing ? 'processing' : ''} ${isError ? 'error' : ''}`}
+        className={`container glass-card ${isProcessing ? 'processing' : ''}`}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
         style={{
@@ -195,7 +180,7 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
             >
               <div className="fullTextContainer">
                 <div 
-                  className={`fullText ${isProcessing ? 'processing-text' : ''} ${isError ? 'error-text' : ''}`}
+                  className={`fullText ${isProcessing ? 'processing-text' : ''}`}
                 >
                   {displayText}
                 </div>
@@ -210,7 +195,7 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
             <div className="collapsedContent">
               <div className="fullTextContainer">
                 <div 
-                  className={`text ${isProcessing ? 'processing-text' : ''} ${isError ? 'error-text' : ''}`}
+                  className={`text ${isProcessing ? 'processing-text' : ''}`}
                 >
                   {displayText}
                 </div>
@@ -225,7 +210,9 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
   return (
     prevProps.entry.id === nextProps.entry.id &&
     prevProps.entry.text === nextProps.entry.text &&
-    (prevProps.entry.timestamp === nextProps.entry.timestamp || prevProps.entry.createdAt === nextProps.entry.createdAt) &&
+    prevProps.entry.timestamp === nextProps.entry.timestamp &&
+    prevProps.entry.createdAt === nextProps.entry.createdAt &&
+    prevProps.entry.audio?.fileName === nextProps.entry.audio?.fileName &&
     prevProps.isExpanded === nextProps.isExpanded
   );
 });

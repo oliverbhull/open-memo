@@ -11,20 +11,25 @@
     "dev:renderer": "vite --config vite.config.ts",
     "dev:main": "esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs --watch",
     "dev:preload": "esbuild electron/preload/index.ts --platform=node --bundle --external:electron --outfile=dist/preload.cjs --format=cjs --watch",
-    "build:ts": "npm run build:main && npm run build:preload",
+    "build:ts": "npm run build:main && npm run build:preload && npm run build:overlay-preload",
     "build:main": "esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs",
     "build:preload": "esbuild electron/preload/index.ts --platform=node --bundle --external:electron --outfile=dist/preload.cjs --format=cjs",
+    "build:overlay-preload": "esbuild electron/preload/overlay.ts --platform=node --bundle --external:electron --outfile=dist/overlay-preload.cjs --format=cjs",
     "build:renderer": "vite build --config vite.config.ts",
     "build:stt:release": "bash scripts/shell/build-stt.sh",
     "build:nemotron": "bash scripts/shell/build-nemotron.sh",
     "verify:nemotron": "bash scripts/shell/verify-nemotron-bundle.sh",
     "build:backends": "npm run build:stt:release && npm run build:nemotron",
-    "build:app": "npm run build:backends && npm run build:ts && npm run build:renderer",
+    "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.json",
+    "test": "esbuild tests/*.test.ts --bundle --platform=node --format=esm --outdir=.build/tests && node --test .build/tests/*.test.js",
+    "check": "npm run typecheck && npm test",
+    "build:app": "npm run check && npm run build:backends && npm run build:ts && npm run build:renderer",
     "build:dir": "npm run build:app && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
     "dist:mac": "npm run build:app && electron-builder --mac --publish=never",
     "release:mac": "npm run dist:mac",
     "build": "npm run dist:mac",
-    "start": "npm run build:backends && npm run build:ts && electron ."
+    "start": "npm run build:backends && npm run build:ts && electron .",
+    "export-memos": "npm run build:main && npm run build:renderer && MEMO_EXPORT=1 electron ."
   },
   "keywords": [
     "nemotron",
@@ -36,6 +41,9 @@
   ],
   "author": "Oliver Hull",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "productName": "Memo",
   "repository": {
     "type": "git",
@@ -45,32 +53,22 @@
     "url": "https://github.com/oliverbhull/open-memo/issues"
   },
   "dependencies": {
-    "@huggingface/transformers": "^4.2.0",
-    "@types/qrcode": "^1.5.6",
-    "@types/react-window": "^1.8.8",
-    "@types/uuid": "^10.0.0",
-    "date-fns": "^3.6.0",
-    "electron-store": "^11.0.2",
-    "qrcode": "^1.5.4",
-    "react-window": "^2.2.3",
-    "simple-icons": "^15.21.0",
-    "uuid": "^13.0.0",
-    "ws": "^8.18.3"
+    "electron-store": "^11.0.2"
   },
   "devDependencies": {
-    "@types/node": "^20.14.0",
-    "@types/react": "^19.1.12",
-    "@types/react-dom": "^19.1.9",
-    "@vitejs/plugin-react": "^5.0.2",
-    "concurrently": "^9.2.1",
-    "electron": "^32.0.0",
-    "electron-builder": "^26.0.12",
-    "esbuild": "^0.23.0",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "concurrently": "^9.2.4",
+    "electron": "^41.7.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "typescript": "^5.9.2",
-    "vite": "^7.1.5",
-    "wait-on": "^9.0.0"
+    "vite": "^8.1.4",
+    "wait-on": "^9.0.10"
   },
   "build": {
     "appId": "com.memo.desktop",
@@ -130,8 +128,17 @@
     "files": [
       "dist/main.cjs",
       "dist/preload.cjs",
+      "dist/overlay-preload.cjs",
       "dist-react/**",
-      "assets/**",
+      "assets/app-icons/app-icon.icns",
+      "assets/dmg-background.png",
+      "assets/icon-16.png",
+      "assets/icon-16@2x.png",
+      "assets/icon_green-16.png",
+      "assets/icon_green-16@2x.png",
+      "assets/icon_red-16.png",
+      "assets/icon_blue-16.png",
+      "assets/icon_blue-16@2x.png",
       "electron/renderer/overlay.html",
       "package.json"
     ],
@@ -148,7 +155,6 @@
         "to": "nemotron"
       }
     ],
-    "beforePack": "scripts/beforePack.cjs",
     "afterPack": "scripts/afterPack.cjs",
     "publish": [
       {

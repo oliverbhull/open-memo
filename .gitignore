@@ -87,11 +87,8 @@ Desktop.ini
 app/
 packages/
 
-# Whisper models (large binary files, downloaded during CI/CD and local dev)
+# Local model files and private configuration
 assets/models/*.bin
-node_modules/
-
-# Firebase config
 assets/firebase.web.json
 
 # Signing certificates and keys

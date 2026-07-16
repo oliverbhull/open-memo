@@ -1,0 +1,433 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -481,6 +481,45 @@
+     if let Some(join_handle) = handle.lock().unwrap().take() {
+         let _ = join_handle.join();
+     }
++}
++
++fn emit_saved_audio(samples: &[i16], sample_rate: u32) {
++    let enabled = std::env::var("MEMO_EMIT_AUDIO")
++        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
++        .unwrap_or(false);
++    if !enabled || samples.is_empty() {
++        return;
++    }
++
++    let samples = samples.to_vec();
++    std::thread::spawn(move || {
++        use base64::{engine::general_purpose::STANDARD, Engine as _};
++
++        let channels = 1u16;
++        let bits_per_sample = 16u16;
++        let pcm_data_len = samples.len() * 2;
++        let mut wav_data = Vec::with_capacity(44 + pcm_data_len);
++        wav_data.extend_from_slice(b"RIFF");
++        wav_data.extend_from_slice(&(36u32 + pcm_data_len as u32).to_le_bytes());
++        wav_data.extend_from_slice(b"WAVEfmt ");
++        wav_data.extend_from_slice(&16u32.to_le_bytes());
++        wav_data.extend_from_slice(&1u16.to_le_bytes());
++        wav_data.extend_from_slice(&channels.to_le_bytes());
++        wav_data.extend_from_slice(&sample_rate.to_le_bytes());
++        wav_data.extend_from_slice(
++            &(sample_rate * channels as u32 * (bits_per_sample as u32 / 8)).to_le_bytes(),
++        );
++        wav_data.extend_from_slice(&(channels * (bits_per_sample / 8)).to_le_bytes());
++        wav_data.extend_from_slice(&bits_per_sample.to_le_bytes());
++        wav_data.extend_from_slice(b"data");
++        wav_data.extend_from_slice(&(pcm_data_len as u32).to_le_bytes());
++        for sample in samples {
++            wav_data.extend_from_slice(&sample.to_le_bytes());
++        }
++
++        println!("AUDIO_DURATION:{:.2}", pcm_data_len as f32 / 2.0 / sample_rate as f32);
++        println!("AUDIO_WAV:{}", STANDARD.encode(wav_data));
++    });
+ }
+
+ /// Compute RMS (root mean square) of i16 samples for VAD.
+@@ -1080,72 +1119,9 @@
+                                             println_ui_flush!("⏹️  Stopped ({} samples, {:.2}s)", samples.len(), samples.len() as f32 / 16000.0);
+                                         }
+                                         ptt_release_visible = false;
+-
+-                                        // Encode audio to OPUS for saving
+-                                        let samples_for_encoding = samples.clone();
+-                                        let audio_duration = samples.len() as f32 / 16000.0;
+
+-                                        // Encode in a separate thread to avoid blocking transcription
+-                                        std::thread::spawn(move || {
+-                            use opus_decoder::OpusEncoder;
+-                            #[cfg(feature = "binary")]
+-                            use base64::{Engine as _, engine::general_purpose::STANDARD};
+-
+-                            match OpusEncoder::new(16000, 20) {
+-                                Ok(mut encoder_for_thread) => {
+-                                    match encoder_for_thread.encode_buffer(&samples_for_encoding) {
+-                                        Ok(opus_data) => {
+-                                            #[cfg(feature = "binary")]
+-                                            {
+-                                                let base64_data = STANDARD.encode(&opus_data);
+-                                                println!("AUDIO_DATA:{}", base64_data);
+-                                                println!("AUDIO_DURATION:{:.2}", audio_duration);
++                                        emit_saved_audio(&samples, 16000);
+
+-                                                // Also output WAV data for easy playback
+-                                                // WAV format: 44-byte header + PCM data
+-                                                let sample_rate = 16000u32;
+-                                                let channels = 1u16;
+-                                                let bits_per_sample = 16u16;
+-                                                let pcm_data_len = samples_for_encoding.len() * 2; // 16-bit = 2 bytes per sample
+-                                                let wav_size = 44 + pcm_data_len;
+-
+-                                                let mut wav_data = Vec::with_capacity(wav_size);
+-                                                // RIFF header
+-                                                wav_data.extend_from_slice(b"RIFF");
+-                                                wav_data.extend_from_slice(&(36u32 + pcm_data_len as u32).to_le_bytes());
+-                                                wav_data.extend_from_slice(b"WAVE");
+-                                                // fmt chunk
+-                                                wav_data.extend_from_slice(b"fmt ");
+-                                                wav_data.extend_from_slice(&16u32.to_le_bytes()); // fmt chunk size
+-                                                wav_data.extend_from_slice(&1u16.to_le_bytes()); // audio format (PCM)
+-                                                wav_data.extend_from_slice(&channels.to_le_bytes());
+-                                                wav_data.extend_from_slice(&sample_rate.to_le_bytes());
+-                                                wav_data.extend_from_slice(&(sample_rate as u32 * channels as u32 * (bits_per_sample as u32 / 8)).to_le_bytes()); // byte rate
+-                                                wav_data.extend_from_slice(&(channels * (bits_per_sample / 8)).to_le_bytes()); // block align
+-                                                wav_data.extend_from_slice(&bits_per_sample.to_le_bytes());
+-                                                // data chunk
+-                                                wav_data.extend_from_slice(b"data");
+-                                                wav_data.extend_from_slice(&(pcm_data_len as u32).to_le_bytes());
+-                                                // PCM data (16-bit little-endian)
+-                                                for &sample in &samples_for_encoding {
+-                                                    wav_data.extend_from_slice(&sample.to_le_bytes());
+-                                                }
+-
+-                                                let wav_base64 = STANDARD.encode(&wav_data);
+-                                                println!("AUDIO_WAV:{}", wav_base64);
+-                                            }
+-                                        }
+-                                        Err(e) => {
+-                                            eprintln!("Failed to encode audio: {}", e);
+-                                        }
+-                                    }
+-                                }
+-                                Err(e) => {
+-                                    eprintln!("Failed to create Opus encoder: {}", e);
+-                                }
+-                            }
+-                        });
+-
+                         // Spawn transcription thread
+                         let engine_for_thread = engine_clone.clone();
+                         let perf_history = performance_history.clone();
+@@ -1162,7 +1138,7 @@
+                             // Capture application context and vocabulary
+                             let (app_name, window_title) = app_detection::get_application_context();
+                             let vocab = vocabulary_for_thread.lock().unwrap();
+-                            let prompt = build_prompt(app_name, window_title, &vocab);
++                            let prompt = build_prompt(app_name.clone(), window_title.clone(), &vocab);
+                             eng.set_prompt(prompt);
+
+                             let transcribe_start = Instant::now();
+@@ -1183,7 +1159,6 @@
+                                     if text.trim().is_empty() {
+                                         println!("📝 (no speech detected)");
+                                     } else {
+-                                        let (app_name, window_title) = app_detection::get_application_context();
+                                         let processed_text = strip_leading_dash_space(&strip_trailing_signoffs(&strip_periods_from_short_phrases(&text)));
+                                         let json_output = json!({
+                                             "rawTranscript": text,
+@@ -2184,96 +2159,8 @@
+                     };
+
+                     if !samples.is_empty() {
+-                        // Encode audio to OPUS for saving (only for 16kHz, resample if needed)
+-                        let samples_for_encoding = samples.clone();
+-                        let sample_rate_for_encoding = sample_rate;
+-                        let audio_duration = samples.len() as f32 / sample_rate as f32;
++                        emit_saved_audio(&samples, sample_rate);
+
+-                        // Encode in a separate thread (only if 16kHz, otherwise skip)
+-                        if sample_rate_for_encoding == 16000 {
+-                            std::thread::spawn(move || {
+-                                #[cfg(feature = "binary")]
+-                                use base64::{engine::general_purpose::STANDARD, Engine as _};
+-                                use opus_decoder::OpusEncoder;
+-
+-                                match OpusEncoder::new(16000, 20) {
+-                                    Ok(mut encoder_for_thread) => {
+-                                        match encoder_for_thread
+-                                            .encode_buffer(&samples_for_encoding)
+-                                        {
+-                                            Ok(opus_data) => {
+-                                                #[cfg(feature = "binary")]
+-                                                {
+-                                                    let base64_data = STANDARD.encode(&opus_data);
+-                                                    println!("AUDIO_DATA:{}", base64_data);
+-                                                    println!(
+-                                                        "AUDIO_DURATION:{:.2}",
+-                                                        audio_duration
+-                                                    );
+-
+-                                                    // Also output WAV data for easy playback
+-                                                    let sample_rate = 16000u32;
+-                                                    let channels = 1u16;
+-                                                    let bits_per_sample = 16u16;
+-                                                    let pcm_data_len =
+-                                                        samples_for_encoding.len() * 2;
+-                                                    let wav_size = 44 + pcm_data_len;
+-
+-                                                    let mut wav_data = Vec::with_capacity(wav_size);
+-                                                    wav_data.extend_from_slice(b"RIFF");
+-                                                    wav_data.extend_from_slice(
+-                                                        &(36u32 + pcm_data_len as u32)
+-                                                            .to_le_bytes(),
+-                                                    );
+-                                                    wav_data.extend_from_slice(b"WAVE");
+-                                                    wav_data.extend_from_slice(b"fmt ");
+-                                                    wav_data
+-                                                        .extend_from_slice(&16u32.to_le_bytes());
+-                                                    wav_data.extend_from_slice(&1u16.to_le_bytes());
+-                                                    wav_data
+-                                                        .extend_from_slice(&channels.to_le_bytes());
+-                                                    wav_data.extend_from_slice(
+-                                                        &sample_rate.to_le_bytes(),
+-                                                    );
+-                                                    wav_data.extend_from_slice(
+-                                                        &(sample_rate as u32
+-                                                            * channels as u32
+-                                                            * (bits_per_sample as u32 / 8))
+-                                                            .to_le_bytes(),
+-                                                    );
+-                                                    wav_data.extend_from_slice(
+-                                                        &(channels * (bits_per_sample / 8))
+-                                                            .to_le_bytes(),
+-                                                    );
+-                                                    wav_data.extend_from_slice(
+-                                                        &bits_per_sample.to_le_bytes(),
+-                                                    );
+-                                                    wav_data.extend_from_slice(b"data");
+-                                                    wav_data.extend_from_slice(
+-                                                        &(pcm_data_len as u32).to_le_bytes(),
+-                                                    );
+-                                                    for &sample in &samples_for_encoding {
+-                                                        wav_data.extend_from_slice(
+-                                                            &sample.to_le_bytes(),
+-                                                        );
+-                                                    }
+-
+-                                                    let wav_base64 = STANDARD.encode(&wav_data);
+-                                                    println!("AUDIO_WAV:{}", wav_base64);
+-                                                }
+-                                            }
+-                                            Err(e) => {
+-                                                eprintln!("Failed to encode audio: {}", e);
+-                                            }
+-                                        }
+-                                    }
+-                                    Err(e) => {
+-                                        eprintln!("Failed to create Opus encoder: {}", e);
+-                                    }
+-                                }
+-                            });
+-                        }
+-
+                         // Spawn transcription thread immediately for fastest response
+                         let engine_for_thread = engine_clone.clone();
+                         let perf_history = performance_history_clone.clone();
+@@ -2297,7 +2184,8 @@
+                             // Capture application context and vocabulary before transcribing
+                             let (app_name, window_title) = app_detection::get_application_context();
+                             let vocab = vocabulary_for_thread.lock().unwrap();
+-                            let mut prompt = build_prompt(app_name, window_title, &vocab);
++                            let mut prompt =
++                                build_prompt(app_name.clone(), window_title.clone(), &vocab);
+                             if streaming_boundary > 0 {
+                                 if let Some(ref prev) = *last_seg_text_for_thread.lock().unwrap() {
+                                     let context = if prev.len() > 200 {
+@@ -2398,10 +2286,6 @@
+                                             println!();
+                                         }
+                                     } else {
+-                                        // Capture application context (already captured before transcription)
+-                                        let (app_name, window_title) =
+-                                            app_detection::get_application_context();
+-
+                                         // Process text to strip periods from short phrases
+                                         let processed_text =
+                                             strip_leading_dash_space(&strip_trailing_signoffs(
+@@ -2759,6 +2643,8 @@
+                             };
+
+                             if !samples.is_empty() {
++                                emit_saved_audio(&samples, sample_rate);
++
+                                 // Spawn transcription thread immediately for fastest response
+                                 let engine_for_thread = engine_clone.clone();
+                                 let perf_history = performance_history_clone.clone();
+@@ -2783,7 +2669,11 @@
+                                     let (app_name, window_title) =
+                                         app_detection::get_application_context();
+                                     let vocab = vocabulary_for_thread.lock().unwrap();
+-                                    let mut prompt = build_prompt(app_name, window_title, &vocab);
++                                    let mut prompt = build_prompt(
++                                        app_name.clone(),
++                                        window_title.clone(),
++                                        &vocab,
++                                    );
+                                     if streaming_boundary > 0 {
+                                         if let Some(ref prev) =
+                                             *last_seg_text_for_thread.lock().unwrap()
+@@ -2902,10 +2792,6 @@
+                                                     println!();
+                                                 }
+                                             } else {
+-                                                // Capture application context (already captured before transcription)
+-                                                let (app_name, window_title) =
+-                                                    app_detection::get_application_context();
+-
+                                                 // Process text to strip periods from short phrases
+                                                 let processed_text = strip_leading_dash_space(
+                                                     &strip_trailing_signoffs(
+diff --git a/src/opus_decoder.rs b/src/opus_decoder.rs
+--- a/src/opus_decoder.rs
++++ b/src/opus_decoder.rs
+@@ -6,8 +6,8 @@
+  */
+
+ use anyhow::{Context, Result};
+-use audiopus::coder::{Decoder, Encoder};
+-use audiopus::{Application, Channels, SampleRate};
++use audiopus::coder::Decoder;
++use audiopus::{Channels, SampleRate};
+ use log::{debug, warn};
+
+ /// Opus decoder wrapper.
+@@ -182,126 +182,3 @@
+         Ok(fec_pcm)
+     }
+ }
+-
+-/// Opus encoder wrapper
+-pub struct OpusEncoder {
+-    encoder: Encoder,
+-    frame_size_samples: usize,
+-}
+-
+-impl OpusEncoder {
+-    /// Create a new Opus encoder
+-    ///
+-    /// # Arguments
+-    /// * `sample_rate` - Sample rate in Hz (must be 16000)
+-    /// * `frame_duration_ms` - Frame duration in milliseconds (must be 20 for Opus)
+-    pub fn new(sample_rate: u32, frame_duration_ms: u32) -> Result<Self> {
+-        if sample_rate != 16000 {
+-            anyhow::bail!("Opus encoder only supports 16kHz");
+-        }
+-
+-        if frame_duration_ms != 20 {
+-            anyhow::bail!("Opus encoder only supports 20ms frames");
+-        }
+-
+-        let frame_size_samples = (sample_rate * frame_duration_ms / 1000) as usize;
+-
+-        // Create Opus encoder (mono, 16kHz, optimized for voice)
+-        let mut encoder = Encoder::new(SampleRate::Hz16000, Channels::Mono, Application::Voip)
+-            .context("Failed to create Opus encoder")?;
+-
+-        // Configure encoder for optimal voice encoding
+-        encoder
+-            .set_bitrate(audiopus::Bitrate::BitsPerSecond(24000))
+-            .map_err(|e| anyhow::anyhow!("Failed to set bitrate: {:?}", e))?;
+-        encoder
+-            .set_vbr(true)
+-            .map_err(|e| anyhow::anyhow!("Failed to set VBR: {:?}", e))?;
+-        encoder
+-            .set_complexity(5)
+-            .map_err(|e| anyhow::anyhow!("Failed to set complexity: {:?}", e))?;
+-        encoder
+-            .set_signal(audiopus::Signal::Voice)
+-            .map_err(|e| anyhow::anyhow!("Failed to set signal type: {:?}", e))?;
+-
+-        Ok(Self {
+-            encoder,
+-            frame_size_samples,
+-        })
+-    }
+-
+-    /// Encode a single PCM frame to Opus
+-    ///
+-    /// # Arguments
+-    /// * `pcm_samples` - PCM samples (must be exactly frame_size_samples)
+-    ///
+-    /// # Returns
+-    /// Encoded Opus frame data
+-    pub fn encode_frame(&mut self, pcm_samples: &[i16]) -> Result<Vec<u8>> {
+-        if pcm_samples.len() != self.frame_size_samples {
+-            anyhow::bail!(
+-                "PCM frame size mismatch: expected {}, got {}",
+-                self.frame_size_samples,
+-                pcm_samples.len()
+-            );
+-        }
+-
+-        // Allocate output buffer (max Opus frame size is typically ~400 bytes for 20ms)
+-        let mut opus_frame = vec![0u8; 400];
+-
+-        // Encode frame
+-        let encoded_bytes = self
+-            .encoder
+-            .encode(pcm_samples, &mut opus_frame)
+-            .context("Failed to encode Opus frame")?;
+-
+-        // Truncate to actual encoded size
+-        opus_frame.truncate(encoded_bytes);
+-
+-        Ok(opus_frame)
+-    }
+-
+-    /// Encode a PCM buffer to Opus frames
+-    ///
+-    /// # Arguments
+-    /// * `pcm_samples` - PCM samples (any length, will be encoded in 20ms frames)
+-    ///
+-    /// # Returns
+-    /// Encoded Opus data (all frames concatenated)
+-    pub fn encode_buffer(&mut self, pcm_samples: &[i16]) -> Result<Vec<u8>> {
+-        if pcm_samples.is_empty() {
+-            return Ok(Vec::new());
+-        }
+-
+-        let mut opus_data = Vec::new();
+-        let mut offset = 0;
+-
+-        // Encode in 20ms frames (320 samples at 16kHz)
+-        while offset + self.frame_size_samples <= pcm_samples.len() {
+-            let frame = &pcm_samples[offset..offset + self.frame_size_samples];
+-            let encoded_frame = self
+-                .encode_frame(frame)
+-                .with_context(|| format!("Failed to encode frame at offset {}", offset))?;
+-            opus_data.extend_from_slice(&encoded_frame);
+-            offset += self.frame_size_samples;
+-        }
+-
+-        // Handle remaining samples (pad with zeros if needed)
+-        if offset < pcm_samples.len() {
+-            let remaining = pcm_samples.len() - offset;
+-            let mut padded_frame = vec![0i16; self.frame_size_samples];
+-            padded_frame[..remaining].copy_from_slice(&pcm_samples[offset..]);
+-            let encoded_frame = self
+-                .encode_frame(&padded_frame)
+-                .with_context(|| format!("Failed to encode final padded frame"))?;
+-            opus_data.extend_from_slice(&encoded_frame);
+-        }
+-
+-        debug!(
+-            "Encoded {} PCM samples to {} Opus bytes",
+-            pcm_samples.len(),
+-            opus_data.len()
+-        );
+-        Ok(opus_data)
+-    }
+-}

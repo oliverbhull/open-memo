@@ -15,6 +15,8 @@ Hold a hotkey, speak naturally, release, and your words appear wherever your cur
 - **On-device transcription:** local speech-to-text powered by `memo-stt`.
 - **No account required:** download, grant permissions, and start talking.
 - **Voice commands:** launch apps, open URLs, and trigger app-specific shortcuts.
+- **Useful history:** see the native icon for the app where each dictation occurred.
+- **Optional audio retention:** save a local WAV recording linked to its transcript.
 - **Hardware-friendly:** optional support for Memo Bluetooth microphones.
 
 ## Install
@@ -41,19 +43,24 @@ Voice commands use the same flow, but recognized command phrases can launch apps
 
 Open Memo is designed around local transcription. Dictation audio is processed on your Mac by `memo-stt`; an account is not required for core dictation. If a future feature needs network access, it should be explicit, optional, and documented.
 
+Audio retention is off by default. Enable **Save dictation audio** in Settings to keep future recordings under Memo's local application-data folder. Each WAV filename uses the same ID as its transcript, is playable from the feed, and is removed when that transcript is deleted. Existing recordings are not removed when the setting is turned off.
+
+The menu-bar **Microphone** submenu follows the macOS system-default input unless you explicitly select an available microphone. Explicit choices persist while that input remains available; disconnecting it safely returns Memo to the current system default.
+
 ## Development
 
 Prerequisites:
 
 - macOS.
-- Node.js 20+ and npm.
-- Rust 1.74+ and Cargo.
+- Node.js 22.12+ and npm.
+- Rust 1.85.1+ and Cargo.
 - Xcode Command Line Tools.
 
 ```bash
 git clone https://github.com/oliverbhull/open-memo.git
 cd open-memo
 npm install
+npm run check
 npm run dev
 ```
 
@@ -65,6 +72,10 @@ npm run build:dir
 ```
 
 `npm run dev` runs this STT build step automatically before starting Electron.
+
+`npm run export-memos` writes an atomic JSON backup to `~/Desktop/memo-full-export.json`. Quit any running Memo instance before exporting; set `MEMO_EXPORT_OUT` to choose another destination. The JSON includes linked-audio metadata but does not embed the WAV files; Settings provides an **Open folder** action for those recordings.
+
+For a user-facing export, open Settings and select **Export JSON** beside the word count. You can export every active transcription or choose an inclusive date-and-time range before selecting the destination in the macOS save dialog.
 
 `npm run build:dir` creates an unsigned app bundle for smoke testing. Maintainer signing and release notes live in [docs/maintainers/signing-and-release.md](docs/maintainers/signing-and-release.md).
 

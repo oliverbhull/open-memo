@@ -1,32 +1,40 @@
 import { FeedEntryData, AppContext } from '../components/FeedEntry';
 import { MemoEntry } from '../types/storage';
 import { logger } from './logger';
+import type { AudioAttachment } from '../../../shared/electron-api';
 
-/**
- * Validates that an object has the required properties of AppContext
- */
-export function isValidAppContext(obj: any): obj is AppContext {
-  return (
-    obj &&
-    typeof obj === 'object' &&
-    typeof obj.appName === 'string' &&
-    typeof obj.windowTitle === 'string' &&
-    obj.appName.length > 0
-  );
-}
-
-/**
- * Validates incoming transcription data from memo-stt
- */
-export function validateTranscriptionData(data: any): data is {
+interface ValidTranscriptionData {
   id?: string;
   rawTranscript?: string;
   processedText?: string;
   wasProcessedByLLM?: boolean;
   appContext?: AppContext;
   timestamp?: number;
-} {
-  if (!data || typeof data !== 'object') {
+  audio?: AudioAttachment;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Validates that an object has the required properties of AppContext
+ */
+export function isValidAppContext(obj: unknown): obj is AppContext {
+  return (
+    isRecord(obj) &&
+    typeof obj.appName === 'string' &&
+    typeof obj.windowTitle === 'string' &&
+    obj.appName.length > 0 &&
+    (obj.bundleId === undefined || typeof obj.bundleId === 'string')
+  );
+}
+
+/**
+ * Validates incoming transcription data from memo-stt
+ */
+export function validateTranscriptionData(data: unknown): data is ValidTranscriptionData {
+  if (!isRecord(data)) {
     return false;
   }
 
@@ -40,16 +48,26 @@ export function validateTranscriptionData(data: any): data is {
     return false;
   }
 
+  if (data.audio && !(
+    isRecord(data.audio) &&
+    typeof data.audio.fileName === 'string' &&
+    data.audio.mimeType === 'audio/wav' &&
+    (data.audio.duration === undefined || (
+      typeof data.audio.duration === 'number' &&
+      Number.isFinite(data.audio.duration) &&
+      data.audio.duration >= 0
+    ))
+  )) return false;
+
   return true;
 }
 
 /**
  * Validates a FeedEntryData object
  */
-export function isValidEntry(entry: any): entry is FeedEntryData {
+export function isValidEntry(entry: unknown): entry is FeedEntryData {
   return (
-    entry &&
-    typeof entry === 'object' &&
+    isRecord(entry) &&
     typeof entry.id === 'string' &&
     entry.id.length > 0 &&
     typeof entry.text === 'string' &&
@@ -61,11 +79,10 @@ export function isValidEntry(entry: any): entry is FeedEntryData {
 }
 
 /**
- * Creates a validated FeedEntryData from raw transcription data
- * Returns legacy format for backward compatibility with UI components
+ * Creates a validated FeedEntryData from raw transcription data.
  */
 export function createValidEntry(
-  data: any,
+  data: unknown,
   id: string
 ): FeedEntryData | null {
   if (!validateTranscriptionData(data)) {
@@ -79,6 +96,10 @@ export function createValidEntry(
     return null;
   }
 
+  if (data.audio && data.audio.fileName !== `${id}.wav`) {
+    return null;
+  }
+
   return {
     id,
     text: text.trim(),
@@ -86,16 +107,17 @@ export function createValidEntry(
     rawTranscript: data.rawTranscript,
     wasProcessedByLLM: data.wasProcessedByLLM,
     appContext: data.appContext,
+    audio: data.audio,
   };
 }
 
 /**
  * Converts FeedEntryData to MemoEntry for storage
  */
-export async function convertToMemoEntry(
+export function convertToMemoEntry(
   entry: FeedEntryData,
   deviceId: string
-): Promise<MemoEntry> {
+): MemoEntry {
   const now = Date.now();
   return {
     id: entry.id,
@@ -109,6 +131,7 @@ export async function convertToMemoEntry(
       rawTranscript: entry.rawTranscript,
       wasProcessedByLLM: entry.wasProcessedByLLM,
       appContext: entry.appContext,
+      audio: entry.audio,
     },
   };
 }
@@ -126,8 +149,7 @@ export function convertToFeedEntry(entry: MemoEntry): FeedEntryData {
     rawTranscript: context.rawTranscript as string | undefined,
     wasProcessedByLLM: context.wasProcessedByLLM as boolean | undefined,
     appContext: context.appContext as AppContext | undefined,
+    audio: context.audio as AudioAttachment | undefined,
     context: context, // Include full context for accessing mobile location data
   };
 }
-
-

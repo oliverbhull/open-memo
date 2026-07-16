@@ -7,106 +7,18 @@ import { Onboarding } from './components/Onboarding';
 import { ToastNotification, ToastData } from './components/ToastNotification';
 import { useEntries } from './hooks/useEntries';
 import { logger } from './utils/logger';
-import { syncMessageHandler } from './services/SyncMessageHandler';
 import { storageService } from './services/StorageService';
 import { Settings } from './components/Settings';
+import type { MemoSttError, TranscriptionData } from '../../shared/electron-api';
 import './styles/glass.css';
 
-interface TranscriptionData {
-  rawTranscript?: string;
-  processedText?: string;
-  wasProcessedByLLM?: boolean;
-  timestamp?: number;
-  appContext?: {
-    appName: string;
-    windowTitle: string;
-  };
-}
-
-interface MemoSttError {
-  message: string;
-  name: string;
-}
-
-interface PhraseReplacementRule {
-  id: string;
-  find: string;
-  replace: string;
-  enabled?: boolean;
-}
-
-declare global {
-  interface Window {
-    electronAPI: {
-      onTranscription: (callback: (data: TranscriptionData) => void) => void;
-      removeTranscriptionListener: () => void;
-      onStatus: (callback: (status: string) => void) => void;
-      removeStatusListener: () => void;
-      onError: (callback: (error: MemoSttError) => void) => void;
-      removeErrorListener: () => void;
-      getStatus: () => Promise<string>;
-      restart: () => Promise<void>;
-      getUserName: () => Promise<string | null>;
-      isUserOnboarded: (userName: string) => Promise<boolean>;
-      markUserOnboarded: (userName: string) => Promise<void>;
-      device: {
-        connectByUid: (uid: string) => Promise<{ success: boolean; error?: string }>;
-        disconnect: () => Promise<{ success: boolean }>;
-        getConnectionState: () => Promise<{
-          connected: boolean;
-          deviceUid: string | null;
-          deviceName: string | null;
-          batteryLevel: number | null;
-        }>;
-        onConnectionChanged: (callback: (state: {
-          connected: boolean;
-          deviceUid: string | null;
-          deviceName: string | null;
-          batteryLevel: number | null;
-        }) => void) => () => void;
-      };
-      interface?: {
-        getSettings: () => Promise<{
-          pressEnterAfterPaste: boolean;
-          sayEnterToPressEnter: boolean;
-          pushToTalkMode: boolean;
-          handsFreeMode: boolean;
-          vocabWords: string[];
-          phraseReplacements: PhraseReplacementRule[];
-          startAtLogin: boolean;
-        }>;
-        setPressEnterAfterPaste: (enabled: boolean) => Promise<boolean>;
-        setVocabWords: (vocabWords: string[]) => Promise<boolean>;
-        setPhraseReplacements: (rules: PhraseReplacementRule[]) => Promise<boolean>;
-        setSayEnterToPressEnter: (enabled: boolean) => Promise<boolean>;
-        setPushToTalkMode: (enabled: boolean) => Promise<boolean>;
-        setHandsFreeMode: (enabled: boolean) => Promise<boolean>;
-        setStartAtLogin: (enabled: boolean) => Promise<boolean>;
-      };
-      voiceCommands?: {
-        getSettings: () => Promise<any>;
-        saveSettings: (settings: any) => Promise<boolean>;
-        onCommandExecuted: (callback: (command: any) => void) => () => void;
-      };
-      keystroke?: {
-        startRecording: () => Promise<{ success: boolean; error?: string }>;
-        stopRecording: () => Promise<{ success: boolean; keystroke?: { modifiers: string[]; key: string; formatted: string } | null; error?: string }>;
-        isRecording: () => Promise<{ success: boolean; isRecording: boolean }>;
-        record: (modifiers: string[], key: string) => Promise<{ success: boolean; error?: string }>;
-      };
-    };
-  }
-}
-
 // Settings Icon Component
-const SettingsIcon: React.FC = () => {
+const SettingsIcon: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
   const { primary } = useTheme();
-  const [showSettings, setShowSettings] = useState(false);
 
   return (
-    <>
       <button
-        onClick={() => setShowSettings(true)}
+        onClick={onOpen}
         title="Settings"
         className="settings-icon"
         style={{
@@ -134,18 +46,16 @@ const SettingsIcon: React.FC = () => {
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
       </button>
-      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
-    </>
   );
 };
 
 function App() {
-  const { entries, loading, error: storageError, totalCount, addEntry, loadMore, deleteEntry, refresh } = useEntries();
-  const [status, setStatus] = useState<string>('stopped');
+  const { entries, loading, error: storageError, addEntry, loadMore } = useEntries();
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   
   // Track if listeners are registered to prevent duplicates (especially in StrictMode)
   const listenersRegisteredRef = useRef(false);
@@ -172,6 +82,8 @@ function App() {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => window.electronAPI.onOpenSettings(() => setShowSettings(true)), []);
 
   // Notify the main process when audio input devices change (e.g. headphones plugged in/out)
   // so memo-stt can restart and open a stream to the new default input device.
@@ -208,14 +120,6 @@ function App() {
       setLoadingMore(false);
     }
   }, [loadMore, loadingMore]);
-
-  // Initialize sync message handler
-  useEffect(() => {
-    syncMessageHandler.start();
-    return () => {
-      syncMessageHandler.stop();
-    };
-  }, []);
 
   // Cleanup database on app quit
   useEffect(() => {
@@ -285,20 +189,19 @@ function App() {
       return;
     }
 
-    // Load initial status
-    window.electronAPI.getStatus().then(setStatus).catch((err) => {
-      logger.error('Failed to get status:', err);
-    });
-
     // Set up transcription listener
     const transcriptionCallback = async (data: TranscriptionData) => {
       try {
-        await addEntry({
+        const entry = await addEntry({
           ...data,
           timestamp: data.timestamp || Date.now(),
         });
+        if (!entry) throw new Error('Transcription did not contain a valid memo');
         setError(null); // Clear any previous errors
       } catch (err) {
+        if (data.id && data.audio) {
+          void window.electronAPI.audio.delete(data.id);
+        }
         logger.error('Failed to add entry:', err);
         setError('Failed to save entry');
       }
@@ -307,7 +210,6 @@ function App() {
 
     // Set up status listener
     const statusCallback = (newStatus: string) => {
-      setStatus(newStatus);
       if (newStatus === 'running') {
         setError(null);
       }
@@ -333,21 +235,6 @@ function App() {
     };
   }, [addEntry]);
 
-  const getStatusDisplay = () => {
-    switch (status) {
-      case 'running':
-        return { text: 'Connected', className: 'running' };
-      case 'stopped':
-        return { text: 'Disconnected', className: 'stopped' };
-      case 'error':
-        return { text: 'Error', className: 'error' };
-      default:
-        return { text: 'Unknown', className: 'stopped' };
-    }
-  };
-
-  const statusDisplay = getStatusDisplay();
-
   // Combine storage errors with other errors
   const displayError = error || (storageError ? storageError.message : null);
 
@@ -366,16 +253,12 @@ function App() {
     <ThemeProvider>
       <ErrorBoundary>
         <GlassContainer>
-          <div className="title-bar" style={{ paddingLeft: navigator.platform.includes('Mac') ? '78px' : '12px' }}>
-            <div className="title-bar-left" style={{ display: navigator.platform.includes('Mac') ? 'none' : 'flex' }}>
-              <div className="title-bar-button close" />
-              <div className="title-bar-button minimize" />
-              <div className="title-bar-button maximize" />
-            </div>
+          <div className="title-bar" style={{ paddingLeft: '78px' }}>
             <div className="title-bar-right">
-              <SettingsIcon />
+              <SettingsIcon onOpen={() => setShowSettings(true)} />
             </div>
           </div>
+          {showSettings && <Settings onClose={() => setShowSettings(false)} />}
           
           {displayError && (
             <div className="error-message">
@@ -408,16 +291,11 @@ function App() {
             <Feed
               entries={entries}
               onCopy={handleCopy}
-              onDelete={deleteEntry}
               onLoadMore={handleLoadMore}
-              onRefresh={refresh}
               loading={loadingMore}
             />
           )}
 
-          <div className="status-bar" style={{ display: 'none' }}>
-            <div>{totalCount} memos</div>
-          </div>
         </GlassContainer>
         
         <ToastNotification toast={toast} onClose={() => setToast(null)} />

@@ -1,25 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import type { AppCommand, AppConfig, CommandAction } from '../../../shared/electron-api';
 
-// Types matching SettingsService (duplicated for renderer)
-export type CommandAction = 
-  | { type: 'applescript'; script: string }
-  | { type: 'keystroke'; keys: string }
-  | { type: 'url'; template: string };
-
-export interface AppCommand {
-  trigger: string;
-  aliases: string[];
-  action: CommandAction;
-}
-
-export interface AppConfig {
-  name: string;
-  bundleId?: string;
-  path?: string;
-  aliases: string[];
-  commands: AppCommand[];
-  enabled: boolean;
-}
+export type { AppCommand, AppConfig, CommandAction };
 
 interface VoiceCommandSettingsProps {
   enabled: boolean;
@@ -563,7 +545,7 @@ const CommandEditor: React.FC<CommandEditorProps> = ({
 
     // Clean up any existing listener first
     if (keyDownHandlerRef.current) {
-      window.removeEventListener('keydown', keyDownHandlerRef.current as any, true);
+      window.removeEventListener('keydown', keyDownHandlerRef.current, true);
       keyDownHandlerRef.current = null;
     }
 
@@ -604,7 +586,7 @@ const CommandEditor: React.FC<CommandEditorProps> = ({
             setActionValue(result.keystroke.formatted);
           }
           if (keyDownHandlerRef.current) {
-            window.removeEventListener('keydown', keyDownHandlerRef.current as any, true);
+            window.removeEventListener('keydown', keyDownHandlerRef.current, true);
             keyDownHandlerRef.current = null;
           }
           return;
@@ -647,7 +629,7 @@ const CommandEditor: React.FC<CommandEditorProps> = ({
 
         // Remove listener
         if (keyDownHandlerRef.current) {
-          window.removeEventListener('keydown', keyDownHandlerRef.current as any, true);
+          window.removeEventListener('keydown', keyDownHandlerRef.current, true);
           keyDownHandlerRef.current = null;
         }
       };
@@ -669,7 +651,7 @@ const CommandEditor: React.FC<CommandEditorProps> = ({
 
       // Clean up listener
       if (keyDownHandlerRef.current) {
-        window.removeEventListener('keydown', keyDownHandlerRef.current as any, true);
+        window.removeEventListener('keydown', keyDownHandlerRef.current, true);
         keyDownHandlerRef.current = null;
       }
 
@@ -684,7 +666,7 @@ const CommandEditor: React.FC<CommandEditorProps> = ({
       setIsRecording(false);
       isRecordingRef.current = false;
       if (keyDownHandlerRef.current) {
-        window.removeEventListener('keydown', keyDownHandlerRef.current as any, true);
+        window.removeEventListener('keydown', keyDownHandlerRef.current, true);
         keyDownHandlerRef.current = null;
       }
     }
@@ -695,7 +677,7 @@ const CommandEditor: React.FC<CommandEditorProps> = ({
     return () => {
       isRecordingRef.current = false;
       if (keyDownHandlerRef.current) {
-        window.removeEventListener('keydown', keyDownHandlerRef.current as any, true);
+        window.removeEventListener('keydown', keyDownHandlerRef.current, true);
         keyDownHandlerRef.current = null;
       }
     };

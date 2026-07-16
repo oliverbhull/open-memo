@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, type FC } from 'react';
 
 export type ToastSeverity = 'success' | 'warning' | 'error' | 'info';
 
@@ -13,7 +13,7 @@ interface ToastNotificationProps {
   onClose: () => void;
 }
 
-export const ToastNotification: React.FC<ToastNotificationProps> = ({ toast, onClose }) => {
+export const ToastNotification: FC<ToastNotificationProps> = ({ toast, onClose }) => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -29,6 +29,7 @@ export const ToastNotification: React.FC<ToastNotificationProps> = ({ toast, onC
     } else {
       setIsVisible(false);
     }
+    return undefined;
   }, [toast, onClose]);
 
   if (!toast) return null;

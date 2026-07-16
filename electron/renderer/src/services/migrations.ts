@@ -3,10 +3,10 @@
  * Each migration is a function that upgrades the database schema
  */
 
-import { DB_NAME, DB_VERSION, STORE_NAME } from '../types/storage';
+import { STORE_NAME } from '../types/storage';
 import { logger } from '../utils/logger';
 
-export type MigrationFunction = (db: IDBDatabase, transaction: IDBTransaction) => void | Promise<void>;
+export type MigrationFunction = (db: IDBDatabase, transaction: IDBTransaction) => void;
 
 export interface Migration {
   version: number;
@@ -22,7 +22,7 @@ export const migrations: Migration[] = [
   {
     version: 1,
     description: 'Initial schema - entries store with timestamp and appName indexes',
-    migrate: (db: IDBDatabase, transaction: IDBTransaction) => {
+    migrate: (db: IDBDatabase, _transaction: IDBTransaction) => {
       // Create object store if it doesn't exist
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
@@ -34,21 +34,11 @@ export const migrations: Migration[] = [
   },
   {
     version: 2,
-    description: 'Migrate to minimal schema with context field and sync metadata',
+    description: 'Migrate to portable schema with context and source metadata',
     migrate: (db: IDBDatabase, transaction: IDBTransaction) => {
       // Check if store exists
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         // Create new store with new schema
-        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-        store.createIndex('updatedAt', 'updatedAt', { unique: false });
-        store.createIndex('createdAt', 'createdAt', { unique: false });
-        store.createIndex('deviceId', 'deviceId', { unique: false });
-        return;
-      }
-
-      // Get store - it should exist if we're migrating
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        logger.warn('Store does not exist during migration, creating new store');
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
         store.createIndex('updatedAt', 'updatedAt', { unique: false });
         store.createIndex('createdAt', 'createdAt', { unique: false });
@@ -121,5 +111,3 @@ export function getMigrationsToRun(oldVersion: number, newVersion: number): Migr
     migration => migration.version > oldVersion && migration.version <= newVersion
   );
 }
-
-

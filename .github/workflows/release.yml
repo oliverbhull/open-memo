@@ -28,11 +28,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.12.0"
           cache: npm
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.85.1
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v6
@@ -50,7 +50,7 @@ jobs:
             ~/.cargo/git
             .build/memo-stt-source
             .build/memo-stt-target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('scripts/shell/build-stt.sh', 'patches/memo-stt-0.1.1-nemotron.patch', 'sidecars/nemotron/transcription_engine.rs') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('scripts/shell/build-stt.sh', 'patches/memo-stt-0.1.1-*.patch', 'sidecars/nemotron/transcription_engine.rs') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 

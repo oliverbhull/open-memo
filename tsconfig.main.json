@@ -6,10 +6,10 @@
     "noEmit": false,
     "sourceMap": true,
     "module": "ESNext",
-    "moduleResolution": "NodeNext",
+    "moduleResolution": "Bundler",
     "target": "ES2022",
     "lib": ["ES2022"],
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": false
   },
-  "include": ["electron/main/**/*", "electron/preload/**/*", "shared/**/*"]
+  "include": ["electron/main/**/*", "electron/preload/**/*", "electron/shared/**/*"]
 }

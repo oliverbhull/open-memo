@@ -11,6 +11,8 @@ FEATURES="${MEMO_STT_FEATURES:-binary}"
 LOCAL_SOURCE="${MEMO_STT_LOCAL_SOURCE:-}"
 SOURCE_ROOT="${ROOT_DIR}/.build/memo-stt-source"
 PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-nemotron.patch"
+CLEANUP_PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-cleanup.patch"
+AUDIO_PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-audio-retention.patch"
 TRANSCRIPTION_ENGINE="${ROOT_DIR}/sidecars/nemotron/transcription_engine.rs"
 
 mkdir -p "${OUTPUT_DIR}"
@@ -41,12 +43,12 @@ else
     echo "Set MEMO_STT_LOCAL_SOURCE for a different source tree." >&2
     exit 1
   fi
-  if [[ ! -f "${PATCH_FILE}" || ! -f "${TRANSCRIPTION_ENGINE}" ]]; then
+  if [[ ! -f "${PATCH_FILE}" || ! -f "${CLEANUP_PATCH_FILE}" || ! -f "${AUDIO_PATCH_FILE}" || ! -f "${TRANSCRIPTION_ENGINE}" ]]; then
     echo "Nemotron memo-stt patch sources are missing." >&2
     exit 1
   fi
 
-  PATCH_HASH="$(shasum -a 256 "${PATCH_FILE}" "${TRANSCRIPTION_ENGINE}" | shasum -a 256 | awk '{print $1}')"
+  PATCH_HASH="$(shasum -a 256 "${PATCH_FILE}" "${CLEANUP_PATCH_FILE}" "${AUDIO_PATCH_FILE}" "${TRANSCRIPTION_ENGINE}" | shasum -a 256 | awk '{print $1}')"
   SOURCE_DIR="${SOURCE_ROOT}/${CRATE_NAME}-${CRATE_VERSION}"
   PATCH_MARKER="${SOURCE_DIR}/.memo-nemotron-patch"
   CURRENT_HASH=""
@@ -65,6 +67,8 @@ else
     tar -xzf "${ARCHIVE}" -C "${SOURCE_ROOT}"
     cp "${TRANSCRIPTION_ENGINE}" "${SOURCE_DIR}/src/transcription_engine.rs"
     patch -d "${SOURCE_DIR}" -p1 --forward --batch < "${PATCH_FILE}"
+    patch -d "${SOURCE_DIR}" -p1 --forward --batch < "${CLEANUP_PATCH_FILE}"
+    patch -d "${SOURCE_DIR}" -p1 --forward --batch < "${AUDIO_PATCH_FILE}"
     printf '%s\n' "${PATCH_HASH}" > "${PATCH_MARKER}"
   fi
 

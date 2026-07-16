@@ -1,205 +1,247 @@
 import { app } from 'electron';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import Store from 'electron-store';
 import { DEFAULT_APPS } from './DefaultApps';
 import { StoreSchema, storeDefaults } from './StoreSchema';
+import { clampPhraseReplacementRulesFromInput } from './phraseReplacement';
+import type {
+  AppCommand,
+  AppConfig,
+  CommandAction,
+  PhraseReplacementRule,
+  VoiceCommandSettings,
+} from '../../shared/electron-api';
 
-export type CommandAction = 
-  | { type: 'applescript'; script: string }
-  | { type: 'keystroke'; keys: string }
-  | { type: 'url'; template: string };
-
-export interface AppCommand {
-  trigger: string;        // Voice trigger: "new tab"
-  aliases: string[];      // Alternative triggers: ["open tab", "add tab"]
-  action: CommandAction;
-}
-
-export interface AppConfig {
-  name: string;           // Display name: "Safari"
-  bundleId?: string;      // macOS bundle: "com.apple.Safari"
-  path?: string;          // App path: "/Applications/Safari.app"
-  aliases: string[];      // Voice triggers: ["safari", "web browser"]
-  commands: AppCommand[]; // App-specific commands
-  enabled: boolean;
-}
-
-/** Dictation phrase → literal replacement (fuzzy match on paste path). */
-export interface PhraseReplacementRule {
-  id: string;
-  find: string;
-  replace: string;
-  enabled?: boolean;
-}
+export type { AppCommand, AppConfig, CommandAction, PhraseReplacementRule };
 
 export interface Settings {
-  postEnter?: boolean;
-  sayEnterToPressEnter?: boolean; // When enabled, saying "enter" at end of speech triggers Enter after paste
-  pushToTalkMode?: boolean; // When enabled, the Memo device button is hold-to-talk instead of tap-to-toggle
-  handsFreeMode?: boolean; // When enabled, VAD starts/stops dictation automatically
-  /** User-provided words/phrases used by Memo's command and replacement layers. */
-  vocabWords?: string[];
-  /** Replace spoken phrases with fixed text before paste (case/punctuation-tolerant). */
-  phraseReplacements?: PhraseReplacementRule[];
-  inputSource?: 'system' | 'ble' | 'radio';
-  autoConnectDeviceName?: string | null; // Device name to auto-connect to on startup
-  voiceCommands?: {
-    enabled: boolean;
-    apps: AppConfig[];
-    globalCommands: AppCommand[];
-    urlPatterns: string[];  // Regex patterns for URL detection
+  postEnter: boolean;
+  sayEnterToPressEnter: boolean;
+  pushToTalkMode: boolean;
+  handsFreeMode: boolean;
+  saveAudio: boolean;
+  vocabWords: string[];
+  phraseReplacements: PhraseReplacementRule[];
+  inputSource: 'system' | 'ble' | 'radio';
+  autoConnectDeviceName: string | null;
+  voiceCommands: VoiceCommandSettings;
+}
+
+export interface UserSettings {
+  userName?: string;
+  onboardedUsers?: string[];
+  hotkey?: string;
+}
+
+const defaultVoiceCommands = (): VoiceCommandSettings => ({
+  enabled: true,
+  apps: DEFAULT_APPS,
+  globalCommands: [],
+  urlPatterns: [],
+});
+
+function boundedString(raw: unknown, maxLength = 200): string | null {
+  if (typeof raw !== 'string') return null;
+  const value = raw.trim().slice(0, maxLength);
+  return value || null;
+}
+
+function stringArray(raw: unknown, maxItems = 500, maxLength = 200): string[] {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.flatMap((value) => {
+    const normalized = boundedString(value, maxLength);
+    return normalized ? [normalized] : [];
+  }))].slice(0, maxItems);
+}
+
+function normalizeAction(raw: unknown): CommandAction | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const candidate = raw as Record<string, unknown>;
+  if (candidate.type === 'keystroke') {
+    const keys = boundedString(candidate.keys, 100);
+    return keys ? { type: 'keystroke', keys } : null;
+  }
+  if (candidate.type === 'applescript') {
+    const script = boundedString(candidate.script, 10_000);
+    return script ? { type: 'applescript', script } : null;
+  }
+  if (candidate.type === 'url') {
+    const template = boundedString(candidate.template, 2_000);
+    return template ? { type: 'url', template } : null;
+  }
+  return null;
+}
+
+function normalizeCommands(raw: unknown): AppCommand[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((value) => {
+    if (!value || typeof value !== 'object') return [];
+    const candidate = value as Record<string, unknown>;
+    const trigger = boundedString(candidate.trigger);
+    const action = normalizeAction(candidate.action);
+    return trigger && action
+      ? [{ trigger, aliases: stringArray(candidate.aliases, 25), action }]
+      : [];
+  }).slice(0, 200);
+}
+
+function normalizeApps(raw: unknown): AppConfig[] {
+  if (!Array.isArray(raw)) return DEFAULT_APPS;
+  return raw.flatMap((value) => {
+    if (!value || typeof value !== 'object') return [];
+    const candidate = value as Record<string, unknown>;
+    const name = boundedString(candidate.name, 100);
+    if (!name) return [];
+    const bundleId = boundedString(candidate.bundleId, 200);
+    const appPath = boundedString(candidate.path, 1_000);
+    return [{
+      name,
+      ...(bundleId ? { bundleId } : {}),
+      ...(appPath ? { path: appPath } : {}),
+      aliases: stringArray(candidate.aliases, 25),
+      commands: normalizeCommands(candidate.commands),
+      enabled: candidate.enabled !== false,
+    }];
+  }).slice(0, 100);
+}
+
+function normalizeVoiceCommands(raw: unknown): VoiceCommandSettings {
+  if (!raw || typeof raw !== 'object') return defaultVoiceCommands();
+  const candidate = raw as Partial<VoiceCommandSettings>;
+  return {
+    enabled: candidate.enabled !== false,
+    apps: normalizeApps(candidate.apps),
+    globalCommands: normalizeCommands(candidate.globalCommands),
+    urlPatterns: stringArray(candidate.urlPatterns, 100, 2_000),
   };
 }
 
-function normalizePhraseReplacements(raw: unknown): PhraseReplacementRule[] {
-  if (!Array.isArray(raw)) return [];
-  const out: PhraseReplacementRule[] = [];
-  for (let i = 0; i < raw.length; i++) {
-    const row = raw[i];
-    if (!row || typeof row !== 'object') continue;
-    const r = row as Record<string, unknown>;
-    const id = typeof r.id === 'string' && r.id.trim() ? r.id.trim() : `rule_${i}`;
-    const find = typeof r.find === 'string' ? r.find : '';
-    const replace = typeof r.replace === 'string' ? r.replace : '';
-    const enabled = r.enabled === false ? false : true;
-    out.push({ id, find, replace, enabled });
-  }
-  return out;
-}
+export const store = new Store<StoreSchema>({ defaults: storeDefaults });
 
-/**
- * Get the path to the settings file
- */
 export function settingsPath(): string {
   return path.join(app.getPath('userData'), 'settings.json');
 }
 
-/**
- * Load settings from disk with defaults
- */
 export function loadSettings(): Settings {
-  try {
-    const p = settingsPath();
-    if (fs.existsSync(p)) {
-      const settings = JSON.parse(fs.readFileSync(p, 'utf8'));
-      return {
-        postEnter: settings.postEnter ?? false,
-        sayEnterToPressEnter: settings.sayEnterToPressEnter ?? false,
-        pushToTalkMode: settings.pushToTalkMode ?? false,
-        handsFreeMode: settings.handsFreeMode ?? false,
-        vocabWords: Array.isArray(settings.vocabWords) ? settings.vocabWords : [],
-        inputSource: settings.inputSource ?? 'system',
-        autoConnectDeviceName: settings.autoConnectDeviceName ?? null,
-        voiceCommands: settings.voiceCommands ?? {
-          enabled: true,  // Enable by default
-          apps: DEFAULT_APPS,
-          globalCommands: [],
-          urlPatterns: [],
-        },
-        phraseReplacements: normalizePhraseReplacements(settings.phraseReplacements),
-      };
-    }
-  } catch (e) {
-    console.error('[Settings] Failed to load:', e);
-  }
   return {
-    postEnter: false,
-    sayEnterToPressEnter: false,
-    pushToTalkMode: false,
-    handsFreeMode: false,
-    vocabWords: [],
-    phraseReplacements: [],
-    inputSource: 'system',
-    autoConnectDeviceName: null,
-    voiceCommands: {
-      enabled: true,  // Enable by default
-      apps: DEFAULT_APPS,
-      globalCommands: [],
-      urlPatterns: [],
-    },
+    postEnter: store.get('postEnter', false),
+    sayEnterToPressEnter: store.get('sayEnterToPressEnter', false),
+    pushToTalkMode: store.get('pushToTalkMode', false),
+    handsFreeMode: store.get('handsFreeMode', false),
+    saveAudio: store.get('saveAudio', false),
+    vocabWords: stringArray(store.get('vocabWords')),
+    phraseReplacements: clampPhraseReplacementRulesFromInput(store.get('phraseReplacements')),
+    inputSource: ['system', 'ble', 'radio'].includes(store.get('inputSource'))
+      ? store.get('inputSource')
+      : 'system',
+    autoConnectDeviceName: boundedString(store.get('autoConnectDeviceName'), 200),
+    voiceCommands: normalizeVoiceCommands(store.get('voiceCommands')),
   };
 }
 
-/**
- * Save settings to disk
- */
-export function saveSettings(settings: Settings): void {
-  try {
-    const settingsFile = settingsPath();
-    fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
-    fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
-  } catch (e) {
-    console.error('[Settings] Failed to save:', e);
-  }
+export function saveSettings(next: Settings): void {
+  const settings: Settings = {
+    ...loadSettings(),
+    ...next,
+    postEnter: next.postEnter === true,
+    sayEnterToPressEnter: next.sayEnterToPressEnter === true,
+    pushToTalkMode: next.pushToTalkMode === true,
+    handsFreeMode: next.handsFreeMode === true,
+    saveAudio: next.saveAudio === true,
+    vocabWords: stringArray(next.vocabWords),
+    phraseReplacements: clampPhraseReplacementRulesFromInput(next.phraseReplacements),
+    inputSource: ['system', 'ble', 'radio'].includes(next.inputSource) ? next.inputSource : 'system',
+    autoConnectDeviceName: boundedString(next.autoConnectDeviceName, 200),
+    voiceCommands: normalizeVoiceCommands(next.voiceCommands),
+  };
+
+  store.set('postEnter', settings.postEnter);
+  store.set('sayEnterToPressEnter', settings.sayEnterToPressEnter);
+  store.set('pushToTalkMode', settings.pushToTalkMode);
+  store.set('handsFreeMode', settings.handsFreeMode);
+  store.set('saveAudio', settings.saveAudio);
+  store.set('vocabWords', settings.vocabWords);
+  store.set('phraseReplacements', settings.phraseReplacements);
+  store.set('inputSource', settings.inputSource);
+  store.set('autoConnectDeviceName', settings.autoConnectDeviceName);
+  store.set('voiceCommands', settings.voiceCommands);
 }
 
-/**
- * Initialize electron-store instance
- */
-export const store = new Store<StoreSchema>({
-  defaults: storeDefaults,
-});
+export function loadUserSettings(): UserSettings {
+  const userName = store.get('userName');
+  const hotkey = store.get('hotkey');
+  const onboardedUsers = stringArray(store.get('onboardedUsers'));
+  return {
+    ...(userName ? { userName } : {}),
+    ...(hotkey ? { hotkey } : {}),
+    ...(onboardedUsers.length > 0 ? { onboardedUsers } : {}),
+  };
+}
 
-/**
- * Migrate from file-based JSON settings to electron-store
- * This runs once on first launch after update
- */
+export function saveUserSettings(next: UserSettings): void {
+  if (next.userName !== undefined) store.set('userName', boundedString(next.userName, 100));
+  if (next.hotkey !== undefined) store.set('hotkey', boundedString(next.hotkey, 100));
+  if (next.onboardedUsers !== undefined) store.set('onboardedUsers', stringArray(next.onboardedUsers));
+}
+
+function migrateSettingsJson(raw: Record<string, unknown>): void {
+  const current = loadSettings();
+  saveSettings({
+    ...current,
+    postEnter: typeof raw.postEnter === 'boolean' ? raw.postEnter : current.postEnter,
+    sayEnterToPressEnter: typeof raw.sayEnterToPressEnter === 'boolean'
+      ? raw.sayEnterToPressEnter
+      : current.sayEnterToPressEnter,
+    pushToTalkMode: typeof raw.pushToTalkMode === 'boolean' ? raw.pushToTalkMode : current.pushToTalkMode,
+    handsFreeMode: typeof raw.handsFreeMode === 'boolean' ? raw.handsFreeMode : current.handsFreeMode,
+    saveAudio: typeof raw.saveAudio === 'boolean' ? raw.saveAudio : current.saveAudio,
+    vocabWords: Array.isArray(raw.vocabWords) ? stringArray(raw.vocabWords) : current.vocabWords,
+    phraseReplacements: Array.isArray(raw.phraseReplacements)
+      ? clampPhraseReplacementRulesFromInput(raw.phraseReplacements)
+      : current.phraseReplacements,
+    inputSource: raw.inputSource === 'ble' || raw.inputSource === 'radio' || raw.inputSource === 'system'
+      ? raw.inputSource
+      : current.inputSource,
+    autoConnectDeviceName: typeof raw.autoConnectDeviceName === 'string'
+      ? raw.autoConnectDeviceName
+      : current.autoConnectDeviceName,
+    voiceCommands: raw.voiceCommands ? normalizeVoiceCommands(raw.voiceCommands) : current.voiceCommands,
+  });
+
+  if (typeof raw.autoConnectDeviceName === 'string') {
+    const uid = raw.autoConnectDeviceName.match(/memo_([0-9A-Fa-f]{5})/)?.[1];
+    if (uid) store.set('memoUid', uid.toUpperCase());
+  }
+  if (raw.inputSource === 'ble') store.set('preferBleWhenAvailable', true);
+}
+
+function migrateJsonFile(filePath: string, migrate: (raw: Record<string, unknown>) => void): void {
+  if (!fs.existsSync(filePath)) return;
+  const raw = JSON.parse(fs.readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+  migrate(raw);
+  const defaultBackupPath = `${filePath}.backup`;
+  const backupPath = fs.existsSync(defaultBackupPath)
+    ? `${defaultBackupPath}-${Date.now()}`
+    : defaultBackupPath;
+  fs.renameSync(filePath, backupPath);
+}
+
 export function migrateToElectronStore(): void {
-  const oldSettingsPath = settingsPath();
-
-  // Check if migration already completed
-  if (store.get('_migrationCompleted' as any)) {
-    return;
-  }
-
-  // Check if old settings.json exists
-  if (!fs.existsSync(oldSettingsPath)) {
-    // No old settings to migrate, mark as complete
-    store.set('_migrationCompleted' as any, true);
-    return;
-  }
+  if (store.get('_migrationCompleted', false)) return;
 
   try {
-    console.log('[Migration] Starting migration from settings.json to electron-store');
-    const oldSettings = JSON.parse(fs.readFileSync(oldSettingsPath, 'utf8'));
-
-    // Extract UID from device name (pattern: memo_<UID>)
-    if (oldSettings.autoConnectDeviceName) {
-      const uidMatch = oldSettings.autoConnectDeviceName.match(/memo_([0-9A-Fa-f]{5})/);
-      if (uidMatch) {
-        const uid = uidMatch[1].toUpperCase();
-        store.set('memoUid', uid);
-        console.log(`[Migration] Extracted UID: ${uid}`);
-      }
-    }
-
-    // Map inputSource to preferBleWhenAvailable
-    if (oldSettings.inputSource === 'ble') {
-      store.set('preferBleWhenAvailable', true);
-    }
-
-    // Preserve voice commands
-    if (oldSettings.voiceCommands) {
-      store.set('voiceCommands', oldSettings.voiceCommands);
-    }
-
-    // Preserve postEnter
-    if (oldSettings.postEnter !== undefined) {
-      store.set('postEnter', oldSettings.postEnter);
-    }
-
-    // Backup old file
-    const backupPath = oldSettingsPath + '.backup';
-    fs.renameSync(oldSettingsPath, backupPath);
-    console.log(`[Migration] Backed up old settings to ${backupPath}`);
-
-    // Mark migration complete
-    store.set('_migrationCompleted' as any, true);
-    console.log('[Migration] Migration completed successfully');
-  } catch (e) {
-    console.error('[Migration] Failed to migrate settings:', e);
-    // Don't fail the app, just use defaults
-    store.set('_migrationCompleted' as any, true);
+    migrateJsonFile(settingsPath(), migrateSettingsJson);
+    migrateJsonFile(path.join(os.homedir(), '.memo-web-settings.json'), (raw) => {
+      saveUserSettings({
+        userName: typeof raw.userName === 'string' ? raw.userName : undefined,
+        hotkey: typeof raw.hotkey === 'string' ? raw.hotkey : undefined,
+        onboardedUsers: stringArray(raw.onboardedUsers),
+      });
+    });
+    store.set('_migrationCompleted', true);
+  } catch (error) {
+    console.error('[Settings] Migration failed; source files were preserved:', error);
   }
 }

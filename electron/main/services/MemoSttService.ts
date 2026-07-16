@@ -1,4 +1,4 @@
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, spawnSync, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import path from 'path';
 import fs from 'fs';
@@ -12,6 +12,12 @@ import { AudioSourceManager } from './AudioSourceManager';
 export interface AppContext {
   appName: string;
   windowTitle: string;
+  bundleId?: string;
+}
+
+export interface CapturedAudio {
+  wavBuffer: Buffer;
+  duration?: number;
 }
 
 export interface TranscriptionData {
@@ -19,19 +25,12 @@ export interface TranscriptionData {
   processedText: string;
   wasProcessedByLLM: boolean;
   appContext?: AppContext;
+  audioCapture?: CapturedAudio;
 }
 
 export type MemoSttStatus = 'stopped' | 'running' | 'error';
 
-// Track instances for debugging
-let instanceCount = 0;
-
-export interface AudioData {
-  opusBuffer: Buffer;
-  wavBuffer?: Buffer; // WAV data for playback
-  duration: number;
-  timestamp: number;
-}
+let nextInstanceId = 0;
 
 export class MemoSttService extends EventEmitter {
   private process: ChildProcess | null = null;
@@ -43,36 +42,31 @@ export class MemoSttService extends EventEmitter {
   private restartTimeout: NodeJS.Timeout | null = null;
   private readonly MAX_RESTART_ATTEMPTS = 5;
   private readonly RESTART_DELAY_BASE = 2000;
-  private readonly MAX_BUFFER_SIZE = 1024 * 1024; // 1MB max buffer size
+  // A WAV line is base64 encoded by the trusted native recorder. Allow long
+  // dictations while still putting a hard ceiling on malformed output.
+  private readonly MAX_BUFFER_SIZE = 64 * 1024 * 1024;
   private readonly instanceId: number;
-  private pendingAudioData: AudioData | null = null; // Buffer audio data until transcription arrives
+  private isBleConnected = false;
   private commandDetector: CommandDetector;
   private commandExecutor: CommandExecutor;
   private audioSourceManager: AudioSourceManager | null = null;
+  private pendingAudioData: { wavBuffer?: Buffer; duration?: number } | null = null;
+  private readonly audioWaiters = new Set<() => void>();
   /** Timestamp (ms) when the current process was spawned — used to detect quick-exit device errors */
   private processStartedAt: number | null = null;
   /** Quick-exit threshold: if process exits within this many ms with non-zero code, assume audio device error */
   private readonly QUICK_EXIT_THRESHOLD_MS = 4000;
-  /** Timer for BLE inactivity: if no CONNECTED:/audio for this long, infer disconnect (safety net when Rust never sends DISCONNECTED:) */
-  private bleActivityTimeoutHandle: NodeJS.Timeout | null = null;
-  private readonly BLE_INACTIVITY_TIMEOUT_MS = 28000;
-
-  constructor(bleStateManager: null, audioSourceManager?: AudioSourceManager) {
+  constructor(audioSourceManager?: AudioSourceManager) {
     super();
-    instanceCount++;
-    this.instanceId = instanceCount;
-    logger.info(`[MemoSttService] Creating instance #${this.instanceId} (total instances: ${instanceCount})`);
-
-    if (instanceCount > 1) {
-      logger.warn(`[MemoSttService] WARNING: Multiple instances detected! Current: #${this.instanceId}, Total: ${instanceCount}`);
-    }
+    this.instanceId = ++nextInstanceId;
+    logger.info(`[MemoSttService] Creating instance #${this.instanceId}`);
 
     // Store references to state managers
     this.audioSourceManager = audioSourceManager || null;
 
     // Wire up AudioSourceManager commands
     if (this.audioSourceManager) {
-      this.audioSourceManager.on('commandSetInputSource', (source: string, micId?: string) => {
+      this.audioSourceManager.on('commandSetInputSource', (source: string) => {
         if (source === 'ble') {
           this.sendCommand('INPUT_SOURCE:ble');
         } else {
@@ -120,10 +114,11 @@ export class MemoSttService extends EventEmitter {
             logger.debug(`[MemoSttService #${this.instanceId}] stdin drained after sending: ${command}`);
           });
         }
-      } catch (error: any) {
+      } catch (error) {
         // Handle EPIPE and other write errors gracefully
         // EPIPE means the process has closed stdin (likely exiting)
-        this.handleStdinError(error, command);
+        const streamError = error instanceof Error ? error as NodeJS.ErrnoException : new Error(String(error));
+        this.handleStdinError(streamError, command);
       }
     } else {
       logger.warn(`[MemoSttService #${this.instanceId}] Cannot send command: process not running or stdin not available: ${command}`);
@@ -170,7 +165,13 @@ export class MemoSttService extends EventEmitter {
     );
 
     const voiceCommandsEnabled = !!settings.voiceCommands?.enabled;
-    const vocab: any = {
+    const vocab: {
+      boostWords: string[];
+      voiceCommandsEnabled: boolean;
+      appNames?: string[];
+      appCommands?: Record<string, string[]>;
+      globalCommands?: string[];
+    } = {
       boostWords,
       voiceCommandsEnabled,
     };
@@ -208,7 +209,11 @@ export class MemoSttService extends EventEmitter {
       logger.info(`[MemoSttService] Updated vocabulary: ${boostWords.length} boost words (voice commands disabled)`);
     }
 
-    this.sendCommand(`VOCAB:${JSON.stringify(vocab)}`);
+    if (this.status === 'running') {
+      this.sendCommand(`VOCAB:${JSON.stringify(vocab)}`);
+    } else {
+      logger.debug(`[MemoSttService #${this.instanceId}] Vocabulary staged until memo-stt starts`);
+    }
   }
 
   /**
@@ -314,8 +319,6 @@ export class MemoSttService extends EventEmitter {
       this.restartTimeout = null;
     }
 
-    // Clear BLE activity timeout and reset state
-    this.clearBleActivityTimeout();
     this.isBleConnected = false;
 
     // Reset restart attempts on manual start
@@ -382,12 +385,12 @@ export class MemoSttService extends EventEmitter {
         
         // Verify code signing (if on macOS)
         if (process.platform === 'darwin') {
-          try {
-            const { execSync } = require('child_process');
-            const codesignCheck = execSync(`codesign -dv "${binaryPath}" 2>&1 || echo "NOT_SIGNED"`, { encoding: 'utf8' });
-            logger.info(`[MemoSttService #${this.instanceId}] Code signing check: ${codesignCheck.trim()}`);
-          } catch (signError) {
-            logger.warn(`[MemoSttService #${this.instanceId}] Could not verify code signing:`, signError);
+          const result = spawnSync('codesign', ['-dv', binaryPath], { encoding: 'utf8' });
+          const details = (result.stderr || result.stdout || '').trim();
+          if (result.status === 0) {
+            logger.info(`[MemoSttService #${this.instanceId}] Code signing check: ${details}`);
+          } else {
+            logger.warn(`[MemoSttService #${this.instanceId}] memo-stt is not signed: ${details || result.error?.message || 'unknown error'}`);
           }
         }
         
@@ -411,6 +414,7 @@ export class MemoSttService extends EventEmitter {
       // NOTE: We do NOT set MEMO_DEVICE_NAME - Electron handles all connections via CONNECT_UID command
       const env: NodeJS.ProcessEnv = {
         ...process.env,
+        MEMO_EMIT_AUDIO: settings.saveAudio ? '1' : '0',
         INPUT_SOURCE: inputSource,
         MEMO_HANDS_FREE: handsFreeMode ? '1' : '0',
       };
@@ -457,9 +461,9 @@ export class MemoSttService extends EventEmitter {
       }
       // System mic: optional substring to match CoreAudio device name (e.g. "AirPods")
       if (inputSource === 'system') {
-        const micLabel = store.get('fallbackMicLabel');
+        const micLabel = store.get('selectedSystemMicName');
         if (typeof micLabel === 'string' && micLabel.trim()) {
-          env.MEMO_SYSTEM_INPUT_DEVICE = micLabel.trim();
+          env.MEMO_SYSTEM_INPUT_DEVICE = micLabel.trim().slice(0, 200);
           logger.info(`[MemoSttService] MEMO_SYSTEM_INPUT_DEVICE=${env.MEMO_SYSTEM_INPUT_DEVICE}`);
         }
       }
@@ -519,14 +523,14 @@ export class MemoSttService extends EventEmitter {
         }
       });
 
-      this.process.on('error', (error: Error) => {
+      this.process.on('error', (error: NodeJS.ErrnoException) => {
         const errorDetails = {
           message: error.message,
           name: error.name,
-          code: (error as any).code,
-          errno: (error as any).errno,
-          syscall: (error as any).syscall,
-          path: (error as any).path,
+          code: error.code,
+          errno: error.errno,
+          syscall: error.syscall,
+          path: error.path,
           command: command,
           args: args,
         };
@@ -534,9 +538,9 @@ export class MemoSttService extends EventEmitter {
         
         // Provide helpful error message for common issues
         let userFriendlyError = error.message;
-        if ((error as any).code === 'ENOENT') {
+        if (error.code === 'ENOENT') {
           userFriendlyError = `memo-stt binary not found. The app may not have been built correctly. Path: ${command}`;
-        } else if ((error as any).code === 'EACCES') {
+        } else if (error.code === 'EACCES') {
           userFriendlyError = `memo-stt binary is not executable. Please check file permissions. Path: ${command}`;
         }
         
@@ -560,7 +564,6 @@ export class MemoSttService extends EventEmitter {
         // (BleManager + tray disconnected, restart). Main's bleDisconnectRestartRequested listener will restart.
         if (wasBleConnected && this.audioSourceManager) {
           this.isBleConnected = false;
-          this.connectedDeviceName = null;
           this.emit('bleDisconnected');
           this.audioSourceManager.handleBleDisconnect();
           return; // Do not schedule generic restart - main will restart via bleDisconnectRestartRequested
@@ -624,30 +627,6 @@ export class MemoSttService extends EventEmitter {
     }
   }
   
-  // Cleanup method to track instance destruction
-  private cleanup(): void {
-    instanceCount--;
-    logger.info(`[MemoSttService #${this.instanceId}] Instance destroyed (remaining instances: ${instanceCount})`);
-  }
-
-  /**
-   * Reset the BLE activity timeout (disabled).
-   *
-   * We intentionally allow BLE to remain connected-but-idle with no traffic.
-   * Disconnect detection while idle is handled by Rust (memo-stt) using light central polling,
-   * which avoids spurious disconnects and minimizes peripheral power draw.
-   */
-  private resetBleActivityTimeout(): void {
-    // No-op
-  }
-
-  /**
-   * Clear the BLE activity timeout (disabled).
-   */
-  private clearBleActivityTimeout(): void {
-    // No-op
-  }
-
   stop(): void {
     // Clear any pending restart
     if (this.restartTimeout) {
@@ -655,11 +634,7 @@ export class MemoSttService extends EventEmitter {
       this.restartTimeout = null;
     }
 
-    // Clear BLE activity timeout
-    this.clearBleActivityTimeout();
     this.isBleConnected = false;
-    this.connectedDeviceName = null;
-    this.lastSeenDeviceName = null;
 
     // Reset restart attempts on manual stop
     this.restartAttempts = 0;
@@ -706,8 +681,6 @@ export class MemoSttService extends EventEmitter {
     // Clear buffer on stop
     this.buffer = '';
     
-    // Cleanup tracking
-    this.cleanup();
   }
 
   getStatus(): MemoSttStatus {
@@ -771,28 +744,6 @@ export class MemoSttService extends EventEmitter {
     }
 
     // Handle BLE protocol messages
-    if (line.startsWith('DEVICE_FOUND:')) {
-      // Format: DEVICE_FOUND:<name>:<uid>:<rssi>
-      const parts = line.slice('DEVICE_FOUND:'.length).split(':');
-      if (parts.length >= 3) {
-        const [name, uid, rssi] = parts;
-        const device = {
-          name: name.trim(),
-          uid: uid.trim(),
-          rssi: parseInt(rssi.trim()) || 0,
-        };
-        logger.info(`[MemoSttService] Device discovered: ${device.name} (UID: ${device.uid}, RSSI: ${device.rssi})`);
-        // Device discovery events are now handled by BleManager
-      }
-      return;
-    }
-
-    if (line.startsWith('SCAN_COMPLETE')) {
-      logger.info('[MemoSttService] BLE scan completed');
-      // Scan completion is now handled by BleManager
-      return;
-    }
-
     if (line.startsWith('CONNECTED:')) {
       // Format: CONNECTED:<device_name>
       // Device name can be: "Zephyr [memo_C9AA6]" or "memo_C9AA6"
@@ -804,13 +755,8 @@ export class MemoSttService extends EventEmitter {
       
       logger.info(`[MemoSttService] BLE device connected: ${fullDeviceName} (extracted: ${deviceName})`);
       
-      // Clear any stale activity timeout, then start inactivity timer (safety net if Rust never sends DISCONNECTED:)
-      this.clearBleActivityTimeout();
-      
       // Update state
       this.isBleConnected = true;
-      this.connectedDeviceName = deviceName;
-      this.lastSeenDeviceName = deviceName;
       
       // Emit event for BleManager (use extracted memo_ name for consistency)
       this.emit('bleConnected', deviceName);
@@ -819,12 +765,10 @@ export class MemoSttService extends EventEmitter {
       if (this.audioSourceManager) {
         this.audioSourceManager.handleBleReconnect(fullDeviceName);
       }
-      this.resetBleActivityTimeout();
       return;
     }
 
     if (line.startsWith('BLE_PRESS_ENTER')) {
-      this.resetBleActivityTimeout();
       this.emit('blePressEnter');
       return;
     }
@@ -834,12 +778,8 @@ export class MemoSttService extends EventEmitter {
       const reason = line.slice('DISCONNECTED:'.length).trim();
       logger.info(`[MemoSttService] BLE device disconnected: ${reason}`);
 
-      // Clear activity timeout - connection state comes from Rust only
-      this.clearBleActivityTimeout();
-      
       // Update state
       this.isBleConnected = false;
-      this.connectedDeviceName = null;
       
       // Emit event for BleManager
       this.emit('bleDisconnected');
@@ -864,7 +804,6 @@ export class MemoSttService extends EventEmitter {
 
     // Handle AUDIO_LEVELS: lines (if memo-stt outputs them)
     if (line.startsWith('AUDIO_LEVELS:')) {
-      this.resetBleActivityTimeout();
       const jsonStr = line.slice('AUDIO_LEVELS:'.length);
       try {
         const levels = JSON.parse(jsonStr);
@@ -876,60 +815,42 @@ export class MemoSttService extends EventEmitter {
       }
       return;
     }
-    
-    // Handle AUDIO_DATA: lines - base64 encoded OPUS audio
+
+    // memo-stt emits both OPUS and WAV. WAV is the only retained format because
+    // browsers decode it reliably without another codec dependency.
     if (line.startsWith('AUDIO_DATA:')) {
-      this.resetBleActivityTimeout();
-      const base64Data = line.slice('AUDIO_DATA:'.length);
-      try {
-        const opusBuffer = Buffer.from(base64Data, 'base64');
-        // Store in pendingAudioData, will be matched with transcription
-        this.pendingAudioData = {
-          opusBuffer,
-          duration: 0, // Will be set by AUDIO_DURATION line
-          timestamp: Date.now(),
-        };
-        logger.debug('[MemoSttService] Received audio data, size:', opusBuffer.length);
-      } catch (error) {
-        logger.error('Failed to decode AUDIO_DATA base64:', error);
-      }
+      if (loadSettings().saveAudio) this.pendingAudioData = {};
       return;
     }
-    
-    // Handle AUDIO_WAV: lines - base64 encoded WAV audio (for playback)
-    if (line.startsWith('AUDIO_WAV:')) {
-      const base64Data = line.slice('AUDIO_WAV:'.length);
-      try {
-        const wavBuffer = Buffer.from(base64Data, 'base64');
-        if (this.pendingAudioData) {
-          this.pendingAudioData.wavBuffer = wavBuffer;
-          logger.debug('[MemoSttService] Received WAV audio data, size:', wavBuffer.length);
-        }
-      } catch (error) {
-        logger.error('Failed to decode AUDIO_WAV base64:', error);
-      }
-      return;
-    }
-    
-    // Handle AUDIO_DURATION: lines
+
     if (line.startsWith('AUDIO_DURATION:')) {
-      this.resetBleActivityTimeout();
-      const durationStr = line.slice('AUDIO_DURATION:'.length);
-      try {
-        const duration = parseFloat(durationStr);
-        if (this.pendingAudioData) {
-          this.pendingAudioData.duration = duration;
-          logger.debug('[MemoSttService] Audio duration set:', duration);
-        }
-      } catch (error) {
-        logger.error('Failed to parse AUDIO_DURATION:', error);
+      if (!loadSettings().saveAudio) return;
+      const duration = Number.parseFloat(line.slice('AUDIO_DURATION:'.length));
+      if (Number.isFinite(duration) && duration >= 0) {
+        this.pendingAudioData ??= {};
+        this.pendingAudioData.duration = duration;
       }
+      return;
+    }
+
+    if (line.startsWith('AUDIO_WAV:')) {
+      if (!loadSettings().saveAudio) return;
+      const wavBuffer = Buffer.from(line.slice('AUDIO_WAV:'.length), 'base64');
+      if (wavBuffer.length < 44 || wavBuffer.subarray(0, 4).toString('ascii') !== 'RIFF') {
+        logger.warn('[MemoSttService] Ignored invalid WAV data from recorder');
+        return;
+      }
+      this.pendingAudioData ??= {};
+      this.pendingAudioData.wavBuffer = wavBuffer;
+      this.audioWaiters.forEach((resolve) => resolve());
+      this.audioWaiters.clear();
       return;
     }
     
     // Detect recording start - memo-stt outputs "🎤 Recording..." when recording starts
     if (line.includes('🎤 Recording...') || line.includes('Recording...')) {
       logger.debug('[MemoSttService] Recording started');
+      this.pendingAudioData = null;
       this.emit('recordingStarted');
       return;
     }
@@ -951,6 +872,7 @@ export class MemoSttService extends EventEmitter {
     // No-speech path: memo-stt does not print FINAL — unblock UI and restore system output mute
     if (line.includes('📝 (no speech detected)')) {
       logger.debug('[MemoSttService] No speech detected (ASR finished)');
+      this.pendingAudioData = null;
       this.emit('processingCompleted');
       return;
     }
@@ -962,6 +884,7 @@ export class MemoSttService extends EventEmitter {
     // These can appear in stdout as well (though usually in stderr)
     if (line.includes('❌ Error:') || line.includes('Error: Audio too short')) {
       logger.debug('[MemoSttService] Transcription error detected in stdout, clearing processing state');
+      this.pendingAudioData = null;
       this.emit('processingFailed');
       return;
     }
@@ -994,7 +917,7 @@ export class MemoSttService extends EventEmitter {
       const settings = loadSettings();
       if (settings.voiceCommands?.enabled) {
         const activeApp = transcription.appContext?.appName || '';
-        const detectedSequence = await this.commandDetector.detectSequenceWithIntent(text, activeApp);
+        const detectedSequence = this.commandDetector.detectSequence(text, activeApp);
         const detectedCommand = detectedSequence.commands[0] ?? { type: 'none' as const, confidence: 0 };
         
         logger.debug(`[MemoSttService] Command detection: text="${text}", activeApp="${activeApp}", commands=${detectedSequence.commands.length}, first=${detectedCommand.type}, confidence=${detectedCommand.confidence}`);
@@ -1010,13 +933,16 @@ export class MemoSttService extends EventEmitter {
           // If there's remaining text after stripping the command, inject it
           if (remainingText.trim().length > 0) {
             logger.debug(`[MemoSttService] Injecting remaining text after command: "${remainingText}"`);
+            const audioCapture = await this.takePendingAudio();
             this.emit('transcription', {
               ...transcription,
               processedText: remainingText,
+              ...(audioCapture ? { audioCapture } : {}),
             });
             this.emit('processingCompleted');
           } else {
             // No remaining text, just emit processing completed
+            this.pendingAudioData = null;
             this.emit('processingCompleted');
           }
           return;
@@ -1028,20 +954,13 @@ export class MemoSttService extends EventEmitter {
       }
 
       // Emit transcription event (normal flow)
+      const audioCapture = await this.takePendingAudio();
       this.emit('transcription', {
         ...transcription,
         processedText: text,
+        ...(audioCapture ? { audioCapture } : {}),
       });
       
-      // If we have pending audio data, emit it with the transcription
-      // Audio data is matched to transcription by timestamp proximity
-      if (this.pendingAudioData) {
-        const audioData = this.pendingAudioData;
-        this.pendingAudioData = null; // Clear after emitting
-        this.emit('audioData', audioData);
-        logger.debug('[MemoSttService] Emitted audio data with transcription');
-      }
-
       this.emit('processingCompleted');
     } catch (error) {
       logger.error('Failed to parse FINAL: JSON:', error);
@@ -1050,34 +969,29 @@ export class MemoSttService extends EventEmitter {
     }
   }
 
-  /**
-   * Get current BLE connection state
-   */
-  getBleConnectionState(): { connected: boolean; deviceName: string | null } {
-    return {
-      connected: this.isBleConnected,
-      deviceName: this.connectedDeviceName,
-    };
+  private async takePendingAudio(): Promise<CapturedAudio | undefined> {
+    if (!loadSettings().saveAudio) {
+      this.pendingAudioData = null;
+      return undefined;
+    }
+
+    if (!this.pendingAudioData?.wavBuffer) {
+      await new Promise<void>((resolve) => {
+        const finish = () => {
+          clearTimeout(timeout);
+          this.audioWaiters.delete(finish);
+          resolve();
+        };
+        const timeout = setTimeout(finish, 1_500);
+        this.audioWaiters.add(finish);
+      });
+    }
+
+    const pending = this.pendingAudioData;
+    this.pendingAudioData = null;
+    return pending?.wavBuffer
+      ? { wavBuffer: pending.wavBuffer, ...(pending.duration !== undefined ? { duration: pending.duration } : {}) }
+      : undefined;
   }
 
-  /**
-   * Disconnect from BLE device
-   */
-  disconnectBle(): void {
-    if (this.isBleConnected) {
-      logger.info('[MemoSttService] Disconnecting from BLE device');
-      // Stop the memo-stt process to disconnect
-      this.stop();
-      this.isBleConnected = false;
-      this.connectedDeviceName = null;
-      this.emit('bleDisconnected');
-      // Restart with system mic instead
-      setTimeout(() => {
-        const settings = loadSettings();
-        settings.inputSource = 'system';
-        saveSettings(settings);
-        this.start();
-      }, 500);
-    }
-  }
 }

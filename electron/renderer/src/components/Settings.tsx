@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { QRCodeDisplay } from './QRCodeDisplay';
-import { syncOrchestrator, SyncStatus } from '../services/SyncOrchestrator';
-import { createPortal } from 'react-dom';
 import { VoiceCommandSettings, AppConfig, AppCommand } from './VoiceCommandSettings';
 import { hexToHsl, hslToHex } from '../utils/colorUtils';
 import { storageService } from '../services/StorageService';
+import { buildTranscriptionExport } from '../services/transcriptionExport';
+import type { PhraseReplacementRule } from '../../../shared/electron-api';
 import '../styles/glass.css';
 import '../styles/color-picker.css';
 
@@ -13,18 +12,14 @@ interface SettingsProps {
   onClose: () => void;
 }
 
-interface PhraseReplacementRule {
-  id: string;
-  find: string;
-  replace: string;
-  enabled?: boolean;
+function toLocalDateTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  const localTime = new Date(timestamp - date.getTimezoneOffset() * 60_000);
+  return localTime.toISOString().slice(0, 16);
 }
 
 export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const { primary, setPrimary } = useTheme();
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
-  const [showSyncQR, setShowSyncQR] = useState(false);
-  const [connectionInfo, setConnectionInfo] = useState<{ ip: string; port: number; token: string } | null>(null);
   const [voiceCommandsEnabled, setVoiceCommandsEnabled] = useState(false);
   const [voiceCommandApps, setVoiceCommandApps] = useState<AppConfig[]>([]);
   const [globalCommands, setGlobalCommands] = useState<AppCommand[]>([]);
@@ -32,13 +27,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [connectedDeviceName, setConnectedDeviceName] = useState<string | null>(null);
-  const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [pressEnterAfterPaste, setPressEnterAfterPaste] = useState(false);
   const [pushToTalkMode, setPushToTalkMode] = useState(false);
   const [handsFreeMode, setHandsFreeMode] = useState(false);
   const [sayEnterToPressEnter, setSayEnterToPressEnter] = useState(false);
   const [startAtLogin, setStartAtLogin] = useState(false);
+  const [saveAudio, setSaveAudio] = useState(false);
   const [vocabWords, setVocabWords] = useState<string[]>([]);
   const [isAddingVocabWord, setIsAddingVocabWord] = useState(false);
   const [vocabWordDraft, setVocabWordDraft] = useState('');
@@ -54,6 +50,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [colorBarSaturation, setColorBarSaturation] = useState(100);
   const [colorBarLightness, setColorBarLightness] = useState(50);
   const [totalWordCount, setTotalWordCount] = useState<number | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFrom, setExportFrom] = useState('');
+  const [exportTo, setExportTo] = useState('');
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   // Load device connection state on mount
   useEffect(() => {
@@ -63,7 +64,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
         console.log('[Settings] Loaded connection state:', state);
         setIsConnected(state.connected);
         setConnectedDeviceName(state.deviceName);
-        setBatteryLevel(state.batteryLevel ?? null);
         // Always set deviceUid if available (for display in input field)
         if (state.deviceUid) {
           setDeviceUid(state.deviceUid);
@@ -83,29 +83,25 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       setPushToTalkMode(settings.pushToTalkMode ?? false);
       setHandsFreeMode(settings.handsFreeMode ?? false);
       setStartAtLogin(settings.startAtLogin);
+      setSaveAudio(settings.saveAudio ?? false);
       setVocabWords(Array.isArray(settings.vocabWords) ? settings.vocabWords : []);
       setPhraseReplacementRules(
         Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : []
       );
     });
     
-    // Also refresh state periodically (every 2 seconds) to catch any missed updates
-    const refreshInterval = setInterval(() => {
-      loadConnectionState();
-    }, 2000);
-    
     // Listen for connection changes - this will update UI in real-time
     const unsubscribeConnection = window.electronAPI.device.onConnectionChanged((state) => {
       console.log('[Settings] Connection changed event received:', state);
       setIsConnected(state.connected);
       setConnectedDeviceName(state.deviceName);
-      setBatteryLevel(state.batteryLevel ?? null);
       // Always update deviceUid if provided
       if (state.deviceUid) {
         setDeviceUid(state.deviceUid);
       }
       // Clear connecting state when device is actually connected
       if (state.connected) {
+        setConnectionError(null);
         setIsConnecting(false);
         // Clear any pending timeout
         if (connectTimeoutRef.current) {
@@ -117,7 +113,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     
     return () => {
       unsubscribeConnection();
-      clearInterval(refreshInterval);
       // Clean up any pending connection timeout
       if (connectTimeoutRef.current) {
         clearTimeout(connectTimeoutRef.current);
@@ -169,31 +164,23 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   };
 
   const commitPhraseFindBlur = async (id: string) => {
-    let next: PhraseReplacementRule[] = [];
-    setPhraseReplacementRules((prev) => {
-      const row = prev.find((r) => r.id === id);
-      if (!row) {
-        next = prev;
-        return prev;
-      }
-      const trimmed = row.find.trim();
-      next = !trimmed ? prev.filter((r) => r.id !== id) : prev.map((r) => (r.id === id ? { ...r, find: trimmed } : r));
-      return next;
-    });
+    const row = phraseReplacementRules.find((rule) => rule.id === id);
+    if (!row) return;
+    const trimmed = row.find.trim();
+    const next = !trimmed
+      ? phraseReplacementRules.filter((rule) => rule.id !== id)
+      : phraseReplacementRules.map((rule) => rule.id === id ? { ...rule, find: trimmed } : rule);
+    setPhraseReplacementRules(next);
     await persistPhraseRulesToDisk(next);
   };
 
   const commitPhraseReplaceBlur = async (id: string) => {
-    let next: PhraseReplacementRule[] = [];
-    setPhraseReplacementRules((prev) => {
-      const row = prev.find((r) => r.id === id);
-      if (!row) {
-        next = prev;
-        return prev;
-      }
-      next = prev.map((r) => (r.id === id ? { ...r, replace: row.replace } : r));
-      return next;
-    });
+    const row = phraseReplacementRules.find((rule) => rule.id === id);
+    if (!row) return;
+    const next = phraseReplacementRules.map((rule) =>
+      rule.id === id ? { ...rule, replace: row.replace } : rule
+    );
+    setPhraseReplacementRules(next);
     await persistPhraseRulesToDisk(next);
   };
 
@@ -211,7 +198,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     await persistVocabWords(next);
   };
 
-  // Sync color bar state from primary
+  // Keep the color bar state aligned with the active theme.
   useEffect(() => {
     if (primary) {
       const [h, s, l] = hexToHsl(primary);
@@ -295,39 +282,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     });
   };
 
-  // Monitor sync status
-  useEffect(() => {
-    syncOrchestrator.getStatus().then(setSyncStatus);
-
-    const unsubscribe = syncOrchestrator.onStatusChange((newStatus) => {
-      setSyncStatus(newStatus);
-      if (newStatus === 'listening') {
-        syncOrchestrator.getConnectionInfo().then((info) => {
-          if (info) {
-            setConnectionInfo(info);
-            setShowSyncQR(true);
-          }
-        });
-      } else if (newStatus === 'connected' || newStatus === 'idle') {
-        setShowSyncQR(false);
-        if (newStatus === 'idle') {
-          setConnectionInfo(null);
-        }
-      }
-    });
-
-    return unsubscribe;
-  }, []);
-
-  const handleStopSync = useCallback(async () => {
-    await syncOrchestrator.stopListening();
-    setShowSyncQR(false);
-    setConnectionInfo(null);
-  }, []);
-
   const handleConnect = async () => {
     if (!deviceUid || deviceUid.length !== 5) {
-      alert('Please enter a 5-digit UID');
+      setConnectionError('Enter a 5-digit UID.');
       return;
     }
     
@@ -338,12 +295,13 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     }
     
     setIsConnecting(true);
+    setConnectionError(null);
     
     // Set a timeout to clear connecting state if connection takes too long (30 seconds)
     connectTimeoutRef.current = setTimeout(() => {
       setIsConnecting(false);
       connectTimeoutRef.current = null;
-      alert('Connection timed out. Please try again.');
+      setConnectionError('Connection timed out. Try again.');
     }, 30000);
     
     try {
@@ -354,7 +312,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
           connectTimeoutRef.current = null;
         }
         setIsConnecting(false);
-        alert(`Failed to connect: ${result.error || 'Unknown error'}`);
+        setConnectionError(result.error || 'Could not connect to the device.');
         return;
       }
       // Connection state will be updated via connectionChanged event
@@ -367,7 +325,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       }
       setIsConnecting(false);
       console.error('Failed to connect:', error);
-      alert('Failed to connect to device');
+      setConnectionError('Could not connect to the device.');
     }
     // Note: We don't clear isConnecting here - it will be cleared when
     // the connectionChanged event fires with connected: true, or on timeout/error above
@@ -380,11 +338,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       if (result.success) {
         setIsConnected(false);
         setConnectedDeviceName(null);
+        setConnectionError(null);
       } else {
         console.error('Failed to disconnect:', result.error);
+        setConnectionError(result.error || 'Could not disconnect from the device.');
       }
     } catch (error) {
       console.error('Failed to disconnect:', error);
+      setConnectionError('Could not disconnect from the device.');
     } finally {
       setIsDisconnecting(false);
     }
@@ -397,11 +358,73 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
         setDeviceUid('');
         setConnectedDeviceName(null);
         setIsConnected(false);
+        setConnectionError(null);
       } else {
         console.error('Failed to reset saved device:', result.error);
+        setConnectionError(result.error || 'Could not reset the saved device.');
       }
     } catch (error) {
       console.error('Failed to reset saved device:', error);
+      setConnectionError('Could not reset the saved device.');
+    }
+  };
+
+  const openExportPicker = async () => {
+    setExportOpen(true);
+    setExportStatus(null);
+    setExportBusy(true);
+    try {
+      await storageService.init();
+      const entries = await storageService.getAllActiveEntries();
+      if (entries.length === 0) {
+        setExportStatus('No transcriptions to export.');
+        return;
+      }
+      const bounds = entries.reduce(
+        (current, entry) => ({
+          oldest: Math.min(current.oldest, entry.createdAt),
+          newest: Math.max(current.newest, entry.createdAt),
+        }),
+        { oldest: Number.POSITIVE_INFINITY, newest: Number.NEGATIVE_INFINITY }
+      );
+      setExportFrom(toLocalDateTime(bounds.oldest));
+      setExportTo(toLocalDateTime(bounds.newest));
+    } catch (error) {
+      console.error('[Settings] Failed to prepare transcription export:', error);
+      setExportStatus('Could not load transcriptions.');
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  const exportTranscriptions = async (all: boolean) => {
+    setExportBusy(true);
+    setExportStatus(null);
+    try {
+      const entries = await storageService.getAllActiveEntries();
+      const from = all ? undefined : new Date(exportFrom).getTime();
+      const toStart = all ? undefined : new Date(exportTo).getTime();
+      if (!all && (!Number.isFinite(from) || !Number.isFinite(toStart))) {
+        setExportStatus('Choose both a start and end time.');
+        return;
+      }
+      const to = toStart === undefined ? undefined : toStart + 59_999;
+      const document = buildTranscriptionExport(entries, from, to);
+      if (document.count === 0) {
+        setExportStatus('No transcriptions fall within that time range.');
+        return;
+      }
+      const result = await window.electronAPI.exportJson(document);
+      if (result.success) {
+        setExportStatus(`Exported ${document.count.toLocaleString()} transcription${document.count === 1 ? '' : 's'}.`);
+      } else if (!result.canceled) {
+        setExportStatus(result.error || 'Export failed.');
+      }
+    } catch (error) {
+      console.error('[Settings] Failed to export transcriptions:', error);
+      setExportStatus(error instanceof Error ? error.message : 'Export failed.');
+    } finally {
+      setExportBusy(false);
     }
   };
 
@@ -565,6 +588,54 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     Start at Login
                   </span>
                 </label>
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  padding: '2px 4px',
+                }}>
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={saveAudio}
+                      onChange={async (event) => {
+                        const enabled = event.target.checked;
+                        setSaveAudio(enabled);
+                        await window.electronAPI.interface.setSaveAudio(enabled);
+                      }}
+                      style={{
+                        width: '16px',
+                        height: '16px',
+                        cursor: 'pointer',
+                        accentColor: primary,
+                      }}
+                    />
+                    <span style={{ fontSize: '12px', userSelect: 'none' }}>Save dictation audio</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => { void window.electronAPI.audio.openFolder(); }}
+                    style={{
+                      border: 0,
+                      padding: 0,
+                      color: primary,
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      font: 'inherit',
+                      fontSize: '12px',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Open folder
+                  </button>
+                </div>
 
                 {/* Vocab (STT boosting) */}
                 <div style={{
@@ -922,11 +993,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               )}
             </div>
 
-            {/* Bluetooth (collapsed by default) */}
-            <div style={{
-              display: 'none',
-            }} />
-
             <div className="settings-section">
               <button
                 type="button"
@@ -1065,6 +1131,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       </div>
                     </>
                   )}
+                  {connectionError && (
+                    <div role="alert" style={{ marginTop: '6px', color: '#ff8a8a', fontSize: '11px' }}>
+                      {connectionError}
+                    </div>
+                  )}
 
                   <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.08)', margin: '10px 0' }} />
 
@@ -1147,53 +1218,141 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               borderTop: '1px solid rgba(255, 255, 255, 0.08)',
               fontSize: '12px',
               color: 'rgba(255, 255, 255, 0.6)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
             }}>
-              Words not typed: {totalWordCount !== null ? totalWordCount.toLocaleString() : '…'}
+              <span>Words not typed: {totalWordCount !== null ? totalWordCount.toLocaleString() : '…'}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (exportOpen) {
+                    setExportOpen(false);
+                    setExportStatus(null);
+                  } else {
+                    void openExportPicker();
+                  }
+                }}
+                style={{
+                  border: 0,
+                  padding: 0,
+                  color: primary,
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  font: 'inherit',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Export JSON
+              </button>
             </div>
+
+            {exportOpen && (
+              <div
+                role="dialog"
+                aria-label="Export transcriptions"
+                style={{
+                  marginTop: '10px',
+                  padding: '12px',
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '10px',
+                }}
+              >
+                <div style={{ fontSize: '12px', fontWeight: 650, marginBottom: '10px' }}>
+                  Export transcriptions
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '10px', color: 'rgba(255, 255, 255, 0.55)' }}>
+                    From
+                    <input
+                      type="datetime-local"
+                      value={exportFrom}
+                      onChange={(event) => setExportFrom(event.target.value)}
+                      disabled={exportBusy}
+                      style={{
+                        minWidth: 0,
+                        width: '100%',
+                        padding: '6px',
+                        color: '#fff',
+                        colorScheme: 'dark',
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '6px',
+                        fontSize: '10px',
+                      }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '10px', color: 'rgba(255, 255, 255, 0.55)' }}>
+                    To
+                    <input
+                      type="datetime-local"
+                      value={exportTo}
+                      onChange={(event) => setExportTo(event.target.value)}
+                      disabled={exportBusy}
+                      style={{
+                        minWidth: 0,
+                        width: '100%',
+                        padding: '6px',
+                        color: '#fff',
+                        colorScheme: 'dark',
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '6px',
+                        fontSize: '10px',
+                      }}
+                    />
+                  </label>
+                </div>
+                {exportStatus && (
+                  <div role="status" style={{ marginTop: '8px', fontSize: '10px', color: 'rgba(255, 255, 255, 0.65)' }}>
+                    {exportStatus}
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
+                  <button
+                    type="button"
+                    disabled={exportBusy}
+                    onClick={() => { void exportTranscriptions(true); }}
+                    style={{
+                      padding: '6px 9px',
+                      color: primary,
+                      background: 'transparent',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '6px',
+                      cursor: exportBusy ? 'default' : 'pointer',
+                      fontSize: '11px',
+                      opacity: exportBusy ? 0.5 : 1,
+                    }}
+                  >
+                    Export all
+                  </button>
+                  <button
+                    type="button"
+                    disabled={exportBusy || !exportFrom || !exportTo}
+                    onClick={() => { void exportTranscriptions(false); }}
+                    style={{
+                      padding: '6px 9px',
+                      color: '#000',
+                      background: primary,
+                      border: 0,
+                      borderRadius: '6px',
+                      cursor: exportBusy || !exportFrom || !exportTo ? 'default' : 'pointer',
+                      fontSize: '11px',
+                      fontWeight: 650,
+                      opacity: exportBusy || !exportFrom || !exportTo ? 0.5 : 1,
+                    }}
+                  >
+                    {exportBusy ? 'Preparing…' : 'Export range'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* QR Code Modal Portal */}
-      {showSyncQR && connectionInfo && createPortal(
-        <>
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0, 0, 0, 0.95)',
-              backdropFilter: 'blur(20px)',
-              zIndex: 999999,
-            }}
-            onClick={handleStopSync}
-          />
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 1000000,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              pointerEvents: 'none',
-            }}
-          >
-            <div style={{ pointerEvents: 'auto' }}>
-              <QRCodeDisplay
-                connectionInfo={connectionInfo}
-                onClose={handleStopSync}
-              />
-            </div>
-          </div>
-        </>,
-        document.body
-      )}
     </>
   );
 };

@@ -1,29 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron';
-
-export interface AppContext {
-  appName: string;
-  windowTitle: string;
-}
-
-export interface TranscriptionData {
-  rawTranscript: string;
-  processedText: string;
-  wasProcessedByLLM: boolean;
-  timestamp: number;
-  appContext?: AppContext;
-}
-
-export interface MemoSttError {
-  message: string;
-  name: string;
-}
-
-export interface PhraseReplacementRule {
-  id: string;
-  find: string;
-  replace: string;
-  enabled?: boolean;
-}
+import type {
+  ElectronAPI,
+  MemoSttError,
+  PhraseReplacementRule,
+  ToastData,
+  TranscriptionData,
+  TranscriptionExportDocument,
+  VoiceCommandSettings,
+} from '../shared/electron-api';
 
 // Store callback references for proper cleanup
 const transcriptionCallbacks = new Set<(data: TranscriptionData) => void>();
@@ -45,7 +29,7 @@ const errorHandler = (_event: Electron.IpcRendererEvent, error: MemoSttError) =>
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
-contextBridge.exposeInMainWorld('electronAPI', {
+const electronAPI = {
   // Transcription events
   onTranscription: (callback: (data: TranscriptionData) => void) => {
     // Remove existing listener to prevent duplicates, then re-add if needed
@@ -147,56 +131,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('user:mark-onboarded', userName);
   },
 
-  // Sync handlers
-  sync: {
-    startListening: (): Promise<{ ip: string; port: number; token: string }> => {
-      return ipcRenderer.invoke('sync:start-listening');
-    },
-    stopListening: (): Promise<void> => {
-      return ipcRenderer.invoke('sync:stop-listening');
-    },
-    getConnectionInfo: (): Promise<{ ip: string; port: number; token: string } | null> => {
-      return ipcRenderer.invoke('sync:get-connection-info');
-    },
-    syncNow: (): Promise<void> => {
-      return ipcRenderer.invoke('sync:sync-now');
-    },
-    getStatus: (): Promise<string> => {
-      return ipcRenderer.invoke('sync:get-status');
-    },
-    getLastSyncTime: (): Promise<number> => {
-      return ipcRenderer.invoke('sync:get-last-sync-time');
-    },
-    isConnected: (): Promise<boolean> => {
-      return ipcRenderer.invoke('sync:is-connected');
-    },
-    onStatusChange: (callback: (status: string) => void) => {
-      ipcRenderer.on('sync:status', (_event, status) => callback(status));
-      return () => {
-        ipcRenderer.removeAllListeners('sync:status');
-      };
-    },
-    onIncomingMessage: (callback: (message: any) => void) => {
-      ipcRenderer.on('sync:incoming-message', (_event, message) => callback(message));
-      return () => {
-        ipcRenderer.removeAllListeners('sync:incoming-message');
-      };
-    },
-    sendOutgoingMessage: (message: any) => {
-      ipcRenderer.send('sync:outgoing-message', message);
-    },
-  },
-  storage: {
-    clearIndexedDB: (): Promise<boolean> => {
-      return ipcRenderer.invoke('storage:clear-indexeddb');
-    },
-  },
   interface: {
     getSettings: (): Promise<{
       pressEnterAfterPaste: boolean;
       sayEnterToPressEnter: boolean;
       pushToTalkMode: boolean;
       handsFreeMode: boolean;
+      saveAudio: boolean;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
       startAtLogin: boolean;
@@ -221,25 +162,52 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setHandsFreeMode: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setHandsFreeMode', enabled);
     },
+    setSaveAudio: (enabled: boolean): Promise<boolean> => {
+      return ipcRenderer.invoke('settings:setSaveAudio', enabled);
+    },
     setStartAtLogin: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setStartAtLogin', enabled);
     },
   },
+  audio: {
+    get: (entryId: string): Promise<{ success: boolean; data?: Uint8Array; error?: string }> => (
+      ipcRenderer.invoke('audio:get', entryId)
+    ),
+    delete: (entryId: string): Promise<{ success: boolean; error?: string }> => (
+      ipcRenderer.invoke('audio:delete', entryId)
+    ),
+    openFolder: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('audio:openFolder'),
+  },
+  appIcons: {
+    get: (appName: string, bundleId?: string): Promise<string | null> => (
+      ipcRenderer.invoke('app-icon:get', appName, bundleId)
+    ),
+  },
+  onOpenSettings: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('settings:open', handler);
+    return () => ipcRenderer.removeListener('settings:open', handler);
+  },
+  exportJson: (document: TranscriptionExportDocument): Promise<{
+    success: boolean;
+    canceled?: boolean;
+    error?: string;
+  }> => ipcRenderer.invoke('export:json', document),
   voiceCommands: {
-    getSettings: (): Promise<any> => {
+    getSettings: (): Promise<VoiceCommandSettings> => {
       return ipcRenderer.invoke('settings:getVoiceCommands');
     },
-    saveSettings: (settings: any): Promise<boolean> => {
+    saveSettings: (settings: VoiceCommandSettings): Promise<boolean> => {
       return ipcRenderer.invoke('settings:saveVoiceCommands', settings);
     },
-    onCommandExecuted: (callback: (command: any) => void) => {
+    onCommandExecuted: (callback: (command: { type: string }) => void) => {
       ipcRenderer.on('command:executed', (_event, command) => callback(command));
       return () => {
         ipcRenderer.removeAllListeners('command:executed');
       };
     },
   },
-  // Device API (legacy - for old Settings UI)
+  // Memo hardware connection API
   device: {
     connectByUid: (uid: string): Promise<{ success: boolean; error?: string }> => {
       return ipcRenderer.invoke('device:connectByUid', uid);
@@ -269,84 +237,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.removeAllListeners('device:connectionChanged');
       };
     },
-    onDeviceFound: (callback: (device: { name: string; id: string; rssi?: number }) => void) => {
-      ipcRenderer.on('device:deviceFound', (_event, device) => callback(device));
-      return () => {
-        ipcRenderer.removeAllListeners('device:deviceFound');
-      };
-    },
-    onScanComplete: (callback: () => void) => {
-      ipcRenderer.on('device:scanComplete', () => callback());
-      return () => {
-        ipcRenderer.removeAllListeners('device:scanComplete');
-      };
-    },
-    onScanError: (callback: (error: string) => void) => {
-      ipcRenderer.on('device:scanError', (_event, error) => callback(error));
-      return () => {
-        ipcRenderer.removeAllListeners('device:scanError');
-      };
-    },
-  },
-  // BLE Device Management
-  ble: {
-    setUid: (uid: string): Promise<{ success: boolean; error?: string }> => {
-      return ipcRenderer.invoke('ble:setUid', uid);
-    },
-    clearUid: (): Promise<{ success: boolean; error?: string }> => {
-      return ipcRenderer.invoke('ble:clearUid');
-    },
-    getState: (): Promise<{
-      state: 'idle' | 'scanning' | 'connected' | 'fallback';
-      memoUid: string | null;
-      connectedDeviceName: string | null;
-      batteryLevel: number | null;
-      reconnectAttempts: number;
-      lastConnectionTime: number | null;
-      errorMessage: string | null;
-    }> => {
-      return ipcRenderer.invoke('ble:getState');
-    },
-    reconnect: (): Promise<{ success: boolean; error?: string }> => {
-      return ipcRenderer.invoke('ble:reconnect');
-    },
-    disconnect: (): Promise<{ success: boolean; error?: string }> => {
-      return ipcRenderer.invoke('ble:disconnect');
-    },
-    setAutoReconnect: (enabled: boolean): Promise<{ success: boolean; error?: string }> => {
-      return ipcRenderer.invoke('ble:setAutoReconnect', enabled);
-    },
-    onStateChanged: (callback: (data: any) => void) => {
-      ipcRenderer.on('ble:stateChanged', (_event, data) => callback(data));
-      return () => {
-        ipcRenderer.removeAllListeners('ble:stateChanged');
-      };
-    },
-    onDeviceDiscovered: (callback: (device: { name: string; uid: string; rssi: number }) => void) => {
-      ipcRenderer.on('ble:deviceDiscovered', (_event, device) => callback(device));
-      return () => {
-        ipcRenderer.removeAllListeners('ble:deviceDiscovered');
-      };
-    },
   },
   // Audio Source Management
   audioSource: {
-    getSource: (): Promise<{ source: 'ble' | 'system' }> => {
-      return ipcRenderer.invoke('audio:getSource');
-    },
-    setFallbackMic: (micId: string, label?: string | null): Promise<{ success: boolean; error?: string }> => {
-      return ipcRenderer.invoke('audio:setFallbackMic', micId, label);
-    },
-    switchToSystemMic: (): Promise<{ success: boolean; error?: string }> => {
-      return ipcRenderer.invoke('audio:switchToSystemMic');
-    },
-    onSourceChanged: (callback: (source: 'ble' | 'system') => void) => {
-      ipcRenderer.on('audio:sourceChanged', (_event, source) => callback(source));
-      return () => {
-        ipcRenderer.removeAllListeners('audio:sourceChanged');
-      };
-    },
-    onShowToast: (callback: (toast: { message: string; severity: string; duration: number }) => void) => {
+    onShowToast: (callback: (toast: ToastData) => void) => {
       ipcRenderer.on('audio:showToast', (_event, toast) => callback(toast));
       return () => {
         ipcRenderer.removeAllListeners('audio:showToast');
@@ -371,4 +265,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return ipcRenderer.invoke('keystroke:record', modifiers, key);
     },
   },
-});
+} satisfies ElectronAPI;
+
+contextBridge.exposeInMainWorld('electronAPI', electronAPI);

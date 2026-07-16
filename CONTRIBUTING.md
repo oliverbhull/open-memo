@@ -7,8 +7,8 @@ Thanks for your interest in contributing. This guide covers local setup, build c
 ### Prerequisites
 
 - macOS, with Apple Silicon recommended.
-- Node.js 20+ and npm.
-- Rust 1.74+ and Cargo.
+- Node.js 22.12+ and npm.
+- Rust 1.85.1+ and Cargo.
 - Xcode Command Line Tools.
 
 ### Getting Started
@@ -28,6 +28,7 @@ CI and release builds use the same published `memo-stt` package pinned by `MEMO_
 
 ```bash
 npm run build:stt:release  # install/build memo-stt into .build/stt
+npm run check              # type-check and run tests
 npm run build:ts           # build Electron main and preload
 npm run build:renderer     # build React renderer
 npm run build:dir          # unsigned macOS app bundle
@@ -40,7 +41,7 @@ Use `npm run build:dir` for normal PR validation. Signed builds require Apple De
 
 The app is an Electron application with three main parts:
 
-- `electron/main/`: app lifecycle, IPC handlers, transcription pipeline, BLE, tray, settings, and sync.
+- `electron/main/`: app lifecycle, IPC handlers, transcription pipeline, BLE, tray, and settings.
 - `electron/preload/`: typed IPC bridge exposed through `window.electronAPI`.
 - `electron/renderer/`: React UI for feed, settings, onboarding, and voice commands.
 
