@@ -6,6 +6,8 @@ This project follows semantic versioning once public releases begin.
 
 ## Unreleased
 
+## 0.2.0 - 2026-07-15
+
 - Remove unfinished sync, legacy BLE state, and unused renderer subsystems.
 - Consolidate settings and typed IPC around a single persisted store and narrow preload bridges.
 - Harden IndexedDB, export, window sandboxing, content security policy, scripts, and release signing checks.
