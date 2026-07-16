@@ -8,6 +8,7 @@ import { loadSettings, store, AppConfig } from './SettingsService';
 import { CommandDetector, DetectedCommand } from './CommandDetector';
 import { CommandExecutor } from './CommandExecutor';
 import { AudioSourceManager } from './AudioSourceManager';
+import { audioInputService } from './AudioInputService';
 
 export interface AppContext {
   appName: string;
@@ -462,9 +463,14 @@ export class MemoSttService extends EventEmitter {
       // System mic: optional substring to match CoreAudio device name (e.g. "AirPods")
       if (inputSource === 'system') {
         const micLabel = store.get('selectedSystemMicName');
-        if (typeof micLabel === 'string' && micLabel.trim()) {
+        const selectedDeviceIsAvailable =
+          typeof micLabel === 'string' &&
+          audioInputService.getDevices().some((device) => device.name === micLabel.trim());
+        if (selectedDeviceIsAvailable) {
           env.MEMO_SYSTEM_INPUT_DEVICE = micLabel.trim().slice(0, 200);
           logger.info(`[MemoSttService] MEMO_SYSTEM_INPUT_DEVICE=${env.MEMO_SYSTEM_INPUT_DEVICE}`);
+        } else if (typeof micLabel === 'string' && micLabel.trim()) {
+          logger.info('[MemoSttService] Saved microphone unavailable; using macOS system default');
         }
       }
       

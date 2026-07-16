@@ -72,23 +72,31 @@ export async function refreshAudioInputDevices(): Promise<boolean> {
   const settings = loadSettings();
   let fellBackToDefault = false;
 
-  // A manually pinned microphone may disappear when headphones are unplugged.
-  // Fall back to the live macOS default instead of repeatedly starting against a stale name.
+  // Keep the user's preference while the device is disconnected. MemoSttService
+  // omits unavailable saved names, using the system default until it returns.
   if (
     selectedName &&
     devices.length > 0 &&
     !devices.some((device) => device.name === selectedName)
   ) {
     console.log(`[Tray] Selected microphone is unavailable: ${selectedName}; using system default`);
-    if (settings.inputSource === 'system' && audioSourceManager) {
-      audioSourceManager.selectSystemMic(null);
-    } else {
-      persistentStore.set('selectedSystemMicName', null);
-    }
     if (settings.inputSource === 'system') {
       restartMemoStt();
       fellBackToDefault = true;
     }
+  }
+
+  // Restart when the remembered device returns so the live session moves back
+  // from the system default to the user's saved choice.
+  if (
+    selectedName &&
+    devices.some((device) => device.name === selectedName) &&
+    persistentStore.get('lastSystemMicDevice') !== selectedName &&
+    settings.inputSource === 'system'
+  ) {
+    console.log(`[Tray] Selected microphone is available again: ${selectedName}`);
+    restartMemoStt();
+    fellBackToDefault = true;
   }
 
   updateMenuState();
@@ -325,8 +333,10 @@ export function updateMenuState() {
     currentInputSummary = isBleConnected && bleDeviceName ? bleDeviceName : 'Bluetooth (not connected)';
   } else if (inputSrc === 'radio') {
     currentInputSummary = 'Aux / line-in';
-  } else if (selectedSystemMic) {
+  } else if (selectedSystemMic && availableSystemMics.some((device) => device.name === selectedSystemMic)) {
     currentInputSummary = selectedSystemMic;
+  } else if (selectedSystemMic) {
+    currentInputSummary = `${selectedSystemMic} (unavailable) — System Default`;
   } else if (!defaultSystemMic && lastMic) {
     currentInputSummary = lastRate ? `${lastMic} @ ${lastRate} Hz` : lastMic;
   }

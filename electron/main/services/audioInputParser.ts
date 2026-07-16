@@ -38,6 +38,8 @@ export function parseAudioInputDevices(stdout: string): AudioInputDevice[] {
   for (const item of items) {
     const name = optionalString(item._name);
     if (!name) continue;
+    // Teams exposes a virtual capture device that is not useful to Memo.
+    if (/microsoft teams/i.test(name)) continue;
     const inputChannels = Number(item.coreaudio_device_input);
     if (!Number.isFinite(inputChannels) || inputChannels <= 0) continue;
 

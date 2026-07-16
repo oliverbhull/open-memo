@@ -23,6 +23,10 @@ const fixture = JSON.stringify({
         coreaudio_device_srate: 96_000,
         coreaudio_device_transport: 'coreaudio_device_type_builtin',
       },
+      {
+        _name: 'Microsoft Teams Audio Capture',
+        coreaudio_device_input: 2,
+      },
     ],
   }],
 });
@@ -37,4 +41,9 @@ test('parses available macOS inputs with the system default first', () => {
 
 test('rejects malformed system profiler output', () => {
   assert.throws(() => parseAudioInputDevices('not json'), SyntaxError);
+});
+
+test('omits Microsoft Teams virtual inputs', () => {
+  const devices = parseAudioInputDevices(fixture);
+  assert.equal(devices.some(({ name }) => /teams/i.test(name)), false);
 });

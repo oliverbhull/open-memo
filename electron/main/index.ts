@@ -666,6 +666,10 @@ app.whenReady().then(async () => {
 
   createWindow();
 
+  // Resolve a remembered microphone before memo-stt starts. If it is absent,
+  // MemoSttService falls back to the macOS system default without deleting it.
+  await refreshAudioInputDevices();
+
   // Only start memo-stt service if user is onboarded
   // This prevents the Input Monitoring dialog from appearing before onboarding
   const userSettings = loadUserSettings();
