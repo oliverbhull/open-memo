@@ -22,12 +22,12 @@ import path from 'path';
 import os from 'os';
 import { pathToFileURL } from 'node:url';
 import { logger } from './utils/logger';
-import { pauseCompanionMedia, resumeCompanionMedia } from './services/CompanionMediaPause';
 import { stripLeadingDashSpace, stripTrailingEnter } from './services/textProcessing';
 import { runMemoExport } from './exportMemos';
 import { audioStorageService } from './services/AudioStorageService';
 import { applicationIconService } from './services/ApplicationIconService';
 import { saveJsonExport } from './services/JsonExportService';
+import { audioInputService } from './services/AudioInputService';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
 
@@ -41,12 +41,6 @@ if (isExportMode) {
 const __dirname = app.isPackaged 
   ? path.join(app.getAppPath(), 'dist')
   : path.join(process.cwd(), 'dist');
-
-/** Mute system default output (any app) while holding dictation hotkey — see tray “Mute all output while dictating”. */
-function shouldMuteSystemOutputWhileDictating(): boolean {
-  if (process.platform !== 'darwin') return false;
-  return store.get('pauseMediaWhileRecording', true) !== false;
-}
 
 function isDevMode(): boolean {
   return process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -62,6 +56,12 @@ function devAutoConnectUid(): string | null {
   const deviceName = process.env.MEMO_DEV_AUTO_CONNECT_DEVICE_NAME?.trim();
   const match = deviceName?.match(/memo_([0-9A-Fa-f]{5})/i);
   return match?.[1] ? match[1].toUpperCase() : null;
+}
+
+function selectedSystemMicIsAvailable(): boolean {
+  if (loadSettings().inputSource !== 'system') return true;
+  const selectedName = store.get('selectedSystemMicName')?.trim();
+  return !selectedName || audioInputService.getDevices().some(({ name }) => name === selectedName);
 }
 
 app.setName('Memo');
@@ -81,6 +81,7 @@ let pendingBlePostStopEnter = false;
 let lastTextPasteAtMs = 0;
 let awaitingTranscriptionAfterStop = false;
 let isQuitting = false;
+let micDeviceRecoveryTimer: NodeJS.Timeout | null = null;
 
 app.on('second-instance', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -388,9 +389,6 @@ function setupMemoSttService(): void {
   });
 
   memoSttService.on('transcription', async (data: TranscriptionData) => {
-    // System output unmute is handled once in processingCompleted / processingFailed / status
-    // (MemoSttService emits processingCompleted after every transcription). Do not resume here
-    // or we double-call resumeCompanionMedia and confuse mute depth / Bluetooth timing.
     // IMPORTANT: Transcriptions arrive AFTER recording has stopped
     // The flow is: recording starts → user speaks → recording stops → transcription happens
     // So we should NEVER set isRecording = true here. If we get a transcription,
@@ -481,9 +479,6 @@ function setupMemoSttService(): void {
         setRecordingState(false);
         updateOverlayVisibility(false, mainWindow);
         sendStatusToOverlay(false, mainWindow);
-        if (shouldMuteSystemOutputWhileDictating()) {
-          resumeCompanionMedia();
-        }
       }
     }
     
@@ -541,9 +536,6 @@ function setupMemoSttService(): void {
       setRecordingState(true);
       updateOverlayVisibility(true, mainWindow);
       sendStatusToOverlay(true, mainWindow);
-      if (shouldMuteSystemOutputWhileDictating()) {
-        pauseCompanionMedia();
-      }
     } else {
       logger.warn('[Main] Recording started event received but already recording');
     }
@@ -558,7 +550,6 @@ function setupMemoSttService(): void {
       setRecordingState(false);
       updateOverlayVisibility(false, mainWindow);
       sendStatusToOverlay(false, mainWindow);
-      // Do not unmute here — wait until ASR finishes (transcription / processingCompleted / processingFailed).
     } else {
       logger.warn('[Main] Recording stopped event received but not recording');
     }
@@ -577,9 +568,6 @@ function setupMemoSttService(): void {
     // No-speech path and voice-command-only path emit this without a transcription event
     pendingBlePostStopEnter = false;
     awaitingTranscriptionAfterStop = false;
-    if (shouldMuteSystemOutputWhileDictating()) {
-      resumeCompanionMedia();
-    }
   });
 
   // Handle processing failed event - clear processing state when transcription fails
@@ -588,9 +576,6 @@ function setupMemoSttService(): void {
     setProcessingState(false);
     pendingBlePostStopEnter = false;
     awaitingTranscriptionAfterStop = false;
-    if (shouldMuteSystemOutputWhileDictating()) {
-      resumeCompanionMedia();
-    }
     if (isRecording) {
       logger.warn('[Main] Recording state still set when processing failed, clearing it');
       isRecording = false;
@@ -600,12 +585,10 @@ function setupMemoSttService(): void {
     }
   });
 
-  // Handle audio device errors from memo-stt (e.g. headphones disconnected mid-session
-  // or a saved device label that no longer matches any CoreAudio device).
-  // Clear the pinned device label so the next start uses the OS default input, then restart.
+  // Reopen the selected input after a CoreAudio error without discarding it or
+  // substituting the macOS default. If it is unavailable, leave capture stopped.
   memoSttService.on('micDeviceError', (detail: string) => {
-    logger.warn(`[Main] mic device error: ${detail} — clearing fallback device and restarting`);
-    audioSourceManager?.clearSystemMicSelection();
+    logger.warn(`[Main] mic device error: ${detail} — refreshing inputs and restarting`);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('audio:showToast', {
         message: 'Microphone reconnecting…',
@@ -613,12 +596,39 @@ function setupMemoSttService(): void {
         duration: 3000,
       });
     }
-    // Brief delay so any pending stderr/exit events flush before we restart
-    setTimeout(() => memoSttService?.restart(), 800);
+    // Stderr and process exit can report the same failure. Collapse them into one
+    // recovery after CoreAudio has had a moment to settle.
+    if (micDeviceRecoveryTimer) clearTimeout(micDeviceRecoveryTimer);
+    micDeviceRecoveryTimer = setTimeout(() => {
+      micDeviceRecoveryTimer = null;
+      void refreshAudioInputDevices()
+        .then((alreadyRestarted) => {
+          if (!selectedSystemMicIsAvailable()) {
+            memoSttService?.stop();
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('audio:showToast', {
+                message: 'Selected microphone unavailable',
+                severity: 'warning',
+                duration: 3000,
+              });
+            }
+            return;
+          }
+          if (!alreadyRestarted) memoSttService?.restart();
+        })
+        .catch((error) => {
+          logger.warn('[Main] Could not refresh microphones during recovery:', error);
+          memoSttService?.restart();
+        });
+    }, 800);
   });
 
-  // Start memo-stt service
-  memoSttService.start();
+  // Do not start against another microphone when an explicit selection is absent.
+  if (selectedSystemMicIsAvailable()) {
+    memoSttService.start();
+  } else {
+    logger.warn('[Main] Selected microphone is unavailable; capture remains stopped');
+  }
   
   // If a dev exact-device UID is provided, it wins over any saved UID.
   // Wait a moment for service to be ready, then connect
@@ -666,8 +676,8 @@ app.whenReady().then(async () => {
 
   createWindow();
 
-  // Resolve a remembered microphone before memo-stt starts. If it is absent,
-  // MemoSttService falls back to the macOS system default without deleting it.
+  // Resolve a remembered microphone before memo-stt starts. An unavailable
+  // explicit selection remains selected and capture stays stopped.
   await refreshAudioInputDevices();
 
   // Only start memo-stt service if user is onboarded
@@ -1031,7 +1041,18 @@ function scheduleSystemMicRestart(reason: string): void {
 
 ipcMain.handle('audio:inputDeviceChanged', async () => {
   const alreadyRestarted = await refreshAudioInputDevices();
-  if (!alreadyRestarted && !store.get('selectedSystemMicName')) {
+  if (!selectedSystemMicIsAvailable()) {
+    memoSttService?.stop();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('audio:showToast', {
+        message: 'Selected microphone unavailable',
+        severity: 'warning',
+        duration: 3000,
+      });
+    }
+    return;
+  }
+  if (!alreadyRestarted) {
     scheduleSystemMicRestart('devicechange event');
   }
 });

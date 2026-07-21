@@ -70,24 +70,19 @@ export async function refreshAudioInputDevices(): Promise<boolean> {
   const devices = await audioInputService.refresh();
   const selectedName = persistentStore.get('selectedSystemMicName');
   const settings = loadSettings();
-  let fellBackToDefault = false;
+  let restarted = false;
 
-  // Keep the user's preference while the device is disconnected. MemoSttService
-  // omits unavailable saved names, using the system default until it returns.
+  // An explicit selection is strict. Keep it selected while disconnected and
+  // never restart against the macOS default.
   if (
     selectedName &&
     devices.length > 0 &&
     !devices.some((device) => device.name === selectedName)
   ) {
-    console.log(`[Tray] Selected microphone is unavailable: ${selectedName}; using system default`);
-    if (settings.inputSource === 'system') {
-      restartMemoStt();
-      fellBackToDefault = true;
-    }
+    console.log(`[Tray] Selected microphone is unavailable: ${selectedName}`);
   }
 
-  // Restart when the remembered device returns so the live session moves back
-  // from the system default to the user's saved choice.
+  // Reopen the remembered device when it returns.
   if (
     selectedName &&
     devices.some((device) => device.name === selectedName) &&
@@ -96,11 +91,11 @@ export async function refreshAudioInputDevices(): Promise<boolean> {
   ) {
     console.log(`[Tray] Selected microphone is available again: ${selectedName}`);
     restartMemoStt();
-    fellBackToDefault = true;
+    restarted = true;
   }
 
   updateMenuState();
-  return fellBackToDefault;
+  return restarted;
 }
 
 async function selectSystemInput(deviceName: string | null): Promise<void> {
@@ -110,8 +105,6 @@ async function selectSystemInput(deviceName: string | null): Promise<void> {
   }
 
   const settings = loadSettings();
-  const previousName = persistentStore.get('selectedSystemMicName') || null;
-  const changed = settings.inputSource !== 'system' || previousName !== deviceName;
 
   // Set the explicit-system flag before disconnecting BLE so its asynchronous
   // disconnect event cannot restore BLE as the preferred source.
@@ -131,7 +124,9 @@ async function selectSystemInput(deviceName: string | null): Promise<void> {
     }
   }
 
-  if (changed) restartMemoStt();
+  // A CoreAudio device-change can invalidate memo-stt's existing device handle.
+  // Always reopen the chosen input, even when the user reselects the same mic.
+  restartMemoStt();
   updateMenuState();
 }
 
@@ -336,7 +331,7 @@ export function updateMenuState() {
   } else if (selectedSystemMic && availableSystemMics.some((device) => device.name === selectedSystemMic)) {
     currentInputSummary = selectedSystemMic;
   } else if (selectedSystemMic) {
-    currentInputSummary = `${selectedSystemMic} (unavailable) — System Default`;
+    currentInputSummary = `${selectedSystemMic} (unavailable)`;
   } else if (!defaultSystemMic && lastMic) {
     currentInputSummary = lastRate ? `${lastMic} @ ${lastRate} Hz` : lastMic;
   }

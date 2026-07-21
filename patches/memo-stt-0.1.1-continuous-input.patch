@@ -1,0 +1,114 @@
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1463,6 +1463,7 @@
+         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+         .unwrap_or(false);
+     let use_vad_trigger = input_source == "radio" || hands_free_mode;
++    let use_continuous_input = use_vad_trigger || input_source == "system";
+     let use_keyboard_trigger = input_source != "radio";
+     let vad_preroll_ms: u64 = std::env::var("VAD_PREROLL_MS")
+         .ok()
+@@ -1470,9 +1471,10 @@
+         .unwrap_or(700);
+     let vad_preroll_samples = (sample_rate as u64 * vad_preroll_ms / 1000) as usize;
+
+-    if use_vad_trigger {
++    if use_continuous_input {
+         let vad_ch = stream_ch;
+-        // VAD trigger. One continuous stream feeds both VAD and recording buffer.
++        // Keep the selected input warm so Bluetooth microphones do not lose the
++        // beginning of short push-to-talk recordings while their audio link starts.
+         let vad_buffer: Arc<Mutex<VecDeque<i16>>> =
+             Arc::new(Mutex::new(VecDeque::with_capacity(48000)));
+         *vad_preroll_buffer.lock().unwrap() = Some(vad_buffer.clone());
+@@ -1504,6 +1506,7 @@
+         let config_vad = config_clone.clone();
+         let tx_vad = tx.clone();
+         let last_audio_level_sent_vad = Arc::new(Mutex::new(None::<Instant>));
++        let (stream_ready_tx, stream_ready_rx) = mpsc::sync_channel::<Result<(), String>>(1);
+
+         // Thread 1: continuous stream — push to vad_buffer and to audio_buffer when recording; send AUDIO_LEVELS for waveform
+         std::thread::spawn(move || {
+@@ -1611,21 +1614,33 @@
+             match stream_result {
+                 Ok(stream) => {
+                     if let Err(error) = stream.play() {
+-                        eprintln!("Audio device error: failed to start selected input: {}", error);
++                        let message = format!("Audio device error: failed to start selected input: {}", error);
++                        let _ = stream_ready_tx.send(Err(message.clone()));
++                        eprintln!("{}", message);
+                         return;
+                     }
++                    let _ = stream_ready_tx.send(Ok(()));
+                     loop {
+                         std::thread::sleep(std::time::Duration::from_secs(3600));
+                     }
+                 }
+                 Err(error) => {
+-                    eprintln!("Audio device error: failed to open selected input: {}", error);
++                    let message = format!("Audio device error: failed to open selected input: {}", error);
++                    let _ = stream_ready_tx.send(Err(message.clone()));
++                    eprintln!("{}", message);
+                 }
+             }
+         });
+
+-        // Thread 2: VAD polling — RMS, state machine, send StartRecording/StopRecording
+-        std::thread::spawn(move || {
++        match stream_ready_rx.recv_timeout(std::time::Duration::from_secs(5)) {
++            Ok(Ok(())) => println_ui_flush!("MIC_READY"),
++            Ok(Err(error)) => return Err(error.into()),
++            Err(error) => return Err(format!("Selected input did not become ready: {}", error).into()),
++        }
++
++        // Thread 2: optional VAD polling — RMS, state machine, send StartRecording/StopRecording
++        if use_vad_trigger {
++            std::thread::spawn(move || {
+             let mut state = "idle"; // "idle" | "speech"
+             let mut speech_above_ms: u64 = 0;
+             let mut silence_below_ms: u64 = 0;
+@@ -1673,7 +1688,8 @@
+                     _ => {}
+                 }
+             }
+-        });
++            });
++        }
+
+         if input_source == "radio" {
+             println!("\nTrigger: VAD (Radio mode)");
+@@ -2039,7 +2055,7 @@
+                         });
+                     }
+
+-                    if !use_vad_trigger {
++                    if !use_continuous_input {
+                         let buffer = audio_buffer_clone.clone();
+                         let is_recording_for_audio = is_recording_clone.clone();
+                         let last_audio_level_sent = Arc::new(Mutex::new(None::<Instant>));
+@@ -2154,7 +2170,7 @@
+                     *active_trigger_clone.lock().unwrap() = None;
+                     segmenter_active_clone.store(false, Ordering::Release);
+
+-                    if !use_vad_trigger {
++                    if !use_continuous_input {
+                         recording_stream_clone.lock().unwrap().take();
+                     }
+
+@@ -2524,7 +2540,7 @@
+                                 });
+                             }
+
+-                            if !use_vad_trigger {
++                            if !use_continuous_input {
+                                 let buffer = audio_buffer_clone.clone();
+                                 let is_recording_for_audio_lock = is_recording_clone.clone();
+                                 let last_audio_level_sent_lock =
+@@ -2645,6 +2661,6 @@
+                         {
+                             segmenter_active_clone.store(false, Ordering::Release);
+                             *active_trigger_clone.lock().unwrap() = None;
+-                            if !use_vad_trigger {
++                            if !use_continuous_input {
+                                 recording_stream_clone.lock().unwrap().take();
+                             }

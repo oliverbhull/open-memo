@@ -8,7 +8,6 @@ import { loadSettings, store, AppConfig } from './SettingsService';
 import { CommandDetector, DetectedCommand } from './CommandDetector';
 import { CommandExecutor } from './CommandExecutor';
 import { AudioSourceManager } from './AudioSourceManager';
-import { audioInputService } from './AudioInputService';
 
 export interface AppContext {
   appName: string;
@@ -460,17 +459,13 @@ export class MemoSttService extends EventEmitter {
       if (inputSource === 'radio') {
         env.MEMO_RADIO_INPUT_DEVICE = env.MEMO_RADIO_INPUT_DEVICE || 'External Microphone';
       }
-      // System mic: optional substring to match CoreAudio device name (e.g. "AirPods")
+      // An explicit system microphone is strict. The native process must either
+      // open this device or fail; it must never substitute the macOS default.
       if (inputSource === 'system') {
         const micLabel = store.get('selectedSystemMicName');
-        const selectedDeviceIsAvailable =
-          typeof micLabel === 'string' &&
-          audioInputService.getDevices().some((device) => device.name === micLabel.trim());
-        if (selectedDeviceIsAvailable) {
+        if (typeof micLabel === 'string' && micLabel.trim()) {
           env.MEMO_SYSTEM_INPUT_DEVICE = micLabel.trim().slice(0, 200);
           logger.info(`[MemoSttService] MEMO_SYSTEM_INPUT_DEVICE=${env.MEMO_SYSTEM_INPUT_DEVICE}`);
-        } else if (typeof micLabel === 'string' && micLabel.trim()) {
-          logger.info('[MemoSttService] Saved microphone unavailable; using macOS system default');
         }
       }
       
@@ -579,14 +574,14 @@ export class MemoSttService extends EventEmitter {
         if (code !== 0 && code !== null && wasRunning && this.restartAttempts < this.MAX_RESTART_ATTEMPTS) {
           // Quick-exit heuristic: if the process died within QUICK_EXIT_THRESHOLD_MS of starting
           // with a non-zero code (and we weren't on BLE), it almost certainly failed to open the
-          // audio device.  Let main handle the fallback before scheduling a blind retry.
+          // audio device. Let main verify the selected input before scheduling a retry.
           const uptime = this.processStartedAt ? Date.now() - this.processStartedAt : Infinity;
           const settings = loadSettings();
           if (uptime < this.QUICK_EXIT_THRESHOLD_MS && settings.inputSource === 'system') {
             logger.warn(`[MemoSttService] Process exited quickly (${uptime}ms) in system mode — treating as audio device error`);
             this.processStartedAt = null;
             this.emit('micDeviceError', `process exited after ${uptime}ms`);
-            return; // Let main decide whether to restart (it will clear label and retry)
+            return; // Let main restart only when the selected input is available
           }
 
           const delay = this.RESTART_DELAY_BASE * Math.pow(2, this.restartAttempts);
@@ -738,14 +733,28 @@ export class MemoSttService extends EventEmitter {
         const name = rest.slice(0, tabIdx).trim();
         const rateStr = rest.slice(tabIdx + 1).trim();
         const rate = parseInt(rateStr, 10);
+        const selectedName = store.get('selectedSystemMicName')?.trim();
+        if (selectedName && name.toLocaleLowerCase() !== selectedName.toLocaleLowerCase()) {
+          logger.error(
+            `[MemoSttService] Selected microphone mismatch: requested ${selectedName}, opened ${name}`,
+          );
+          this.emit('micDeviceError', `requested ${selectedName}, opened ${name}`);
+          return;
+        }
         try {
           store.set('lastSystemMicDevice', name || null);
           store.set('lastSystemMicSampleRate', Number.isFinite(rate) ? rate : null);
         } catch (e) {
           logger.debug('[MemoSttService] Could not persist MIC_INFO:', e);
         }
+        logger.info(`[MemoSttService] Active microphone: ${name} (${rate} Hz)`);
         this.emit('micInfoUpdated');
       }
+      return;
+    }
+
+    if (line === 'MIC_READY') {
+      logger.info('[MemoSttService] Selected microphone stream is ready');
       return;
     }
 

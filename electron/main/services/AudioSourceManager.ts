@@ -227,17 +227,6 @@ export class AudioSourceManager extends EventEmitter {
   }
 
   /**
-   * Clear the explicitly selected CoreAudio device name from the store.
-   * Called when the previously-saved device is no longer available so the
-   * next start of memo-stt falls back to the macOS default input device.
-   */
-  clearSystemMicSelection(): void {
-    this.store.set('selectedSystemMicName', null);
-    this.state.systemMicName = null;
-    console.log('[AudioSourceManager] Cleared system mic selection (will use OS default input)');
-  }
-
-  /**
    * Reset user selection flag (for next session)
    */
   resetUserSelection(): void {

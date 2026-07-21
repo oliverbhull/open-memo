@@ -1,0 +1,200 @@
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -240,13 +240,13 @@
+     }
+     let devices: Vec<cpal::Device> = match host.input_devices() {
+         Ok(iter) => iter.collect(),
+-        Err(_) => return host.default_input_device(),
++        Err(_) => return None,
+     };
+     if let Ok(idx) = spec.parse::<usize>() {
+         if idx < devices.len() {
+             return Some(devices[idx].clone());
+         }
+-        return host.default_input_device();
++        return None;
+     }
+     let spec_lower = spec.to_lowercase();
+     for dev in &devices {
+@@ -256,7 +256,7 @@
+             }
+         }
+     }
+-    host.default_input_device()
++    None
+ }
+
+ /// Prefer mono input and the highest sample rate up to 48 kHz (better quality when the device allows it).
+@@ -1371,8 +1371,7 @@
+         let spec = std::env::var("MEMO_SYSTEM_INPUT_DEVICE").unwrap_or_default();
+         if !spec.trim().is_empty() {
+             find_input_device_by_spec(&host, spec.trim())
+-                .or_else(|| host.default_input_device())
+-                .ok_or("No input device found")?
++                .ok_or_else(|| format!("Selected input device not found: {:?}", spec.trim()))?
+         } else {
+             host.default_input_device().ok_or("No input device found")?
+         }
+@@ -1539,7 +1538,7 @@
+                             }
+                         }
+                     },
+-                    |err| eprintln!("VAD stream error: {}", err),
++                    |err| eprintln!("Audio device error: {}", err),
+                     None,
+                 ),
+                 cpal::SampleFormat::F32 => device_vad.build_input_stream(
+@@ -1570,7 +1569,7 @@
+                             }
+                         }
+                     },
+-                    |err| eprintln!("VAD stream error: {}", err),
++                    |err| eprintln!("Audio device error: {}", err),
+                     None,
+                 ),
+                 cpal::SampleFormat::U16 => device_vad.build_input_stream(
+@@ -1601,7 +1600,7 @@
+                             }
+                         }
+                     },
+-                    |err| eprintln!("VAD stream error: {}", err),
++                    |err| eprintln!("Audio device error: {}", err),
+                     None,
+                 ),
+                 _ => {
+@@ -1609,11 +1608,19 @@
+                     return;
+                 }
+             };
+-            if let Ok(stream) = stream_result {
+-                let _ = stream.play();
+-                loop {
+-                    std::thread::sleep(std::time::Duration::from_secs(3600));
++            match stream_result {
++                Ok(stream) => {
++                    if let Err(error) = stream.play() {
++                        eprintln!("Audio device error: failed to start selected input: {}", error);
++                        return;
++                    }
++                    loop {
++                        std::thread::sleep(std::time::Duration::from_secs(3600));
++                    }
+                 }
++                Err(error) => {
++                    eprintln!("Audio device error: failed to open selected input: {}", error);
++                }
+             }
+         });
+
+@@ -2058,7 +2065,7 @@
+                                         }
+                                     }
+                                 },
+-                                |err| eprintln!("Audio error: {}", err),
++                                |err| eprintln!("Audio device error: {}", err),
+                                 None,
+                             ),
+                             cpal::SampleFormat::F32 => device_clone.build_input_stream(
+@@ -2080,7 +2087,7 @@
+                                         }
+                                     }
+                                 },
+-                                |err| eprintln!("Audio error: {}", err),
++                                |err| eprintln!("Audio device error: {}", err),
+                                 None,
+                             ),
+                             cpal::SampleFormat::U16 => device_clone.build_input_stream(
+@@ -2102,7 +2109,7 @@
+                                         }
+                                     }
+                                 },
+-                                |err| eprintln!("Audio error: {}", err),
++                                |err| eprintln!("Audio device error: {}", err),
+                                 None,
+                             ),
+                             _ => {
+@@ -2111,12 +2118,22 @@
+                             }
+                         };
+
+-                        if let Ok(stream) = stream_result {
+-                            stream.play().ok();
+-                            *recording_stream_clone.lock().unwrap() = Some(stream);
+-                        } else {
+-                            is_recording_clone.store(false, Ordering::SeqCst);
+-                            *active_trigger_clone.lock().unwrap() = None;
++                        match stream_result {
++                            Ok(stream) => match stream.play() {
++                                Ok(()) => {
++                                    *recording_stream_clone.lock().unwrap() = Some(stream);
++                                }
++                                Err(error) => {
++                                    eprintln!("Audio device error: failed to start selected input: {}", error);
++                                    is_recording_clone.store(false, Ordering::SeqCst);
++                                    *active_trigger_clone.lock().unwrap() = None;
++                                }
++                            },
++                            Err(error) => {
++                                eprintln!("Audio device error: failed to open selected input: {}", error);
++                                is_recording_clone.store(false, Ordering::SeqCst);
++                                *active_trigger_clone.lock().unwrap() = None;
++                            }
+                         }
+                     }
+                 }
+@@ -2538,7 +2555,7 @@
+                                                 }
+                                             }
+                                         },
+-                                        |err| eprintln!("Audio error: {}", err),
++                                        |err| eprintln!("Audio device error: {}", err),
+                                         None,
+                                     ),
+                                     cpal::SampleFormat::F32 => device_clone.build_input_stream(
+@@ -2563,7 +2580,7 @@
+                                                 }
+                                             }
+                                         },
+-                                        |err| eprintln!("Audio error: {}", err),
++                                        |err| eprintln!("Audio device error: {}", err),
+                                         None,
+                                     ),
+                                     cpal::SampleFormat::U16 => device_clone.build_input_stream(
+@@ -2588,7 +2605,7 @@
+                                                 }
+                                             }
+                                         },
+-                                        |err| eprintln!("Audio error: {}", err),
++                                        |err| eprintln!("Audio device error: {}", err),
+                                         None,
+                                     ),
+                                     _ => {
+@@ -2597,12 +2614,22 @@
+                                     }
+                                 };
+
+-                                if let Ok(stream) = stream_result {
+-                                    stream.play().ok();
+-                                    *recording_stream_clone.lock().unwrap() = Some(stream);
+-                                } else {
+-                                    is_recording_clone.store(false, Ordering::SeqCst);
+-                                    *active_trigger_clone.lock().unwrap() = None;
++                                match stream_result {
++                                    Ok(stream) => match stream.play() {
++                                        Ok(()) => {
++                                            *recording_stream_clone.lock().unwrap() = Some(stream);
++                                        }
++                                        Err(error) => {
++                                            eprintln!("Audio device error: failed to start selected input: {}", error);
++                                            is_recording_clone.store(false, Ordering::SeqCst);
++                                            *active_trigger_clone.lock().unwrap() = None;
++                                        }
++                                    },
++                                    Err(error) => {
++                                        eprintln!("Audio device error: failed to open selected input: {}", error);
++                                        is_recording_clone.store(false, Ordering::SeqCst);
++                                        *active_trigger_clone.lock().unwrap() = None;
++                                    }
+                                 }
+                             }
+                         }

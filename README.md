@@ -45,7 +45,7 @@ Open Memo is designed around local transcription. Dictation audio is processed o
 
 Audio retention is off by default. Enable **Save dictation audio** in Settings to keep future recordings under Memo's local application-data folder. Each WAV filename uses the same ID as its transcript, is playable from the feed, and is removed when that transcript is deleted. Existing recordings are not removed when the setting is turned off.
 
-The menu-bar **Microphone** submenu follows the macOS system-default input unless you explicitly select a microphone. Memo remembers that selection, uses the system default while it is unavailable, and automatically returns to the remembered device when it reconnects. Microsoft Teams virtual inputs are excluded.
+The menu-bar **Microphone** submenu follows the macOS system-default input unless you explicitly select a microphone. An explicit selection is strict: Memo uses that input or reports it unavailable, without substituting another microphone. AirPods can remain the macOS output while Memo stays on a selected DJI input. Memo keeps the selected input stream ready to avoid Bluetooth warm-up delay, but only adds audio to a dictation while recording. Memo remembers the selection and automatically reopens it when it reconnects. Selecting the current microphone again also forces Memo to reopen it. Microsoft Teams virtual inputs are excluded.
 
 ## Development
 

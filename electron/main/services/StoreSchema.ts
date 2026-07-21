@@ -7,7 +7,6 @@ export interface StoreSchema {
   selectedSystemMicName: string | null;
   lastSystemMicDevice: string | null;
   lastSystemMicSampleRate: number | null;
-  pauseMediaWhileRecording: boolean;
   postEnter: boolean;
   sayEnterToPressEnter: boolean;
   pushToTalkMode: boolean;
@@ -31,7 +30,6 @@ export const storeDefaults: StoreSchema = {
   selectedSystemMicName: null,
   lastSystemMicDevice: null,
   lastSystemMicSampleRate: null,
-  pauseMediaWhileRecording: true,
   postEnter: false,
   sayEnterToPressEnter: false,
   pushToTalkMode: false,

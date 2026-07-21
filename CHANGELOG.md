@@ -6,6 +6,12 @@ This project follows semantic versioning once public releases begin.
 
 ## Unreleased
 
+## 0.2.2 - 2026-07-21
+
+- Keep the explicitly selected microphone fixed when other audio devices connect, with no fallback to the macOS default input.
+- Keep Bluetooth microphone input ready between dictations so short recordings do not lose speech while the input link starts.
+- Remove media-output pausing so input selection never changes or interrupts audio output.
+
 ## 0.2.0 - 2026-07-15
 
 - Remove unfinished sync, legacy BLE state, and unused renderer subsystems.
