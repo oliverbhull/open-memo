@@ -12,7 +12,7 @@ Hold a hotkey, speak naturally, release, and your words appear wherever your cur
 ## Why Open Memo
 
 - **Fast dictation anywhere:** paste text into the active macOS app.
-- **On-device transcription:** local speech-to-text powered by `memo-stt`.
+- **On-device transcription:** Nemotron is included; Whisper can be downloaded and selected in Settings.
 - **No account required:** download, grant permissions, and start talking.
 - **Voice commands:** launch apps, open URLs, and trigger app-specific shortcuts.
 - **Useful history:** see the native icon for the app where each dictation occurred.
@@ -39,9 +39,11 @@ Open Memo currently targets macOS on Apple Silicon. On first launch, macOS may a
 
 Voice commands use the same flow, but recognized command phrases can launch apps, open URLs, or send configured shortcuts.
 
+Nemotron is selected by default and ships inside the app. To use Whisper, open Settings and choose it under **Speech model**. Memo shows whether Whisper is installed, downloads the 181 MiB model with visible progress when needed, verifies it, and switches the local transcription process automatically.
+
 ## Privacy
 
-Open Memo is designed around local transcription. Dictation audio is processed on your Mac by `memo-stt`; an account is not required for core dictation. If a future feature needs network access, it should be explicit, optional, and documented.
+Open Memo is designed around local transcription. Dictation audio is processed on your Mac by `memo-stt`; an account is not required for core dictation. Nemotron works without an additional download. Selecting Whisper makes a one-time model download from the pinned `ggerganov/whisper.cpp` model repository; after that, Whisper transcription is fully local.
 
 Audio retention is off by default. Enable **Save dictation audio** in Settings to keep future recordings under Memo's local application-data folder. Each WAV filename uses the same ID as its transcript, is playable from the feed, and is removed when that transcript is deleted. Existing recordings are not removed when the setting is turned off.
 

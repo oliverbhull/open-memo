@@ -91,6 +91,47 @@ export interface ToastData {
   duration: number;
 }
 
+export type AsrModelId = 'nemotron' | 'whisper';
+
+export type AsrModelInstallState =
+  | 'included'
+  | 'not-downloaded'
+  | 'downloading'
+  | 'downloaded'
+  | 'error';
+
+export interface AsrModelStatus {
+  id: AsrModelId;
+  name: string;
+  installState: AsrModelInstallState;
+  downloadedBytes: number;
+  totalBytes: number;
+  error?: string;
+}
+
+export interface AsrState {
+  selectedModel: AsrModelId;
+  models: Record<AsrModelId, AsrModelStatus>;
+}
+
+export interface AsrSelectionResult {
+  success: boolean;
+  state: AsrState;
+  error?: string;
+}
+
+export interface MicrophoneInputDevice {
+  name: string;
+  isDefault: boolean;
+}
+
+export interface MicrophoneInputState {
+  inputSource: 'system' | 'ble' | 'radio';
+  selectedDeviceName: string | null;
+  defaultDeviceName: string | null;
+  devices: MicrophoneInputDevice[];
+}
+
 export interface ElectronAPI {
   onTranscription(callback: (data: TranscriptionData) => void): void;
   removeTranscriptionListener(): void;
@@ -131,6 +172,16 @@ export interface ElectronAPI {
     setHandsFreeMode(enabled: boolean): Promise<boolean>;
     setSaveAudio(enabled: boolean): Promise<boolean>;
     setStartAtLogin(enabled: boolean): Promise<boolean>;
+  };
+  asr: {
+    getState(): Promise<AsrState>;
+    selectModel(model: AsrModelId): Promise<AsrSelectionResult>;
+    onStateChanged(callback: (state: AsrState) => void): () => void;
+  };
+  microphone: {
+    getState(): Promise<MicrophoneInputState>;
+    selectSystemInput(deviceName: string | null): Promise<MicrophoneInputState>;
+    onStateChanged(callback: (state: MicrophoneInputState) => void): () => void;
   };
   audio: {
     get(entryId: string): Promise<{ success: boolean; data?: Uint8Array; error?: string }>;

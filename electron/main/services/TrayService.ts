@@ -7,6 +7,7 @@ import type { MemoSttService } from './MemoSttService';
 import type { BleManager } from './BleManager';
 import type { AudioSourceManager } from './AudioSourceManager';
 import { audioInputService } from './AudioInputService';
+import type { MicrophoneInputState } from '../../shared/electron-api';
 
 // Track menu open state to prevent rebuilding while open
 let menuIsOpen = false;
@@ -66,6 +67,22 @@ function restartMemoStt(): void {
   memoSttService?.restart();
 }
 
+export function getMicrophoneInputState(): MicrophoneInputState {
+  const devices = audioInputService.getDevices();
+  return {
+    inputSource: loadSettings().inputSource,
+    selectedDeviceName: persistentStore.get('selectedSystemMicName') || null,
+    defaultDeviceName: devices.find((device) => device.isDefault)?.name || null,
+    devices: devices.map(({ name, isDefault }) => ({ name, isDefault })),
+  };
+}
+
+function emitMicrophoneInputState(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('microphone:state-changed', getMicrophoneInputState());
+  }
+}
+
 export async function refreshAudioInputDevices(): Promise<boolean> {
   const devices = await audioInputService.refresh();
   const selectedName = persistentStore.get('selectedSystemMicName');
@@ -95,10 +112,11 @@ export async function refreshAudioInputDevices(): Promise<boolean> {
   }
 
   updateMenuState();
+  emitMicrophoneInputState();
   return restarted;
 }
 
-async function selectSystemInput(deviceName: string | null): Promise<void> {
+export async function selectSystemInput(deviceName: string | null): Promise<void> {
   if (deviceName && !audioInputService.getDevices().some((device) => device.name === deviceName)) {
     console.warn(`[Tray] Ignoring unavailable microphone selection: ${deviceName}`);
     return;
@@ -128,6 +146,7 @@ async function selectSystemInput(deviceName: string | null): Promise<void> {
   // Always reopen the chosen input, even when the user reselects the same mic.
   restartMemoStt();
   updateMenuState();
+  emitMicrophoneInputState();
 }
 
 async function refreshAudioInputsFromMenu(): Promise<void> {
@@ -244,30 +263,6 @@ function copyLastTranscript() {
 }
 
 /**
- * Toggle auto-start at login
- */
-function toggleAutoStart() {
-  try {
-    const currentSettings = app.getLoginItemSettings();
-    const newOpenAtLogin = !currentSettings.openAtLogin;
-    
-    app.setLoginItemSettings({
-      openAtLogin: newOpenAtLogin,
-      openAsHidden: true, // Start hidden (tray only)
-      name: 'Memo',
-      path: process.execPath
-    });
-    
-    console.log(`[LoginItem] Auto-start ${newOpenAtLogin ? 'enabled' : 'disabled'}`);
-    
-    // Update the tray menu to reflect the change
-    updateMenuState();
-  } catch (e) {
-    console.error('[LoginItem] Failed to toggle auto-start:', e);
-  }
-}
-
-/**
  * Open main window
  */
 function openMainWindow() {
@@ -297,8 +292,14 @@ export function updateMenuState() {
   
   const s = loadSettings();
   
-  // Build status text (transcription state)
-  const statusText = `Memo — ${isProcessing ? 'Processing' : (isRecording ? 'Recording' : 'Ready')}`;
+  // Lead with the active capture gesture while idle so the tray is immediately instructive.
+  const statusText = isProcessing
+    ? 'Processing dictation…'
+    : isRecording
+      ? 'Recording…'
+      : s.handsFreeMode
+        ? 'Speak to dictate'
+        : 'Hold Fn to dictate';
   // Update tray icon based on state
   // Priority: Processing > Recording > BLE Connected > Base
   try {
@@ -456,12 +457,6 @@ export function updateMenuState() {
       ]
     },
     { type: 'separator' },
-    {
-      label: 'Start at Login',
-      type: 'checkbox',
-      checked: app.getLoginItemSettings().openAtLogin,
-      click: () => toggleAutoStart(),
-    },
     { label: 'Quit Memo', role: 'quit', accelerator: 'Command+Q' },
   ]);
   

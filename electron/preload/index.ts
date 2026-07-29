@@ -1,7 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
+  AsrModelId,
+  AsrSelectionResult,
+  AsrState,
   ElectronAPI,
   MemoSttError,
+  MicrophoneInputState,
   PhraseReplacementRule,
   ToastData,
   TranscriptionData,
@@ -167,6 +171,28 @@ const electronAPI = {
     },
     setStartAtLogin: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setStartAtLogin', enabled);
+    },
+  },
+  asr: {
+    getState: (): Promise<AsrState> => ipcRenderer.invoke('asr:get-state'),
+    selectModel: (model: AsrModelId): Promise<AsrSelectionResult> => (
+      ipcRenderer.invoke('asr:select-model', model)
+    ),
+    onStateChanged: (callback: (state: AsrState) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: AsrState) => callback(state);
+      ipcRenderer.on('asr:state-changed', handler);
+      return () => ipcRenderer.removeListener('asr:state-changed', handler);
+    },
+  },
+  microphone: {
+    getState: (): Promise<MicrophoneInputState> => ipcRenderer.invoke('microphone:get-state'),
+    selectSystemInput: (deviceName: string | null): Promise<MicrophoneInputState> => (
+      ipcRenderer.invoke('microphone:select-system-input', deviceName)
+    ),
+    onStateChanged: (callback: (state: MicrophoneInputState) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: MicrophoneInputState) => callback(state);
+      ipcRenderer.on('microphone:state-changed', handler);
+      return () => ipcRenderer.removeListener('microphone:state-changed', handler);
     },
   },
   audio: {

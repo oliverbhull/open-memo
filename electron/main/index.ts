@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, systemPreferences, shell, Menu, clipboard 
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { MemoSttService, TranscriptionData } from './services/MemoSttService';
-import { createTray, refreshAudioInputDevices, setAudioSourceManager, setMainWindow, setLastTranscript, setRecordingState, setProcessingState, setBleConnectionState, updateMenuState, setBleManager, setMemoSttService } from './services/TrayService';
+import { createTray, getMicrophoneInputState, refreshAudioInputDevices, selectSystemInput, setAudioSourceManager, setMainWindow, setLastTranscript, setRecordingState, setProcessingState, setBleConnectionState, updateMenuState, setBleManager, setMemoSttService } from './services/TrayService';
 import {
   loadSettings,
   loadUserSettings,
@@ -28,6 +28,8 @@ import { audioStorageService } from './services/AudioStorageService';
 import { applicationIconService } from './services/ApplicationIconService';
 import { saveJsonExport } from './services/JsonExportService';
 import { audioInputService } from './services/AudioInputService';
+import { AsrModelService } from './services/AsrModelService';
+import type { AsrModelId, AsrState } from '../shared/electron-api';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
 
@@ -82,6 +84,13 @@ let lastTextPasteAtMs = 0;
 let awaitingTranscriptionAfterStop = false;
 let isQuitting = false;
 let micDeviceRecoveryTimer: NodeJS.Timeout | null = null;
+const asrModelService = new AsrModelService();
+
+asrModelService.on('state-changed', (state: AsrState) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('asr:state-changed', state);
+  }
+});
 
 app.on('second-instance', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -786,6 +795,12 @@ ipcMain.handle('memo-stt:restart', () => {
   }
 });
 
+ipcMain.handle('asr:get-state', () => asrModelService.getState());
+
+ipcMain.handle('asr:select-model', async (_event, model: AsrModelId) => (
+  asrModelService.selectModel(model, () => memoSttService?.restart())
+));
+
 // Permission handlers
 ipcMain.handle('permissions:check-microphone', async () => {
   if (process.platform !== 'darwin') {
@@ -1057,6 +1072,22 @@ ipcMain.handle('audio:inputDeviceChanged', async () => {
   }
 });
 
+ipcMain.handle('microphone:get-state', async () => {
+  await refreshAudioInputDevices();
+  return getMicrophoneInputState();
+});
+
+ipcMain.handle('microphone:select-system-input', async (_event, deviceName: unknown) => {
+  if (deviceName !== null && typeof deviceName !== 'string') {
+    throw new Error('Microphone selection must be a device name or system default.');
+  }
+  const normalizedDeviceName = typeof deviceName === 'string'
+    ? deviceName.trim().slice(0, 200)
+    : null;
+  await selectSystemInput(normalizedDeviceName);
+  return getMicrophoneInputState();
+});
+
 // Interface settings handlers
 ipcMain.handle('settings:getInterfaceSettings', () => {
   const settings = loadSettings();
@@ -1135,6 +1166,7 @@ ipcMain.handle('settings:setHandsFreeMode', async (_event, enabled: boolean) => 
   if (memoSttService && previous !== enabled) {
     memoSttService.restart();
   }
+  updateMenuState();
 
   return true;
 });

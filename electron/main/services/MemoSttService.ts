@@ -4,10 +4,11 @@ import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
 import { logger } from '../utils/logger';
-import { loadSettings, store, AppConfig } from './SettingsService';
+import { loadSettings, saveSettings, store, AppConfig } from './SettingsService';
 import { CommandDetector, DetectedCommand } from './CommandDetector';
 import { CommandExecutor } from './CommandExecutor';
 import { AudioSourceManager } from './AudioSourceManager';
+import { isWhisperModelInstalled, whisperModelPath } from './AsrModelService';
 
 export interface AppContext {
   appName: string;
@@ -418,43 +419,62 @@ export class MemoSttService extends EventEmitter {
         INPUT_SOURCE: inputSource,
         MEMO_HANDS_FREE: handsFreeMode ? '1' : '0',
       };
-      const nemotronRoot = isDev
-        ? path.join(process.cwd(), '.build', 'nemotron')
-        : path.join(process.resourcesPath, 'nemotron');
-      const bundledPython = path.join(nemotronRoot, 'runtime', 'bin', 'python3.12');
-      const bundledWorker = path.join(nemotronRoot, 'memo_nemotron.py');
-      const bundledModel = path.join(nemotronRoot, 'model');
-
-      // Development overrides make backend work easier without weakening the
-      // release contract: packaged apps always use their signed resources.
-      env.MEMO_ASR_PYTHON = isDev && process.env.MEMO_ASR_PYTHON
-        ? process.env.MEMO_ASR_PYTHON
-        : bundledPython;
-      env.MEMO_ASR_SCRIPT = isDev && process.env.MEMO_ASR_SCRIPT
-        ? process.env.MEMO_ASR_SCRIPT
-        : bundledWorker;
-      env.MEMO_ASR_MODEL_PATH = isDev && process.env.MEMO_ASR_MODEL_PATH
-        ? process.env.MEMO_ASR_MODEL_PATH
-        : bundledModel;
-      env.PYTHONNOUSERSITE = '1';
-
-      const requiredResources = [
-        ['Python runtime', env.MEMO_ASR_PYTHON],
-        ['worker', env.MEMO_ASR_SCRIPT],
-        ['model', env.MEMO_ASR_MODEL_PATH],
-      ] as const;
-      for (const [label, resourcePath] of requiredResources) {
-        if (!resourcePath || !fs.existsSync(resourcePath)) {
-          throw new Error(
-            `Bundled Nemotron ${label} not found at ${resourcePath || '(unset)'}. ` +
-            'Run npm run build:nemotron first.',
-          );
-        }
+      const requestedAsrModel = settings.asrModel;
+      const asrModel = requestedAsrModel === 'whisper' && isWhisperModelInstalled()
+        ? 'whisper'
+        : 'nemotron';
+      if (requestedAsrModel === 'whisper' && asrModel === 'nemotron') {
+        logger.warn('[MemoSttService] Selected Whisper model is missing; falling back to Nemotron');
+        settings.asrModel = 'nemotron';
+        saveSettings(settings);
       }
-      logger.info(
-        `[MemoSttService #${this.instanceId}] ASR model: Nemotron ` +
-        `(runtime=${env.MEMO_ASR_PYTHON}, model=${env.MEMO_ASR_MODEL_PATH})`,
-      );
+      env.MEMO_ASR_BACKEND = asrModel;
+
+      if (asrModel === 'whisper') {
+        env.MEMO_WHISPER_MODEL_PATH = whisperModelPath();
+        logger.info(
+          `[MemoSttService #${this.instanceId}] ASR model: Whisper ` +
+          `(model=${env.MEMO_WHISPER_MODEL_PATH})`,
+        );
+      } else {
+        const nemotronRoot = isDev
+          ? path.join(process.cwd(), '.build', 'nemotron')
+          : path.join(process.resourcesPath, 'nemotron');
+        const bundledPython = path.join(nemotronRoot, 'runtime', 'bin', 'python3.12');
+        const bundledWorker = path.join(nemotronRoot, 'memo_nemotron.py');
+        const bundledModel = path.join(nemotronRoot, 'model');
+
+        // Development overrides make backend work easier without weakening the
+        // release contract: packaged apps always use their signed resources.
+        env.MEMO_ASR_PYTHON = isDev && process.env.MEMO_ASR_PYTHON
+          ? process.env.MEMO_ASR_PYTHON
+          : bundledPython;
+        env.MEMO_ASR_SCRIPT = isDev && process.env.MEMO_ASR_SCRIPT
+          ? process.env.MEMO_ASR_SCRIPT
+          : bundledWorker;
+        env.MEMO_ASR_MODEL_PATH = isDev && process.env.MEMO_ASR_MODEL_PATH
+          ? process.env.MEMO_ASR_MODEL_PATH
+          : bundledModel;
+        env.PYTHONNOUSERSITE = '1';
+
+        const requiredResources = [
+          ['Python runtime', env.MEMO_ASR_PYTHON],
+          ['worker', env.MEMO_ASR_SCRIPT],
+          ['model', env.MEMO_ASR_MODEL_PATH],
+        ] as const;
+        for (const [label, resourcePath] of requiredResources) {
+          if (!resourcePath || !fs.existsSync(resourcePath)) {
+            throw new Error(
+              `Bundled Nemotron ${label} not found at ${resourcePath || '(unset)'}. ` +
+              'Run npm run build:nemotron first.',
+            );
+          }
+        }
+        logger.info(
+          `[MemoSttService #${this.instanceId}] ASR model: Nemotron ` +
+          `(runtime=${env.MEMO_ASR_PYTHON}, model=${env.MEMO_ASR_MODEL_PATH})`,
+        );
+      }
       // Radio mode: use External Microphone (headphone jack) like memo-RF
       if (inputSource === 'radio') {
         env.MEMO_RADIO_INPUT_DEVICE = env.MEMO_RADIO_INPUT_DEVICE || 'External Microphone';

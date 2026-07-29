@@ -1,10 +1,11 @@
-import type { PhraseReplacementRule, ToastData, VoiceCommandSettings } from '../../shared/electron-api';
+import type { AsrModelId, PhraseReplacementRule, ToastData, VoiceCommandSettings } from '../../shared/electron-api';
 
 export interface StoreSchema {
   memoUid: string | null;
   preferBleWhenAvailable: boolean;
   autoReconnect: boolean;
   selectedSystemMicName: string | null;
+  asrModel: AsrModelId;
   lastSystemMicDevice: string | null;
   lastSystemMicSampleRate: number | null;
   postEnter: boolean;
@@ -28,6 +29,7 @@ export const storeDefaults: StoreSchema = {
   preferBleWhenAvailable: true,
   autoReconnect: true,
   selectedSystemMicName: null,
+  asrModel: 'nemotron',
   lastSystemMicDevice: null,
   lastSystemMicSampleRate: null,
   postEnter: false,

@@ -15,7 +15,8 @@
 }
 
 .settings-color-bar {
-  margin: 0 0 12px;
+  width: 92%;
+  margin: 0 auto 12px;
 }
 
 .spectrum-gradient {

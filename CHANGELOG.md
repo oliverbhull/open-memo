@@ -6,6 +6,14 @@ This project follows semantic versioning once public releases begin.
 
 ## Unreleased
 
+## 0.3.0 - 2026-07-29
+
+- Keep Nemotron bundled and selected by default while allowing users to download and switch to Whisper from Settings.
+- Show Whisper availability and verified download progress, then restart only the transcription subprocess when switching models.
+- Add synchronized microphone and speech-model dropdowns beneath the Settings color picker while preserving strict microphone selection.
+- Simplify Settings by hiding the Bluetooth section and tightening the color-picker and audio-retention layout.
+- Make the tray describe the active capture gesture and remove the duplicate Start at Login control.
+
 ## 0.2.2 - 2026-07-21
 
 - Keep the explicitly selected microphone fixed when other audio devices connect, with no fallback to the macOS default input.

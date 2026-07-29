@@ -4,13 +4,15 @@ import { VoiceCommandSettings, AppConfig, AppCommand } from './VoiceCommandSetti
 import { hexToHsl, hslToHex } from '../utils/colorUtils';
 import { storageService } from '../services/StorageService';
 import { buildTranscriptionExport } from '../services/transcriptionExport';
-import type { PhraseReplacementRule } from '../../../shared/electron-api';
+import type { AsrModelId, AsrState, MicrophoneInputState, PhraseReplacementRule } from '../../../shared/electron-api';
 import '../styles/glass.css';
 import '../styles/color-picker.css';
 
 interface SettingsProps {
   onClose: () => void;
 }
+
+const SHOW_BLUETOOTH_SETTINGS = false;
 
 function toLocalDateTime(timestamp: number): string {
   const date = new Date(timestamp);
@@ -34,6 +36,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [handsFreeMode, setHandsFreeMode] = useState(false);
   const [sayEnterToPressEnter, setSayEnterToPressEnter] = useState(false);
   const [startAtLogin, setStartAtLogin] = useState(false);
+  const [asrState, setAsrState] = useState<AsrState | null>(null);
+  const [pendingAsrModel, setPendingAsrModel] = useState<AsrModelId | null>(null);
+  const [asrActionError, setAsrActionError] = useState<string | null>(null);
+  const [microphoneState, setMicrophoneState] = useState<MicrophoneInputState | null>(null);
+  const [microphoneSelecting, setMicrophoneSelecting] = useState(false);
+  const [microphoneError, setMicrophoneError] = useState<string | null>(null);
   const [saveAudio, setSaveAudio] = useState(false);
   const [vocabWords, setVocabWords] = useState<string[]>([]);
   const [isAddingVocabWord, setIsAddingVocabWord] = useState(false);
@@ -118,6 +126,40 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
         clearTimeout(connectTimeoutRef.current);
         connectTimeoutRef.current = null;
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    void window.electronAPI.microphone.getState().then((state) => {
+      if (mounted) setMicrophoneState(state);
+    }).catch((error) => {
+      console.error('[Settings] Failed to load microphone inputs:', error);
+      if (mounted) setMicrophoneError('Could not load microphone inputs.');
+    });
+    const unsubscribe = window.electronAPI.microphone.onStateChanged((state) => {
+      if (mounted) setMicrophoneState(state);
+    });
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    void window.electronAPI.asr.getState().then((state) => {
+      if (mounted) setAsrState(state);
+    }).catch((error) => {
+      console.error('[Settings] Failed to load speech model state:', error);
+      if (mounted) setAsrActionError('Could not load speech model status.');
+    });
+    const unsubscribe = window.electronAPI.asr.onStateChanged((state) => {
+      if (mounted) setAsrState(state);
+    });
+    return () => {
+      mounted = false;
+      unsubscribe();
     };
   }, []);
 
@@ -428,6 +470,61 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     }
   };
 
+  const selectAsrModel = async (model: AsrModelId) => {
+    setPendingAsrModel(model);
+    setAsrActionError(null);
+    try {
+      const result = await window.electronAPI.asr.selectModel(model);
+      setAsrState(result.state);
+      if (!result.success) setAsrActionError(result.error || 'Could not switch speech models.');
+    } catch (error) {
+      console.error('[Settings] Failed to switch speech model:', error);
+      setAsrActionError(error instanceof Error ? error.message : 'Could not switch speech models.');
+    } finally {
+      setPendingAsrModel(null);
+    }
+  };
+
+  const selectMicrophone = async (value: string) => {
+    const deviceName = value === 'system-default'
+      ? null
+      : value.startsWith('device-')
+        ? microphoneState?.devices[Number(value.slice('device-'.length))]?.name
+        : undefined;
+    if (deviceName === undefined) return;
+
+    setMicrophoneSelecting(true);
+    setMicrophoneError(null);
+    try {
+      setMicrophoneState(await window.electronAPI.microphone.selectSystemInput(deviceName));
+    } catch (error) {
+      console.error('[Settings] Failed to select microphone:', error);
+      setMicrophoneError(error instanceof Error ? error.message : 'Could not select microphone.');
+    } finally {
+      setMicrophoneSelecting(false);
+    }
+  };
+
+  const whisperStatus = asrState?.models.whisper;
+  const whisperDownloading = whisperStatus?.installState === 'downloading';
+  const displayedAsrModel: AsrModelId = pendingAsrModel
+    ?? (whisperDownloading ? 'whisper' : asrState?.selectedModel)
+    ?? 'nemotron';
+  const whisperPercent = whisperStatus && whisperStatus.totalBytes > 0
+    ? Math.min(100, Math.round((whisperStatus.downloadedBytes / whisperStatus.totalBytes) * 100))
+    : 0;
+  const formatModelSize = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`;
+  const selectedMicrophoneIndex = microphoneState?.selectedDeviceName
+    ? microphoneState.devices.findIndex((device) => device.name === microphoneState.selectedDeviceName)
+    : -1;
+  const microphoneValue = microphoneState?.inputSource === 'ble'
+    ? 'ble'
+    : microphoneState?.inputSource === 'radio'
+      ? 'radio'
+      : microphoneState?.selectedDeviceName
+        ? selectedMicrophoneIndex >= 0 ? `device-${selectedMicrophoneIndex}` : 'unavailable'
+        : 'system-default';
+
   return (
     <>
       <div className="settings-overlay" onClick={onClose}>
@@ -453,6 +550,174 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   style={{ left: `${(colorBarHue / 360) * 100}%` }}
                 />
               </div>
+            </div>
+
+            <div style={{
+              width: '92%',
+              margin: '0 auto 10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+            }}>
+              <label htmlFor="microphone-input" style={{ fontSize: '12px', userSelect: 'none' }}>
+                Mic input
+              </label>
+              <span style={{ position: 'relative', display: 'inline-flex', minWidth: 0 }}>
+                <select
+                  id="microphone-input"
+                  value={microphoneValue}
+                  disabled={!microphoneState || microphoneSelecting}
+                  onChange={(event) => void selectMicrophone(event.target.value)}
+                  style={{
+                    width: '238px',
+                    maxWidth: '100%',
+                    padding: '6px 28px 6px 8px',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255, 255, 255, 0.14)',
+                    background: 'rgba(18, 18, 24, 0.86)',
+                    color: 'rgba(255, 255, 255, 0.92)',
+                    fontSize: '12px',
+                    cursor: microphoneSelecting ? 'wait' : 'pointer',
+                    outline: 'none',
+                    opacity: microphoneState ? 1 : 0.65,
+                    appearance: 'none',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {microphoneState?.inputSource === 'ble' && (
+                    <option value="ble" disabled>Memo Bluetooth Device</option>
+                  )}
+                  {microphoneState?.inputSource === 'radio' && (
+                    <option value="radio" disabled>Aux / Line In</option>
+                  )}
+                  {microphoneState?.selectedDeviceName && selectedMicrophoneIndex < 0 && (
+                    <option value="unavailable" disabled>
+                      {microphoneState.selectedDeviceName} — Unavailable
+                    </option>
+                  )}
+                  <option value="system-default">
+                    {microphoneState?.defaultDeviceName
+                      ? `System Default — ${microphoneState.defaultDeviceName}`
+                      : 'System Default'}
+                  </option>
+                  {microphoneState?.devices.map((device, index) => (
+                    <option key={device.name} value={`device-${index}`}>{device.name}</option>
+                  ))}
+                </select>
+                <span
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    right: '9px',
+                    top: '50%',
+                    transform: 'translateY(-52%)',
+                    pointerEvents: 'none',
+                    fontSize: '10px',
+                    opacity: 0.72,
+                  }}
+                >
+                  ▾
+                </span>
+              </span>
+            </div>
+            {microphoneError && (
+              <div style={{ width: '92%', margin: '-4px auto 10px', color: '#ff8b8b', fontSize: '10px' }}>
+                {microphoneError}
+              </div>
+            )}
+
+            {/* Speech recognition model */}
+            <div style={{
+              width: '92%',
+              margin: '0 auto 10px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+            }}>
+              <label
+                htmlFor="asr-model"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                }}
+              >
+                <span style={{ fontSize: '12px', userSelect: 'none' }}>Speech model</span>
+                <span style={{ position: 'relative', display: 'inline-flex', minWidth: 0 }}>
+                  <select
+                    id="asr-model"
+                    value={displayedAsrModel}
+                    disabled={!asrState || whisperDownloading}
+                    onChange={(event) => void selectAsrModel(event.target.value as AsrModelId)}
+                    style={{
+                      width: '238px',
+                      maxWidth: '100%',
+                      padding: '6px 28px 6px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(255, 255, 255, 0.14)',
+                      background: 'rgba(18, 18, 24, 0.86)',
+                      color: 'rgba(255, 255, 255, 0.92)',
+                      fontSize: '12px',
+                      cursor: whisperDownloading ? 'wait' : 'pointer',
+                      outline: 'none',
+                      opacity: asrState ? 1 : 0.65,
+                      appearance: 'none',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    <option value="nemotron">Nemotron — Included</option>
+                    <option value="whisper">
+                      {whisperStatus?.installState === 'downloaded'
+                        ? 'Whisper — Downloaded'
+                        : `Whisper — ${whisperStatus ? formatModelSize(whisperStatus.totalBytes) : '181 MB'} download`}
+                    </option>
+                  </select>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      right: '9px',
+                      top: '50%',
+                      transform: 'translateY(-52%)',
+                      pointerEvents: 'none',
+                      fontSize: '10px',
+                      opacity: 0.72,
+                    }}
+                  >
+                    ▾
+                  </span>
+                </span>
+              </label>
+
+              {whisperDownloading && whisperStatus && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{
+                    height: '4px',
+                    overflow: 'hidden',
+                    borderRadius: '999px',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                  }}>
+                    <div style={{
+                      width: `${whisperPercent}%`,
+                      height: '100%',
+                      borderRadius: '999px',
+                      background: primary,
+                      transition: 'width 150ms linear',
+                    }} />
+                  </div>
+                  <span style={{ fontSize: '10px', opacity: 0.7 }}>
+                    Downloading Whisper… {whisperPercent}% ({formatModelSize(whisperStatus.downloadedBytes)} of {formatModelSize(whisperStatus.totalBytes)})
+                  </span>
+                </div>
+              )}
+
+              {!whisperDownloading && asrActionError && (
+                <span style={{ fontSize: '10px', color: '#ff8b8b' }}>
+                  {asrActionError}
+                </span>
+              )}
             </div>
 
             {/* Interface Section */}
@@ -993,7 +1258,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               )}
             </div>
 
-            <div className="settings-section">
+            {SHOW_BLUETOOTH_SETTINGS && <div className="settings-section">
               <button
                 type="button"
                 onClick={() => setBluetoothExpanded((v) => !v)}
@@ -1209,7 +1474,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* Total words dictated (not typed) */}
             <div style={{

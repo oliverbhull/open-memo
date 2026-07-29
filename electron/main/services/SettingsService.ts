@@ -12,11 +12,13 @@ import type {
   CommandAction,
   PhraseReplacementRule,
   VoiceCommandSettings,
+  AsrModelId,
 } from '../../shared/electron-api';
 
 export type { AppCommand, AppConfig, CommandAction, PhraseReplacementRule };
 
 export interface Settings {
+  asrModel: AsrModelId;
   postEnter: boolean;
   sayEnterToPressEnter: boolean;
   pushToTalkMode: boolean;
@@ -126,6 +128,7 @@ export function settingsPath(): string {
 
 export function loadSettings(): Settings {
   return {
+    asrModel: store.get('asrModel') === 'whisper' ? 'whisper' : 'nemotron',
     postEnter: store.get('postEnter', false),
     sayEnterToPressEnter: store.get('sayEnterToPressEnter', false),
     pushToTalkMode: store.get('pushToTalkMode', false),
@@ -145,6 +148,7 @@ export function saveSettings(next: Settings): void {
   const settings: Settings = {
     ...loadSettings(),
     ...next,
+    asrModel: next.asrModel === 'whisper' ? 'whisper' : 'nemotron',
     postEnter: next.postEnter === true,
     sayEnterToPressEnter: next.sayEnterToPressEnter === true,
     pushToTalkMode: next.pushToTalkMode === true,
@@ -157,6 +161,7 @@ export function saveSettings(next: Settings): void {
     voiceCommands: normalizeVoiceCommands(next.voiceCommands),
   };
 
+  store.set('asrModel', settings.asrModel);
   store.set('postEnter', settings.postEnter);
   store.set('sayEnterToPressEnter', settings.sayEnterToPressEnter);
   store.set('pushToTalkMode', settings.pushToTalkMode);
@@ -190,6 +195,9 @@ function migrateSettingsJson(raw: Record<string, unknown>): void {
   const current = loadSettings();
   saveSettings({
     ...current,
+    asrModel: raw.asrModel === 'whisper' || raw.asrModel === 'nemotron'
+      ? raw.asrModel
+      : current.asrModel,
     postEnter: typeof raw.postEnter === 'boolean' ? raw.postEnter : current.postEnter,
     sayEnterToPressEnter: typeof raw.sayEnterToPressEnter === 'boolean'
       ? raw.sayEnterToPressEnter
