@@ -55,7 +55,7 @@ Prerequisites:
 
 - macOS.
 - Node.js 22.12+ and npm.
-- Rust 1.85.1+ and Cargo.
+- Rust 1.88.0+ and Cargo.
 - Xcode Command Line Tools.
 
 ```bash

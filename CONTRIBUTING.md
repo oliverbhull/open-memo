@@ -8,7 +8,7 @@ Thanks for your interest in contributing. This guide covers local setup, build c
 
 - macOS, with Apple Silicon recommended.
 - Node.js 22.12+ and npm.
-- Rust 1.85.1+ and Cargo.
+- Rust 1.88.0+ and Cargo.
 - Xcode Command Line Tools.
 
 ### Getting Started
