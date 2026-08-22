@@ -6,6 +6,12 @@ This project follows semantic versioning once public releases begin.
 
 ## Unreleased
 
+## 0.4.0 - 2026-08-22
+
+- Add crash-safe USB recording sync with recovery after interrupted transfers.
+- Add signed remote firmware updates after sync, with device, version, and post-flash verification.
+- Simplify Open Memo by removing voice-command and keystroke automation.
+
 ## 0.3.0 - 2026-07-29
 
 - Keep Nemotron bundled and selected by default while allowing users to download and switch to Whisper from Settings.
