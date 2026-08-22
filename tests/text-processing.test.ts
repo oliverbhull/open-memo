@@ -9,6 +9,7 @@ import {
   stripLeadingDashSpace,
   stripTrailingEnter,
 } from '../electron/main/services/textProcessing.ts';
+import { resolveTranscriptionText } from '../electron/shared/transcription.ts';
 
 test('removes only a leading transcription dash', () => {
   assert.equal(stripLeadingDashSpace(' - Hello there'), 'Hello there');
@@ -24,6 +25,25 @@ test('converts a trailing spoken enter only when enabled', () => {
     textToPaste: 'Send this Enter.',
     pressEnter: false,
   });
+});
+
+test('does not resurrect Whisper artifacts removed by native processing', () => {
+  assert.equal(resolveTranscriptionText({
+    rawTranscript: 'Thanks for watching.',
+    processedText: '',
+  }), '');
+  assert.equal(resolveTranscriptionText({
+    rawTranscript: 'Thank you.',
+    processedText: '',
+  }), '');
+});
+
+test('falls back to raw text only when processed text is absent', () => {
+  assert.equal(resolveTranscriptionText({ rawTranscript: 'Keep this text.' }), 'Keep this text.');
+  assert.equal(resolveTranscriptionText({
+    rawTranscript: 'Raw version',
+    processedText: 'Processed version',
+  }), 'Processed version');
 });
 
 test('applies phrase replacements across case, spacing, and punctuation', () => {

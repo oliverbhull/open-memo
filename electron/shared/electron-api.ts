@@ -37,6 +37,7 @@ export interface TranscriptionData {
   timestamp?: number;
   appContext?: AppContext;
   audio?: AudioAttachment;
+  context?: Record<string, unknown>;
 }
 
 export interface MemoSttError {
@@ -51,38 +52,33 @@ export interface PhraseReplacementRule {
   enabled?: boolean;
 }
 
-export type CommandAction =
-  | { type: 'applescript'; script: string }
-  | { type: 'keystroke'; keys: string }
-  | { type: 'url'; template: string };
+export type DeviceSyncState =
+  | 'disconnected'
+  | 'connected'
+  | 'transferring'
+  | 'transcribing'
+  | 'verifying'
+  | 'complete'
+  | 'checking-update'
+  | 'updating-firmware'
+  | 'firmware-updated'
+  | 'update-error'
+  | 'error';
 
-export interface AppCommand {
-  trigger: string;
-  aliases: string[];
-  action: CommandAction;
-}
-
-export interface AppConfig {
-  name: string;
-  bundleId?: string;
-  path?: string;
-  aliases: string[];
-  commands: AppCommand[];
-  enabled: boolean;
-}
-
-export interface VoiceCommandSettings {
-  enabled: boolean;
-  apps: AppConfig[];
-  globalCommands: AppCommand[];
-  urlPatterns: string[];
-}
-
-export interface DeviceConnectionState {
-  connected: boolean;
-  deviceUid: string | null;
-  deviceName: string | null;
-  batteryLevel: number | null;
+export interface DeviceSyncStatus {
+  state: DeviceSyncState;
+  completed: number;
+  total: number;
+  batchId?: string;
+  deviceUid?: string;
+  firmwareVersion?: string;
+  targetFirmwareVersion?: string;
+  protocolVersion?: number;
+  port?: string;
+  requestedModel?: AsrModelId;
+  actualModel?: AsrModelId;
+  error?: string;
+  code?: string;
 }
 
 export interface ToastData {
@@ -135,6 +131,12 @@ export interface MicrophoneInputState {
 export interface ElectronAPI {
   onTranscription(callback: (data: TranscriptionData) => void): void;
   removeTranscriptionListener(): void;
+  listUsbTranscripts(): Promise<TranscriptionData[]>;
+  deviceSync: {
+    getStatus(): Promise<DeviceSyncStatus>;
+    openRecordingsFolder(): Promise<{ success: boolean; error?: string }>;
+    onStatus(callback: (status: DeviceSyncStatus) => void): () => void;
+  };
   onStatus(callback: (status: string) => void): void;
   removeStatusListener(): void;
   onError(callback: (error: MemoSttError) => void): void;
@@ -155,20 +157,16 @@ export interface ElectronAPI {
   markUserOnboarded(userName: string): Promise<void>;
   interface: {
     getSettings(): Promise<{
-      pressEnterAfterPaste: boolean;
       sayEnterToPressEnter: boolean;
-      pushToTalkMode: boolean;
       handsFreeMode: boolean;
       saveAudio: boolean;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
       startAtLogin: boolean;
     }>;
-    setPressEnterAfterPaste(enabled: boolean): Promise<boolean>;
     setVocabWords(vocabWords: string[]): Promise<boolean>;
     setPhraseReplacements(rules: PhraseReplacementRule[]): Promise<boolean>;
     setSayEnterToPressEnter(enabled: boolean): Promise<boolean>;
-    setPushToTalkMode(enabled: boolean): Promise<boolean>;
     setHandsFreeMode(enabled: boolean): Promise<boolean>;
     setSaveAudio(enabled: boolean): Promise<boolean>;
     setStartAtLogin(enabled: boolean): Promise<boolean>;
@@ -197,31 +195,9 @@ export interface ElectronAPI {
     canceled?: boolean;
     error?: string;
   }>;
-  voiceCommands: {
-    getSettings(): Promise<VoiceCommandSettings>;
-    saveSettings(settings: VoiceCommandSettings): Promise<boolean>;
-    onCommandExecuted(callback: (command: { type: string }) => void): () => void;
-  };
-  device: {
-    connectByUid(uid: string): Promise<{ success: boolean; error?: string }>;
-    disconnect(): Promise<{ success: boolean; error?: string }>;
-    getConnectionState(): Promise<DeviceConnectionState>;
-    clearSavedDevice(): Promise<{ success: boolean; error?: string }>;
-    onConnectionChanged(callback: (state: DeviceConnectionState) => void): () => void;
-  };
   audioSource: {
     onShowToast(callback: (toast: ToastData) => void): () => void;
     notifyInputDeviceChanged(): Promise<void>;
-  };
-  keystroke: {
-    startRecording(): Promise<{ success: boolean; error?: string }>;
-    stopRecording(): Promise<{
-      success: boolean;
-      keystroke?: { modifiers: string[]; key: string; formatted: string } | null;
-      error?: string;
-    }>;
-    isRecording(): Promise<{ success: boolean; isRecording: boolean }>;
-    record(modifiers: string[], key: string): Promise<{ success: boolean; error?: string }>;
   };
 }
 

@@ -1,4 +1,4 @@
-import type { AsrModelId, PhraseReplacementRule, ToastData, VoiceCommandSettings } from '../../shared/electron-api';
+import type { AsrModelId, PhraseReplacementRule, ToastData } from '../../shared/electron-api';
 
 export interface StoreSchema {
   memoUid: string | null;
@@ -17,7 +17,6 @@ export interface StoreSchema {
   phraseReplacements: PhraseReplacementRule[];
   inputSource: 'system' | 'ble' | 'radio';
   autoConnectDeviceName: string | null;
-  voiceCommands: VoiceCommandSettings | null;
   userName: string | null;
   onboardedUsers: string[];
   hotkey: string | null;
@@ -41,7 +40,6 @@ export const storeDefaults: StoreSchema = {
   phraseReplacements: [],
   inputSource: 'system',
   autoConnectDeviceName: null,
-  voiceCommands: null,
   userName: null,
   onboardedUsers: [],
   hotkey: null,

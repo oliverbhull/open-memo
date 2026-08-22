@@ -3,6 +3,7 @@ import type {
   AsrModelId,
   AsrSelectionResult,
   AsrState,
+  DeviceSyncStatus,
   ElectronAPI,
   MemoSttError,
   MicrophoneInputState,
@@ -10,7 +11,6 @@ import type {
   ToastData,
   TranscriptionData,
   TranscriptionExportDocument,
-  VoiceCommandSettings,
 } from '../shared/electron-api';
 
 // Store callback references for proper cleanup
@@ -46,6 +46,22 @@ const electronAPI = {
   removeTranscriptionListener: () => {
     transcriptionCallbacks.clear();
     ipcRenderer.removeListener('transcription:new', transcriptionHandler);
+  },
+
+  listUsbTranscripts: (): Promise<TranscriptionData[]> => {
+    return ipcRenderer.invoke('usb-transcripts:list');
+  },
+
+  deviceSync: {
+    getStatus: (): Promise<DeviceSyncStatus> => ipcRenderer.invoke('device-sync:get-status'),
+    openRecordingsFolder: (): Promise<{ success: boolean; error?: string }> => (
+      ipcRenderer.invoke('device-sync:open-recordings-folder')
+    ),
+    onStatus: (callback: (status: DeviceSyncStatus) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, status: DeviceSyncStatus) => callback(status);
+      ipcRenderer.on('device-sync:status', handler);
+      return () => ipcRenderer.removeListener('device-sync:status', handler);
+    },
   },
 
   // Status events
@@ -137,9 +153,7 @@ const electronAPI = {
 
   interface: {
     getSettings: (): Promise<{
-      pressEnterAfterPaste: boolean;
       sayEnterToPressEnter: boolean;
-      pushToTalkMode: boolean;
       handsFreeMode: boolean;
       saveAudio: boolean;
       vocabWords: string[];
@@ -147,9 +161,6 @@ const electronAPI = {
       startAtLogin: boolean;
     }> => {
       return ipcRenderer.invoke('settings:getInterfaceSettings');
-    },
-    setPressEnterAfterPaste: (enabled: boolean): Promise<boolean> => {
-      return ipcRenderer.invoke('settings:setPressEnterAfterPaste', enabled);
     },
     setVocabWords: (vocabWords: string[]): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setVocabWords', vocabWords);
@@ -159,9 +170,6 @@ const electronAPI = {
     },
     setSayEnterToPressEnter: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setSayEnterToPressEnter', enabled);
-    },
-    setPushToTalkMode: (enabled: boolean): Promise<boolean> => {
-      return ipcRenderer.invoke('settings:setPushToTalkMode', enabled);
     },
     setHandsFreeMode: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setHandsFreeMode', enabled);
@@ -219,51 +227,6 @@ const electronAPI = {
     canceled?: boolean;
     error?: string;
   }> => ipcRenderer.invoke('export:json', document),
-  voiceCommands: {
-    getSettings: (): Promise<VoiceCommandSettings> => {
-      return ipcRenderer.invoke('settings:getVoiceCommands');
-    },
-    saveSettings: (settings: VoiceCommandSettings): Promise<boolean> => {
-      return ipcRenderer.invoke('settings:saveVoiceCommands', settings);
-    },
-    onCommandExecuted: (callback: (command: { type: string }) => void) => {
-      ipcRenderer.on('command:executed', (_event, command) => callback(command));
-      return () => {
-        ipcRenderer.removeAllListeners('command:executed');
-      };
-    },
-  },
-  // Memo hardware connection API
-  device: {
-    connectByUid: (uid: string): Promise<{ success: boolean; error?: string }> => {
-      return ipcRenderer.invoke('device:connectByUid', uid);
-    },
-    disconnect: (): Promise<{ success: boolean }> => {
-      return ipcRenderer.invoke('device:disconnect');
-    },
-    getConnectionState: (): Promise<{
-      connected: boolean;
-      deviceUid: string | null;
-      deviceName: string | null;
-      batteryLevel: number | null;
-    }> => {
-      return ipcRenderer.invoke('device:getConnectionState');
-    },
-    clearSavedDevice: (): Promise<{ success: boolean; error?: string }> => {
-      return ipcRenderer.invoke('device:clearSavedDevice');
-    },
-    onConnectionChanged: (callback: (state: {
-      connected: boolean;
-      deviceUid: string | null;
-      deviceName: string | null;
-      batteryLevel: number | null;
-    }) => void) => {
-      ipcRenderer.on('device:connectionChanged', (_event, state) => callback(state));
-      return () => {
-        ipcRenderer.removeAllListeners('device:connectionChanged');
-      };
-    },
-  },
   // Audio Source Management
   audioSource: {
     onShowToast: (callback: (toast: ToastData) => void) => {
@@ -275,20 +238,6 @@ const electronAPI = {
     /** Called by the renderer's devicechange listener when an audio input device is added or removed. */
     notifyInputDeviceChanged: (): Promise<void> => {
       return ipcRenderer.invoke('audio:inputDeviceChanged');
-    },
-  },
-  keystroke: {
-    startRecording: (): Promise<{ success: boolean; error?: string }> => {
-      return ipcRenderer.invoke('keystroke:start-recording');
-    },
-    stopRecording: (): Promise<{ success: boolean; keystroke?: { modifiers: string[]; key: string; formatted: string } | null; error?: string }> => {
-      return ipcRenderer.invoke('keystroke:stop-recording');
-    },
-    isRecording: (): Promise<{ success: boolean; isRecording: boolean }> => {
-      return ipcRenderer.invoke('keystroke:is-recording');
-    },
-    record: (modifiers: string[], key: string): Promise<{ success: boolean; error?: string }> => {
-      return ipcRenderer.invoke('keystroke:record', modifiers, key);
     },
   },
 } satisfies ElectronAPI;

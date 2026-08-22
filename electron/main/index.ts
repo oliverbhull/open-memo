@@ -9,17 +9,15 @@ import {
   migrateToElectronStore,
   saveSettings,
   saveUserSettings,
-  Settings,
   store,
 } from './services/SettingsService';
 import { applyPhraseReplacements, clampPhraseReplacementRulesFromInput } from './services/phraseReplacement';
-import { DEFAULT_APPS } from './services/DefaultApps';
 import { BleManager } from './services/BleManager';
 import { AudioSourceManager } from './services/AudioSourceManager';
-import { updateOverlayVisibility, sendAudioLevels, sendStatusToOverlay, sendCommandToOverlay } from './services/WindowService';
-import { KeystrokeRecorder } from './services/KeystrokeRecorder';
+import { updateOverlayVisibility, sendAudioLevels, sendStatusToOverlay } from './services/WindowService';
 import path from 'path';
 import os from 'os';
+import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { logger } from './utils/logger';
 import { stripLeadingDashSpace, stripTrailingEnter } from './services/textProcessing';
@@ -30,6 +28,9 @@ import { saveJsonExport } from './services/JsonExportService';
 import { audioInputService } from './services/AudioInputService';
 import { AsrModelService } from './services/AsrModelService';
 import type { AsrModelId, AsrState } from '../shared/electron-api';
+import { resolveTranscriptionText } from '../shared/transcription';
+import { UsbTranscriptService } from './services/UsbTranscriptService';
+import { DeviceSyncService } from './services/DeviceSyncService';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
 
@@ -75,9 +76,9 @@ if (!gotSingleInstanceLock) {
 
 let mainWindow: BrowserWindow | null = null;
 let memoSttService: MemoSttService | null = null;
+let deviceSyncService: DeviceSyncService | null = null;
 let bleManager: BleManager | null = null;
 let audioSourceManager: AudioSourceManager | null = null;
-let keystrokeRecorder: KeystrokeRecorder | null = null;
 let isRecording = false;
 let pendingBlePostStopEnter = false;
 let lastTextPasteAtMs = 0;
@@ -85,6 +86,7 @@ let awaitingTranscriptionAfterStop = false;
 let isQuitting = false;
 let micDeviceRecoveryTimer: NodeJS.Timeout | null = null;
 const asrModelService = new AsrModelService();
+const usbTranscriptService = new UsbTranscriptService();
 
 asrModelService.on('state-changed', (state: AsrState) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -250,14 +252,19 @@ function setMemoSttServiceForTray(service: MemoSttService | null) {
   setMemoSttService(service);
 }
 
-function setupMemoSttService(): void {
-  // Guard against multiple service instances
-  if (memoSttService) {
-    logger.warn('MemoSttService already exists, stopping existing instance before creating new one');
-    memoSttService.stop();
-    memoSttService = null;
+async function startLiveDictation(): Promise<void> {
+  if (!memoSttService || !selectedSystemMicIsAvailable()) return;
+  await memoSttService.start();
+  if (memoSttService.getStatus() !== 'running') return;
+  const settings = loadSettings();
+  const uid = devAutoConnectUid() || (settings.inputSource === 'ble' ? store.get('memoUid') : null);
+  if (uid && bleManager) {
+    const result = await bleManager.connect(uid);
+    if (!result.success) logger.warn(`[Main] Could not restore Memo BLE capture: ${result.error}`);
   }
+}
 
+async function setupMemoSttService(): Promise<void> {
   // Initialize BLE manager if not exists
   if (!bleManager) {
     logger.info('Creating BleManager instance');
@@ -273,16 +280,6 @@ function setupMemoSttService(): void {
       // Save UID to settings if connected
       if (state.connected && state.deviceUid) {
         store.set('memoUid', state.deviceUid);
-      }
-      
-      // Send to renderer
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('device:connectionChanged', {
-          connected: state.connected,
-          deviceUid: state.deviceUid,
-          deviceName: state.deviceName,
-          batteryLevel: state.batteryLevel,
-        });
       }
     });
   }
@@ -362,40 +359,8 @@ function setupMemoSttService(): void {
   const hotkey = userSettings.hotkey || 'function';
   memoSttService.setHotkey(hotkey);
   
-  // Resolve connection settings before starting the service once below.
-  const settings = loadSettings();
-  const devUid = devAutoConnectUid();
-  if (devUid) {
-    logger.info(`[Main] Dev auto-connect requested for memo_${devUid}`);
-  }
-  
   // Note: postEnter setting is automatically sent by MemoSttService
   // after the process starts (with a delay to ensure stdin is ready)
-
-  memoSttService.on('commandExecuted', (command: { type: string; app?: string; command?: string; url?: string }) => {
-    logger.info(`[Main] Command executed: ${command.type}`, command);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('command:executed', command);
-    }
-
-    // Derive a short human-readable label for the overlay toast
-    let toastLabel: string;
-    if (command.type === 'open_app' && command.app) {
-      toastLabel = `Open ${command.app}`;
-    } else if (command.type === 'app_command' && command.command) {
-      toastLabel = command.command;
-    } else if (command.type === 'url' && command.url) {
-      try {
-        toastLabel = new URL(command.url).hostname.replace(/^www\./, '');
-      } catch {
-        toastLabel = command.url;
-      }
-    } else {
-      toastLabel = command.type;
-    }
-
-    sendCommandToOverlay(toastLabel, mainWindow);
-  });
 
   memoSttService.on('transcription', async (data: TranscriptionData) => {
     // IMPORTANT: Transcriptions arrive AFTER recording has stopped
@@ -409,7 +374,7 @@ function setupMemoSttService(): void {
     }
     
     // Update last transcript and paste: support "say enter" to press Enter after paste
-    const rawText = data.processedText || data.rawTranscript || '';
+    const rawText = resolveTranscriptionText(data);
     const normalized = stripLeadingDashSpace(rawText);
     const settings = loadSettings();
     const afterPhrases = applyPhraseReplacements(normalized, settings.phraseReplacements);
@@ -570,11 +535,11 @@ function setupMemoSttService(): void {
     setProcessingState(true);
   });
 
-  // Handle processing completed event - clear processing state when transcription completes or command executes
+  // Handle processing completed event.
   memoSttService.on('processingCompleted', () => {
     logger.debug('[Main] Processing completed event received');
     setProcessingState(false);
-    // No-speech path and voice-command-only path emit this without a transcription event
+    // The no-speech path emits this without a transcription event.
     pendingBlePostStopEnter = false;
     awaitingTranscriptionAfterStop = false;
   });
@@ -633,33 +598,11 @@ function setupMemoSttService(): void {
   });
 
   // Do not start against another microphone when an explicit selection is absent.
-  if (selectedSystemMicIsAvailable()) {
-    memoSttService.start();
-  } else {
+  if (!selectedSystemMicIsAvailable()) {
     logger.warn('[Main] Selected microphone is unavailable; capture remains stopped');
+    return;
   }
-  
-  // If a dev exact-device UID is provided, it wins over any saved UID.
-  // Wait a moment for service to be ready, then connect
-  if (devUid && bleManager) {
-    logger.info(`[Main] Will connect to dev UID: ${devUid} after service starts`);
-    setTimeout(() => {
-      bleManager?.connect(devUid).catch((err) => {
-        logger.error(`[Main] Failed to connect dev UID ${devUid}: ${err}`);
-      });
-    }, 500);
-  } else if (settings.inputSource === 'ble') {
-    const savedUid = store.get('memoUid');
-    if (savedUid && bleManager) {
-      logger.info(`[Main] Will connect to saved UID: ${savedUid} after service starts`);
-      // Wait for service to be ready (Rust process started)
-      setTimeout(() => {
-        bleManager?.connect(savedUid).catch((err) => {
-          logger.error(`[Main] Failed to connect: ${err}`);
-        });
-      }, 500);
-    }
-  }
+  await startLiveDictation();
 }
 
 app.whenReady().then(async () => {
@@ -696,7 +639,7 @@ app.whenReady().then(async () => {
   const isOnboarded = userName && (userSettings.onboardedUsers || []).includes(userName);
 
   if (isOnboarded) {
-    setupMemoSttService();
+    await setupMemoSttService();
   } else {
     logger.info('[Main] User not onboarded yet, skipping memo-stt service start');
   }
@@ -704,6 +647,34 @@ app.whenReady().then(async () => {
   // Initialize tray. The overlay window is created on demand when recording
   // starts so its transparency context is fresh for the active display.
   createTray();
+
+  deviceSyncService = new DeviceSyncService({
+    pauseDictation: async () => {
+      if (!memoSttService) return false;
+      logger.info('[Main] Pausing live dictation for Memo device transcription');
+      if (loadSettings().inputSource === 'ble') bleManager?.markDisconnectedForCapturePause();
+      await memoSttService.suspend();
+      return true;
+    },
+    resumeDictation: async () => {
+      memoSttService?.resume();
+      if (!isQuitting && memoSttService && selectedSystemMicIsAvailable()) {
+        logger.info('[Main] Restoring live dictation after Memo device transcription');
+        await startLiveDictation();
+      }
+    },
+  });
+  deviceSyncService.on('status', (status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('device-sync:status', status);
+    }
+  });
+  deviceSyncService.on('transcription', (transcription: TranscriptionData) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('transcription:new', transcription);
+    }
+  });
+  void deviceSyncService.start();
   
   // Ensure app is active and window is in front
   if (process.platform === 'darwin') {
@@ -735,6 +706,9 @@ let cleanupComplete = false;
 const cleanupMemoStt = () => {
   if (cleanupComplete) return;
   cleanupComplete = true;
+
+  deviceSyncService?.stop({ restoreDictation: false });
+  deviceSyncService = null;
 
   if (memoSttService) {
     logger.info('Cleaning up memo-stt service...');
@@ -786,19 +760,34 @@ ipcMain.handle('memo-stt:get-status', () => {
   return memoSttService?.getStatus() || 'stopped';
 });
 
-ipcMain.handle('memo-stt:restart', () => {
-  if (memoSttService) {
-    memoSttService.stop();
-    setTimeout(() => {
-      memoSttService?.start();
-    }, 500);
+ipcMain.handle('usb-transcripts:list', () => usbTranscriptService.list());
+
+ipcMain.handle('device-sync:get-status', () => (
+  deviceSyncService?.getStatus() || { state: 'disconnected', completed: 0, total: 0 }
+));
+
+ipcMain.handle('device-sync:open-recordings-folder', async () => {
+  try {
+    const directory = deviceSyncService?.recordingsDirectory()
+      || path.join(app.getPath('userData'), 'device-recordings');
+    await fs.promises.mkdir(directory, { recursive: true });
+    const error = await shell.openPath(directory);
+    return error ? { success: false, error } : { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 });
+
+ipcMain.handle('memo-stt:restart', async () => memoSttService?.restart());
 
 ipcMain.handle('asr:get-state', () => asrModelService.getState());
 
 ipcMain.handle('asr:select-model', async (_event, model: AsrModelId) => (
-  asrModelService.selectModel(model, () => memoSttService?.restart())
+  asrModelService.selectModel(model, () => {
+    const deviceBatchOwnsStt = deviceSyncService?.isTranscribing() ?? false;
+    deviceSyncService?.restart();
+    if (!deviceBatchOwnsStt) memoSttService?.restart();
+  })
 ));
 
 // Permission handlers
@@ -922,10 +911,10 @@ ipcMain.handle('app:restart', () => {
 });
 
 // Handler to start memo-stt service manually (after onboarding completes)
-ipcMain.handle('app:start-memo-stt-service', () => {
+ipcMain.handle('app:start-memo-stt-service', async () => {
   if (!memoSttService) {
     logger.info('[Main] Starting memo-stt service on demand');
-    setupMemoSttService();
+    await setupMemoSttService();
   } else {
     logger.info('[Main] memo-stt service already running');
   }
@@ -961,65 +950,6 @@ ipcMain.handle('user:mark-onboarded', async (_event, userName: unknown) => {
       ...settings,
       onboardedUsers: [...onboardedUsers, normalizedName],
     });
-  }
-});
-
-// Device IPC Handlers - Simplified UID-only connection
-ipcMain.handle('device:connectByUid', async (_event, uid: string) => {
-  try {
-    if (!bleManager) {
-      return { success: false, error: 'BLE Manager not initialized' };
-    }
-    
-    // Check if input source is set to 'ble', if not, switch it
-    const settings = loadSettings();
-    if (settings.inputSource !== 'ble') {
-      logger.info('[Device] Switching input source to BLE before connecting');
-      settings.inputSource = 'ble';
-      saveSettings(settings);
-      
-      // Restart memo-stt service with new input source
-      if (memoSttService) {
-        memoSttService.restart();
-        
-        // Wait a moment for the service to restart before connecting
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-    
-    // Now connect to the BLE device
-    return await bleManager.connect(uid);
-  } catch (error) {
-    logger.error('[Device] Failed to connect by UID:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
-ipcMain.handle('device:disconnect', async () => {
-  try {
-    if (!bleManager) {
-      return { success: false, error: 'BLE Manager not initialized' };
-    }
-    return await bleManager.disconnect();
-  } catch (error) {
-    logger.error('[Device] Failed to disconnect:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
-ipcMain.handle('device:getConnectionState', () => {
-  return bleManager?.getState() || { connected: false, deviceUid: null, deviceName: null, batteryLevel: null };
-});
-
-ipcMain.handle('device:clearSavedDevice', async () => {
-  try {
-    if (!bleManager) {
-      return { success: false, error: 'BLE Manager not initialized' };
-    }
-    return await bleManager.clearSavedDevice();
-  } catch (error) {
-    logger.error('[Device] Failed to clear saved device:', error);
-    return { success: false, error: String(error) };
   }
 });
 
@@ -1093,9 +1023,7 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
   const settings = loadSettings();
   const loginItemSettings = app.getLoginItemSettings();
   return {
-    pressEnterAfterPaste: settings.postEnter || false,
     sayEnterToPressEnter: settings.sayEnterToPressEnter ?? false,
-    pushToTalkMode: settings.pushToTalkMode ?? false,
     handsFreeMode: settings.handsFreeMode ?? false,
     saveAudio: settings.saveAudio ?? false,
     vocabWords: Array.isArray(settings.vocabWords) ? settings.vocabWords : [],
@@ -1129,31 +1057,6 @@ ipcMain.handle('settings:setSayEnterToPressEnter', async (_event, enabled: boole
   settings.sayEnterToPressEnter = enabled;
   saveSettings(settings);
   updateMenuState();
-  return true;
-});
-
-ipcMain.handle('settings:setPressEnterAfterPaste', async (_event, enabled: boolean) => {
-  const settings = loadSettings();
-  settings.postEnter = enabled;
-  saveSettings(settings);
-  
-  // Send command to memo-stt process
-  if (memoSttService && typeof memoSttService.setPressEnterAfterPaste === 'function') {
-    memoSttService.setPressEnterAfterPaste(enabled);
-  }
-  
-  return true;
-});
-
-ipcMain.handle('settings:setPushToTalkMode', async (_event, enabled: boolean) => {
-  const settings = loadSettings();
-  settings.pushToTalkMode = enabled;
-  saveSettings(settings);
-
-  if (memoSttService && typeof memoSttService.setPushToTalkMode === 'function') {
-    memoSttService.setPushToTalkMode(enabled);
-  }
-
   return true;
 });
 
@@ -1235,88 +1138,5 @@ ipcMain.handle('export:json', async (_event, document: unknown) => {
   } catch (error) {
     logger.error('[Export] Failed to save JSON export:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Export failed' };
-  }
-});
-
-// Voice command handlers
-ipcMain.handle('settings:getVoiceCommands', () => {
-  const settings = loadSettings();
-  return settings.voiceCommands || {
-    enabled: false,
-    apps: DEFAULT_APPS,
-    globalCommands: [],
-    urlPatterns: [],
-  };
-});
-
-ipcMain.handle('settings:saveVoiceCommands', async (_event, voiceCommands: Settings['voiceCommands']) => {
-  const settings = loadSettings();
-  const updated: Settings = {
-    ...settings,
-    voiceCommands,
-  };
-  saveSettings(updated);
-  
-  // Update vocabulary in memo-stt service
-  if (memoSttService) {
-    memoSttService.updateVocabulary();
-  }
-  
-  return true;
-});
-
-// Keystroke recording handlers
-if (!keystrokeRecorder) {
-  keystrokeRecorder = new KeystrokeRecorder();
-}
-
-ipcMain.handle('keystroke:start-recording', () => {
-  try {
-    if (keystrokeRecorder) {
-      keystrokeRecorder.startRecording();
-      return { success: true };
-    }
-    return { success: false, error: 'Keystroke recorder not initialized' };
-  } catch (error) {
-    logger.error('[IPC] Failed to start keystroke recording:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
-ipcMain.handle('keystroke:stop-recording', () => {
-  try {
-    if (keystrokeRecorder) {
-      const result = keystrokeRecorder.stopRecording();
-      return { success: true, keystroke: result };
-    }
-    return { success: false, error: 'Keystroke recorder not initialized' };
-  } catch (error) {
-    logger.error('[IPC] Failed to stop keystroke recording:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
-ipcMain.handle('keystroke:is-recording', () => {
-  try {
-    if (keystrokeRecorder) {
-      return { success: true, isRecording: keystrokeRecorder.isCurrentlyRecording() };
-    }
-    return { success: false, isRecording: false };
-  } catch (error) {
-    logger.error('[IPC] Failed to check recording status:', error);
-    return { success: false, isRecording: false };
-  }
-});
-
-ipcMain.handle('keystroke:record', (_event, modifiers: string[], key: string) => {
-  try {
-    if (keystrokeRecorder) {
-      keystrokeRecorder.recordKeystroke(modifiers, key);
-      return { success: true };
-    }
-    return { success: false, error: 'Keystroke recorder not initialized' };
-  } catch (error) {
-    logger.error('[IPC] Failed to record keystroke:', error);
-    return { success: false, error: String(error) };
   }
 });

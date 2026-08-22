@@ -70,9 +70,7 @@ export class BleManager extends EventEmitter {
     const status = this.memoSttService.getStatus();
     if (status === 'stopped' || status === 'error') {
       console.log(`[BleManager] memo-stt process is ${status}, starting it...`);
-      this.memoSttService.start();
-      // Wait a moment for the process to start before sending the connect command
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await this.memoSttService.start();
     }
     
     // Store UID
@@ -123,6 +121,12 @@ export class BleManager extends EventEmitter {
     if (autoReconnect && uid && this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
       this.scheduleReconnect();
     }
+  }
+
+  markDisconnectedForCapturePause(): void {
+    this.cancelReconnect();
+    this.userRequestedDisconnect = false;
+    this.setState({ connected: false, deviceName: null, batteryLevel: null });
   }
 
   /**

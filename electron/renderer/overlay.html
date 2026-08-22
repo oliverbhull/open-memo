@@ -65,69 +65,6 @@
       height: 1.5px !important;
     }
 
-    /* ── Command toast ────────────────────────────────── */
-
-    #toast {
-      display: none;
-      align-items: center;
-      justify-content: center;
-      width: max-content;
-      max-width: 188px;
-
-      padding: 6px 14px;
-      border-radius: 100px;
-
-      /* Liquid-glass appearance */
-      background: rgba(255, 255, 255, 0.08);
-      backdrop-filter: blur(24px) saturate(1.6);
-      -webkit-backdrop-filter: blur(24px) saturate(1.6);
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      box-shadow:
-        0 2px 12px rgba(0, 0, 0, 0.18),
-        inset 0 1px 0 rgba(255, 255, 255, 0.12);
-
-      color: var(--primary-color);
-      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
-      font-size: 12px;
-      font-weight: 500;
-      letter-spacing: 0.01em;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    /* Slide-up + fade-in */
-    @keyframes toastIn {
-      from {
-        opacity: 0;
-        transform: translateY(6px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    /* Fade-out */
-    @keyframes toastOut {
-      from {
-        opacity: 1;
-        transform: translateY(0);
-      }
-      to {
-        opacity: 0;
-        transform: translateY(-3px);
-      }
-    }
-
-    #toast.visible {
-      display: flex;
-      animation: toastIn 200ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-    }
-
-    #toast.fading {
-      animation: toastOut 350ms ease-in forwards;
-    }
   </style>
 </head>
 
@@ -142,13 +79,10 @@
     <div class="bar"></div>
   </div>
 
-  <div id="toast"></div>
-
   <script>
     // Waveform calibration: expects 7 values in 0–1 from memo-stt (BLE or system mic).
     const body = document.body;
     const waveform = document.getElementById("waveform");
-    const toast = document.getElementById("toast");
     const bars = Array.from(document.querySelectorAll(".bar"));
 
     let audioLevels = null;
@@ -158,7 +92,6 @@
     let animationFrameId = null;
     let tickFrameId = null;
     let isIdle = true;
-    let toastTimer = null;
 
     const IDLE_HEIGHT = 2;
     const MIN_HEIGHT = 2;
@@ -248,34 +181,6 @@
       }
     }
 
-    // ── Toast helpers ──────────────────────────────────
-
-    function showToast(label, color) {
-      // Cancel any in-flight toast timer
-      if (toastTimer !== null) {
-        clearTimeout(toastTimer);
-        toastTimer = null;
-      }
-
-      // Hide waveform — they must never coexist
-      waveform.style.display = "none";
-
-      if (color) {
-        primaryColor = color;
-        document.documentElement.style.setProperty("--primary-color", color);
-      }
-
-      toast.textContent = label;
-      toast.classList.remove("fading");
-      toast.classList.add("visible");
-
-      // After hold period, start fade-out (350 ms matches CSS)
-      toastTimer = setTimeout(() => {
-        toast.classList.add("fading");
-        // Window will be destroyed by main process after fade completes
-      }, 1800);
-    }
-
     // ── IPC listeners ──────────────────────────────────
 
     window.memoOverlay.onAudioLevels((levels) => {
@@ -294,9 +199,6 @@
       }
 
       if (isRecording) {
-        // Ensure waveform is visible and toast is hidden
-        toast.classList.remove("visible", "fading");
-        waveform.style.display = "";
         body.classList.add("waveform-live");
         if (isIdle) {
           waveform.classList.remove("idle");
@@ -309,10 +211,6 @@
         audioLevels = null;
         if (wasRecording) stopTickLoop();
       }
-    });
-
-    window.memoOverlay.onCommandToast(({ label, primaryColor: color }) => {
-      showToast(label, color);
     });
 
     document.documentElement.style.setProperty("--primary-color", primaryColor);

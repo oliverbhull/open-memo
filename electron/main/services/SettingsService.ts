@@ -3,19 +3,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Store from 'electron-store';
-import { DEFAULT_APPS } from './DefaultApps';
 import { StoreSchema, storeDefaults } from './StoreSchema';
 import { clampPhraseReplacementRulesFromInput } from './phraseReplacement';
 import type {
-  AppCommand,
-  AppConfig,
-  CommandAction,
   PhraseReplacementRule,
-  VoiceCommandSettings,
   AsrModelId,
 } from '../../shared/electron-api';
 
-export type { AppCommand, AppConfig, CommandAction, PhraseReplacementRule };
+export type { PhraseReplacementRule };
 
 export interface Settings {
   asrModel: AsrModelId;
@@ -28,7 +23,6 @@ export interface Settings {
   phraseReplacements: PhraseReplacementRule[];
   inputSource: 'system' | 'ble' | 'radio';
   autoConnectDeviceName: string | null;
-  voiceCommands: VoiceCommandSettings;
 }
 
 export interface UserSettings {
@@ -36,13 +30,6 @@ export interface UserSettings {
   onboardedUsers?: string[];
   hotkey?: string;
 }
-
-const defaultVoiceCommands = (): VoiceCommandSettings => ({
-  enabled: true,
-  apps: DEFAULT_APPS,
-  globalCommands: [],
-  urlPatterns: [],
-});
 
 function boundedString(raw: unknown, maxLength = 200): string | null {
   if (typeof raw !== 'string') return null;
@@ -56,68 +43,6 @@ function stringArray(raw: unknown, maxItems = 500, maxLength = 200): string[] {
     const normalized = boundedString(value, maxLength);
     return normalized ? [normalized] : [];
   }))].slice(0, maxItems);
-}
-
-function normalizeAction(raw: unknown): CommandAction | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const candidate = raw as Record<string, unknown>;
-  if (candidate.type === 'keystroke') {
-    const keys = boundedString(candidate.keys, 100);
-    return keys ? { type: 'keystroke', keys } : null;
-  }
-  if (candidate.type === 'applescript') {
-    const script = boundedString(candidate.script, 10_000);
-    return script ? { type: 'applescript', script } : null;
-  }
-  if (candidate.type === 'url') {
-    const template = boundedString(candidate.template, 2_000);
-    return template ? { type: 'url', template } : null;
-  }
-  return null;
-}
-
-function normalizeCommands(raw: unknown): AppCommand[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.flatMap((value) => {
-    if (!value || typeof value !== 'object') return [];
-    const candidate = value as Record<string, unknown>;
-    const trigger = boundedString(candidate.trigger);
-    const action = normalizeAction(candidate.action);
-    return trigger && action
-      ? [{ trigger, aliases: stringArray(candidate.aliases, 25), action }]
-      : [];
-  }).slice(0, 200);
-}
-
-function normalizeApps(raw: unknown): AppConfig[] {
-  if (!Array.isArray(raw)) return DEFAULT_APPS;
-  return raw.flatMap((value) => {
-    if (!value || typeof value !== 'object') return [];
-    const candidate = value as Record<string, unknown>;
-    const name = boundedString(candidate.name, 100);
-    if (!name) return [];
-    const bundleId = boundedString(candidate.bundleId, 200);
-    const appPath = boundedString(candidate.path, 1_000);
-    return [{
-      name,
-      ...(bundleId ? { bundleId } : {}),
-      ...(appPath ? { path: appPath } : {}),
-      aliases: stringArray(candidate.aliases, 25),
-      commands: normalizeCommands(candidate.commands),
-      enabled: candidate.enabled !== false,
-    }];
-  }).slice(0, 100);
-}
-
-function normalizeVoiceCommands(raw: unknown): VoiceCommandSettings {
-  if (!raw || typeof raw !== 'object') return defaultVoiceCommands();
-  const candidate = raw as Partial<VoiceCommandSettings>;
-  return {
-    enabled: candidate.enabled !== false,
-    apps: normalizeApps(candidate.apps),
-    globalCommands: normalizeCommands(candidate.globalCommands),
-    urlPatterns: stringArray(candidate.urlPatterns, 100, 2_000),
-  };
 }
 
 export const store = new Store<StoreSchema>({ defaults: storeDefaults });
@@ -140,7 +65,6 @@ export function loadSettings(): Settings {
       ? store.get('inputSource')
       : 'system',
     autoConnectDeviceName: boundedString(store.get('autoConnectDeviceName'), 200),
-    voiceCommands: normalizeVoiceCommands(store.get('voiceCommands')),
   };
 }
 
@@ -158,7 +82,6 @@ export function saveSettings(next: Settings): void {
     phraseReplacements: clampPhraseReplacementRulesFromInput(next.phraseReplacements),
     inputSource: ['system', 'ble', 'radio'].includes(next.inputSource) ? next.inputSource : 'system',
     autoConnectDeviceName: boundedString(next.autoConnectDeviceName, 200),
-    voiceCommands: normalizeVoiceCommands(next.voiceCommands),
   };
 
   store.set('asrModel', settings.asrModel);
@@ -171,7 +94,6 @@ export function saveSettings(next: Settings): void {
   store.set('phraseReplacements', settings.phraseReplacements);
   store.set('inputSource', settings.inputSource);
   store.set('autoConnectDeviceName', settings.autoConnectDeviceName);
-  store.set('voiceCommands', settings.voiceCommands);
 }
 
 export function loadUserSettings(): UserSettings {
@@ -215,7 +137,6 @@ function migrateSettingsJson(raw: Record<string, unknown>): void {
     autoConnectDeviceName: typeof raw.autoConnectDeviceName === 'string'
       ? raw.autoConnectDeviceName
       : current.autoConnectDeviceName,
-    voiceCommands: raw.voiceCommands ? normalizeVoiceCommands(raw.voiceCommands) : current.voiceCommands,
   });
 
   if (typeof raw.autoConnectDeviceName === 'string') {
