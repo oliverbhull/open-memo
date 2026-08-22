@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { VoiceCommandSettings, AppConfig, AppCommand } from './VoiceCommandSettings';
 import { hexToHsl, hslToHex } from '../utils/colorUtils';
 import { storageService } from '../services/StorageService';
 import { buildTranscriptionExport } from '../services/transcriptionExport';
@@ -12,8 +11,6 @@ interface SettingsProps {
   onClose: () => void;
 }
 
-const SHOW_BLUETOOTH_SETTINGS = false;
-
 function toLocalDateTime(timestamp: number): string {
   const date = new Date(timestamp);
   const localTime = new Date(timestamp - date.getTimezoneOffset() * 60_000);
@@ -22,17 +19,6 @@ function toLocalDateTime(timestamp: number): string {
 
 export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const { primary, setPrimary } = useTheme();
-  const [voiceCommandsEnabled, setVoiceCommandsEnabled] = useState(false);
-  const [voiceCommandApps, setVoiceCommandApps] = useState<AppConfig[]>([]);
-  const [globalCommands, setGlobalCommands] = useState<AppCommand[]>([]);
-  const [deviceUid, setDeviceUid] = useState('');
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
-  const [connectedDeviceName, setConnectedDeviceName] = useState<string | null>(null);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [isDisconnecting, setIsDisconnecting] = useState(false);
-  const [pressEnterAfterPaste, setPressEnterAfterPaste] = useState(false);
-  const [pushToTalkMode, setPushToTalkMode] = useState(false);
   const [handsFreeMode, setHandsFreeMode] = useState(false);
   const [sayEnterToPressEnter, setSayEnterToPressEnter] = useState(false);
   const [startAtLogin, setStartAtLogin] = useState(false);
@@ -47,12 +33,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [isAddingVocabWord, setIsAddingVocabWord] = useState(false);
   const [vocabWordDraft, setVocabWordDraft] = useState('');
   const vocabInputRef = useRef<HTMLInputElement>(null);
-  const [bluetoothExpanded, setBluetoothExpanded] = useState(false);
   const [vocabExpanded, setVocabExpanded] = useState(false);
   const [phraseReplacementsExpanded, setPhraseReplacementsExpanded] = useState(false);
   const [phraseReplacementRules, setPhraseReplacementRules] = useState<PhraseReplacementRule[]>([]);
-  const [voiceCommandsExpanded, setVoiceCommandsExpanded] = useState(false);
-  const connectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const colorBarSpectrumRef = useRef<HTMLDivElement>(null);
   const [colorBarHue, setColorBarHue] = useState(0);
   const [colorBarSaturation, setColorBarSaturation] = useState(100);
@@ -64,31 +47,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [exportBusy, setExportBusy] = useState(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
 
-  // Load device connection state on mount
   useEffect(() => {
-    const loadConnectionState = async () => {
-      try {
-        const state = await window.electronAPI.device.getConnectionState();
-        console.log('[Settings] Loaded connection state:', state);
-        setIsConnected(state.connected);
-        setConnectedDeviceName(state.deviceName);
-        // Always set deviceUid if available (for display in input field)
-        if (state.deviceUid) {
-          setDeviceUid(state.deviceUid);
-        }
-      } catch (error) {
-        console.error('[Settings] Failed to load device connection state:', error);
-      }
-    };
-    
-    // Load initial state immediately
-    loadConnectionState();
-    
-    // Load interface settings
     window.electronAPI.interface.getSettings().then((settings) => {
-      setPressEnterAfterPaste(settings.pressEnterAfterPaste);
       setSayEnterToPressEnter(settings.sayEnterToPressEnter ?? false);
-      setPushToTalkMode(settings.pushToTalkMode ?? false);
       setHandsFreeMode(settings.handsFreeMode ?? false);
       setStartAtLogin(settings.startAtLogin);
       setSaveAudio(settings.saveAudio ?? false);
@@ -97,36 +58,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
         Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : []
       );
     });
-    
-    // Listen for connection changes - this will update UI in real-time
-    const unsubscribeConnection = window.electronAPI.device.onConnectionChanged((state) => {
-      console.log('[Settings] Connection changed event received:', state);
-      setIsConnected(state.connected);
-      setConnectedDeviceName(state.deviceName);
-      // Always update deviceUid if provided
-      if (state.deviceUid) {
-        setDeviceUid(state.deviceUid);
-      }
-      // Clear connecting state when device is actually connected
-      if (state.connected) {
-        setConnectionError(null);
-        setIsConnecting(false);
-        // Clear any pending timeout
-        if (connectTimeoutRef.current) {
-          clearTimeout(connectTimeoutRef.current);
-          connectTimeoutRef.current = null;
-        }
-      }
-    });
-    
-    return () => {
-      unsubscribeConnection();
-      // Clean up any pending connection timeout
-      if (connectTimeoutRef.current) {
-        clearTimeout(connectTimeoutRef.current);
-        connectTimeoutRef.current = null;
-      }
-    };
   }, []);
 
   useEffect(() => {
@@ -250,15 +181,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     }
   }, [primary]);
 
-  // Load voice command settings on mount
-  useEffect(() => {
-    window.electronAPI.voiceCommands.getSettings().then((settings) => {
-      setVoiceCommandsEnabled(settings.enabled || false);
-      setVoiceCommandApps(settings.apps || []);
-      setGlobalCommands(settings.globalCommands || []);
-    });
-  }, []);
-
   // Load total word count from memo database (words dictated, not typed)
   useEffect(() => {
     let cancelled = false;
@@ -293,123 +215,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
   }, [colorBarSaturation, colorBarLightness, setPrimary]);
-
-  const handleVoiceCommandsEnabledChange = async (enabled: boolean) => {
-    setVoiceCommandsEnabled(enabled);
-    await window.electronAPI.voiceCommands.saveSettings({
-      enabled,
-      apps: voiceCommandApps,
-      globalCommands: globalCommands,
-      urlPatterns: [],
-    });
-  };
-
-  const handleVoiceCommandAppsChange = async (apps: AppConfig[]) => {
-    setVoiceCommandApps(apps);
-    await window.electronAPI.voiceCommands.saveSettings({
-      enabled: voiceCommandsEnabled,
-      apps,
-      globalCommands: globalCommands,
-      urlPatterns: [],
-    });
-  };
-
-  const handleGlobalCommandsChange = async (commands: AppCommand[]) => {
-    setGlobalCommands(commands);
-    await window.electronAPI.voiceCommands.saveSettings({
-      enabled: voiceCommandsEnabled,
-      apps: voiceCommandApps,
-      globalCommands: commands,
-      urlPatterns: [],
-    });
-  };
-
-  const handleConnect = async () => {
-    if (!deviceUid || deviceUid.length !== 5) {
-      setConnectionError('Enter a 5-digit UID.');
-      return;
-    }
-    
-    // Clear any existing timeout
-    if (connectTimeoutRef.current) {
-      clearTimeout(connectTimeoutRef.current);
-      connectTimeoutRef.current = null;
-    }
-    
-    setIsConnecting(true);
-    setConnectionError(null);
-    
-    // Set a timeout to clear connecting state if connection takes too long (30 seconds)
-    connectTimeoutRef.current = setTimeout(() => {
-      setIsConnecting(false);
-      connectTimeoutRef.current = null;
-      setConnectionError('Connection timed out. Try again.');
-    }, 30000);
-    
-    try {
-      const result = await window.electronAPI.device.connectByUid(deviceUid.toUpperCase());
-      if (!result.success) {
-        if (connectTimeoutRef.current) {
-          clearTimeout(connectTimeoutRef.current);
-          connectTimeoutRef.current = null;
-        }
-        setIsConnecting(false);
-        setConnectionError(result.error || 'Could not connect to the device.');
-        return;
-      }
-      // Connection state will be updated via connectionChanged event
-      // isConnecting will be cleared when state.connected becomes true
-      // Timeout will be cleared in the connectionChanged handler when connected: true
-    } catch (error) {
-      if (connectTimeoutRef.current) {
-        clearTimeout(connectTimeoutRef.current);
-        connectTimeoutRef.current = null;
-      }
-      setIsConnecting(false);
-      console.error('Failed to connect:', error);
-      setConnectionError('Could not connect to the device.');
-    }
-    // Note: We don't clear isConnecting here - it will be cleared when
-    // the connectionChanged event fires with connected: true, or on timeout/error above
-  };
-
-  const handleDisconnect = async () => {
-    setIsDisconnecting(true);
-    try {
-      const result = await window.electronAPI.device.disconnect();
-      if (result.success) {
-        setIsConnected(false);
-        setConnectedDeviceName(null);
-        setConnectionError(null);
-      } else {
-        console.error('Failed to disconnect:', result.error);
-        setConnectionError(result.error || 'Could not disconnect from the device.');
-      }
-    } catch (error) {
-      console.error('Failed to disconnect:', error);
-      setConnectionError('Could not disconnect from the device.');
-    } finally {
-      setIsDisconnecting(false);
-    }
-  };
-
-  const handleResetSavedDevice = async () => {
-    try {
-      const result = await window.electronAPI.device.clearSavedDevice();
-      if (result.success) {
-        setDeviceUid('');
-        setConnectedDeviceName(null);
-        setIsConnected(false);
-        setConnectionError(null);
-      } else {
-        console.error('Failed to reset saved device:', result.error);
-        setConnectionError(result.error || 'Could not reset the saved device.');
-      }
-    } catch (error) {
-      console.error('Failed to reset saved device:', error);
-      setConnectionError('Could not reset the saved device.');
-    }
-  };
 
   const openExportPicker = async () => {
     setExportOpen(true);
@@ -902,6 +707,32 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   </button>
                 </div>
 
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  padding: '2px 4px',
+                }}>
+                  <span style={{ fontSize: '12px', userSelect: 'none' }}>Memo device recordings</span>
+                  <button
+                    type="button"
+                    onClick={() => { void window.electronAPI.deviceSync.openRecordingsFolder(); }}
+                    style={{
+                      border: 0,
+                      padding: 0,
+                      color: primary,
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      font: 'inherit',
+                      fontSize: '12px',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Open folder
+                  </button>
+                </div>
+
                 {/* Vocab (STT boosting) */}
                 <div style={{
                   marginTop: '8px',
@@ -1208,273 +1039,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   )}
                 </div>
               </div>
-
-            {/* Voice Commands Section */}
-            <div style={{
-              display: 'none',
-            }} />
-
-            <div className="settings-section">
-              <button
-                type="button"
-                onClick={() => setVoiceCommandsExpanded((v) => !v)}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '8px',
-                  padding: '5px 4px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: 'transparent',
-                  color: primary,
-                  cursor: 'pointer',
-                  marginBottom: voiceCommandsExpanded ? '6px' : '0',
-                }}
-              >
-                <span style={{ fontSize: '12px', fontWeight: 650, letterSpacing: '0.01em' }}>Voice Commands</span>
-                <span style={{ opacity: 0.75, fontSize: '12px' }}>
-                  {voiceCommandsExpanded ? '▾' : '▸'}
-                </span>
-              </button>
-
-              {voiceCommandsExpanded && (
-                <div style={{
-                  padding: '4px 0 0',
-                  borderRadius: '0',
-                  border: 'none',
-                  background: 'transparent',
-                }}>
-                  <VoiceCommandSettings
-                    enabled={voiceCommandsEnabled}
-                    apps={voiceCommandApps}
-                    globalCommands={globalCommands}
-                    onEnabledChange={handleVoiceCommandsEnabledChange}
-                    onAppsChange={handleVoiceCommandAppsChange}
-                    onGlobalCommandsChange={handleGlobalCommandsChange}
-                  />
-                </div>
-              )}
-            </div>
-
-            {SHOW_BLUETOOTH_SETTINGS && <div className="settings-section">
-              <button
-                type="button"
-                onClick={() => setBluetoothExpanded((v) => !v)}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '8px',
-                  padding: '5px 4px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: 'transparent',
-                  color: primary,
-                  cursor: 'pointer',
-                  marginBottom: bluetoothExpanded ? '6px' : '0',
-                }}
-              >
-                <span style={{ fontSize: '12px', fontWeight: 650, letterSpacing: '0.01em' }}>Bluetooth</span>
-                <span style={{ opacity: 0.75, fontSize: '12px' }}>
-                  {bluetoothExpanded ? '▾' : '▸'}
-                </span>
-              </button>
-
-              {bluetoothExpanded && (
-                <div style={{
-                  padding: '4px 0 0',
-                  borderRadius: '0',
-                  border: 'none',
-                  background: 'transparent',
-                  marginBottom: '6px',
-                }}>
-                  {/* Pairing / Connection */}
-                  {isConnected ? (
-                    <>
-                      <div style={{
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: `1px solid ${primary}`,
-                        borderRadius: '6px',
-                        padding: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div style={{
-                            width: '8px',
-                            height: '8px',
-                            borderRadius: '50%',
-                            background: primary,
-                          }} />
-                          <div style={{ fontSize: '12px', fontWeight: 600 }}>
-                            {connectedDeviceName || 'Memo Device'}
-                          </div>
-                        </div>
-                        <button
-                          onClick={handleDisconnect}
-                          disabled={isDisconnecting}
-                          style={{
-                            padding: '4px 8px',
-                            background: 'rgba(255, 0, 0, 0.2)',
-                            border: '1px solid rgba(255, 0, 0, 0.3)',
-                            borderRadius: '4px',
-                            color: '#ff6b6b',
-                            cursor: isDisconnecting ? 'default' : 'pointer',
-                            fontSize: '11px',
-                            fontWeight: '600',
-                            opacity: isDisconnecting ? 0.5 : 1,
-                          }}
-                        >
-                          {isDisconnecting ? 'Disconnecting…' : 'Disconnect'}
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleResetSavedDevice}
-                        style={{
-                          marginTop: '6px',
-                          padding: '4px 0',
-                          background: 'none',
-                          border: 'none',
-                          color: 'rgba(255, 255, 255, 0.5)',
-                          cursor: 'pointer',
-                          fontSize: '10px',
-                          textDecoration: 'underline',
-                        }}
-                      >
-                        Reset saved device
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        <input
-                          type="text"
-                          value={deviceUid}
-                          onChange={(e) => {
-                            const value = e.target.value.toUpperCase().replace(/[^0-9A-F]/g, '');
-                            if (value.length <= 5) {
-                              setDeviceUid(value);
-                            }
-                          }}
-                          placeholder="UID"
-                          maxLength={5}
-                          pattern="[0-9A-Fa-f]{5}"
-                          style={{
-                            flex: 1,
-                            padding: '6px 8px',
-                            background: 'rgba(255, 255, 255, 0.05)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            borderRadius: '6px',
-                            color: '#fff',
-                            fontSize: '12px',
-                            fontFamily: 'monospace',
-                            textTransform: 'uppercase',
-                          }}
-                        />
-                        <button
-                          onClick={handleConnect}
-                          disabled={deviceUid.length !== 5 || isConnecting}
-                          style={{
-                            padding: '6px 12px',
-                            background: deviceUid.length === 5 && !isConnecting ? primary : 'rgba(255, 255, 255, 0.1)',
-                            border: 'none',
-                            borderRadius: '6px',
-                            color: deviceUid.length === 5 && !isConnecting ? '#000' : '#fff',
-                            cursor: deviceUid.length === 5 && !isConnecting ? 'pointer' : 'default',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            opacity: deviceUid.length !== 5 || isConnecting ? 0.5 : 1,
-                          }}
-                        >
-                          {isConnecting ? 'Connecting…' : 'Connect'}
-                        </button>
-                      </div>
-                    </>
-                  )}
-                  {connectionError && (
-                    <div role="alert" style={{ marginTop: '6px', color: '#ff8a8a', fontSize: '11px' }}>
-                      {connectionError}
-                    </div>
-                  )}
-
-                  <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.08)', margin: '10px 0' }} />
-
-                  <label style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    marginBottom: '6px',
-                    padding: '4px',
-                    borderRadius: '6px',
-                    transition: 'background 0.2s',
-                  }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={pressEnterAfterPaste}
-                      onChange={async (e) => {
-                        const newValue = e.target.checked;
-                        setPressEnterAfterPaste(newValue);
-                        await window.electronAPI.interface.setPressEnterAfterPaste(newValue);
-                      }}
-                      style={{
-                        width: '16px',
-                        height: '16px',
-                        cursor: 'pointer',
-                        accentColor: primary,
-                        color: primary,
-                      }}
-                    />
-                    <span style={{ fontSize: '12px', userSelect: 'none' }}>
-                      Double-tap Enter
-                    </span>
-                  </label>
-
-                  <label style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    marginBottom: '6px',
-                    padding: '4px',
-                    borderRadius: '6px',
-                    transition: 'background 0.2s',
-                  }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={pushToTalkMode}
-                      onChange={async (e) => {
-                        const newValue = e.target.checked;
-                        setPushToTalkMode(newValue);
-                        await window.electronAPI.interface.setPushToTalkMode(newValue);
-                      }}
-                      style={{
-                        width: '16px',
-                        height: '16px',
-                        cursor: 'pointer',
-                        accentColor: primary,
-                        color: primary,
-                      }}
-                    />
-                    <span style={{ fontSize: '12px', userSelect: 'none' }}>
-                      Push-to-talk
-                    </span>
-                  </label>
-
-                </div>
-              )}
-            </div>}
 
             {/* Total words dictated (not typed) */}
             <div style={{

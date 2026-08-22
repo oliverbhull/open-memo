@@ -7,7 +7,4 @@ contextBridge.exposeInMainWorld('memoOverlay', {
   onStatus(callback: (status: { isRecording: boolean; primaryColor?: string }) => void): void {
     ipcRenderer.on('memo:status', (_event, status) => callback(status));
   },
-  onCommandToast(callback: (data: { label: string; primaryColor?: string }) => void): void {
-    ipcRenderer.on('memo:commandToast', (_event, data) => callback(data));
-  },
 });

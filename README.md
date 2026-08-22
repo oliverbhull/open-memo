@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/oliverbhull/open-memo/actions/workflows/ci.yml/badge.svg)](https://github.com/oliverbhull/open-memo/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/oliverbhull/open-memo?include_prereleases)](https://github.com/oliverbhull/open-memo/releases)
+[![Latest release](https://img.shields.io/github/v/release/oliverbhull/open-memo)](https://github.com/oliverbhull/open-memo/releases)
 [![macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://github.com/oliverbhull/open-memo/releases)
 
 Open Memo is an open-source push-to-talk dictation app for macOS.
@@ -14,7 +14,6 @@ Hold a hotkey, speak naturally, release, and your words appear wherever your cur
 - **Fast dictation anywhere:** paste text into the active macOS app.
 - **On-device transcription:** Nemotron is included; Whisper can be downloaded and selected in Settings.
 - **No account required:** download, grant permissions, and start talking.
-- **Voice commands:** launch apps, open URLs, and trigger app-specific shortcuts.
 - **Useful history:** see the native icon for the app where each dictation occurred.
 - **Optional audio retention:** save a local WAV recording linked to its transcript.
 - **Hardware-friendly:** optional support for Memo Bluetooth microphones.
@@ -36,8 +35,6 @@ Open Memo currently targets macOS on Apple Silicon. On first launch, macOS may a
 2. Hold the hotkey and speak.
 3. Release to transcribe.
 4. Open Memo pastes the result at your cursor.
-
-Voice commands use the same flow, but recognized command phrases can launch apps, open URLs, or send configured shortcuts.
 
 Nemotron is selected by default and ships inside the app. To use Whisper, open Settings and choose it under **Speech model**. Memo shows whether Whisper is installed, downloads the 181 MiB model with visible progress when needed, verifies it, and switches the local transcription process automatically.
 
@@ -81,11 +78,24 @@ For a user-facing export, open Settings and select **Export JSON** beside the wo
 
 `npm run build:dir` creates an unsigned app bundle for smoke testing. Maintainer signing and release notes live in [docs/maintainers/signing-and-release.md](docs/maintainers/signing-and-release.md).
 
+## Memo firmware updates
+
+When a Memo recorder connects over USB, Open Memo first synchronizes and
+durably saves its recordings. Once the recorder is empty and idle, the app
+checks the public firmware release channel. A newer UF2 is downloaded only
+after its release manifest passes Memo's embedded Ed25519 signature check; its
+SHA-256, nRF52840 family, board identity, and code-partition boundaries are
+checked again before flashing. The same device UID and exact target firmware
+version must return after the update.
+
+The installed app contains no GitHub token and no bundled firmware image.
+Network, signature, device-state, or flash verification failures leave the
+firmware update unapplied and do not discard synced recordings.
+
 ## Documentation
 
 - [Contributing](CONTRIBUTING.md)
 - [Troubleshooting](docs/troubleshooting.md)
-- [Voice commands](docs/voice-commands.md)
 - [Signing and release](docs/maintainers/signing-and-release.md)
 - [Changelog](CHANGELOG.md)
 - [Support](SUPPORT.md)

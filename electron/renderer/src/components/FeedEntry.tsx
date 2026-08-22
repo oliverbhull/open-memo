@@ -46,8 +46,14 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
     
     // For mobile: show location (formatted address)
     // For desktop: show windowTitle
+    const isMemoDeviceEntry = context.source === 'memo-device';
+    const deviceRecordingId = typeof context.deviceRecordingId === 'string'
+      ? context.deviceRecordingId
+      : null;
     const subtitleText = isDesktopEntry 
       ? appContext.windowTitle || 'Unknown'
+      : isMemoDeviceEntry
+        ? `Memo device${deviceRecordingId ? ` • ${deviceRecordingId}` : ''}`
       : (location ? formatAddress(location) : 'Unknown Location');
     
     const isProcessing = recordingState === 'processing';

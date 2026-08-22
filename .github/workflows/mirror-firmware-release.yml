@@ -1,0 +1,117 @@
+name: Mirror signed firmware release
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mirror-firmware-release
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Publish latest signed firmware bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the pinned firmware verification key
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Download the latest private firmware release
+        env:
+          GH_TOKEN: ${{ secrets.MEMO_FIRMWARE_READ_TOKEN }}
+          SOURCE_REPOSITORY: oliverbhull/memo-firmware
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "Missing MEMO_FIRMWARE_READ_TOKEN." >&2
+            exit 1
+          fi
+
+          release_tag="$(gh api "repos/$SOURCE_REPOSITORY/releases?per_page=30" \
+            --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | startswith("firmware-v")))] | first | .tag_name')"
+          if [[ -z "$release_tag" ]]; then
+            echo "No published firmware release was found." >&2
+            exit 1
+          fi
+
+          mkdir source-release
+          gh release download "$release_tag" \
+            --repo "$SOURCE_REPOSITORY" \
+            --dir source-release
+          echo "RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+
+      - name: Verify the complete signed bundle
+        run: |
+          cd source-release
+          sha256sum --check SHA256SUMS
+          openssl pkeyutl -verify -rawin -pubin \
+            -inkey ../config/firmware-signing-public-key.pem \
+            -in memo-firmware-release.json \
+            -sigfile memo-firmware-release.json.sig
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(".")
+          manifest = json.loads(
+              (root / "memo-firmware-release.json").read_text(encoding="utf-8")
+          )
+          if manifest.get("release_tag") != os.environ["RELEASE_TAG"]:
+              raise SystemExit("signed manifest does not match the source release tag")
+          expected = {
+              "SHA256SUMS",
+              "memo-firmware-release.json",
+              "memo-firmware-release.json.sig",
+              manifest.get("uf2_file"),
+              manifest.get("sidecar_file"),
+          }
+          actual = {path.name for path in root.iterdir() if path.is_file()}
+          if None in expected or actual != expected:
+              raise SystemExit(
+                  f"refusing unexpected private release assets: {sorted(actual)}"
+              )
+          version = manifest.get("firmware_version")
+          if not isinstance(version, str):
+              raise SystemExit("signed manifest is missing firmware_version")
+          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as output:
+              output.write(f"FIRMWARE_VERSION={version}\n")
+          PY
+
+      - name: Publish an immutable public firmware prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            existing="$(mktemp -d)"
+            gh release download "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern memo-firmware-release.json \
+              --pattern memo-firmware-release.json.sig \
+              --dir "$existing"
+            cmp --silent source-release/memo-firmware-release.json "$existing/memo-firmware-release.json"
+            cmp --silent source-release/memo-firmware-release.json.sig "$existing/memo-firmware-release.json.sig"
+            is_prerelease="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)"
+            if [[ "$is_prerelease" != "true" ]]; then
+              echo "Existing firmware release is not marked as a prerelease." >&2
+              exit 1
+            fi
+            echo "Public firmware release $RELEASE_TAG already matches."
+            exit 0
+          fi
+
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Tag $RELEASE_TAG exists without the expected public release." >&2
+            exit 1
+          fi
+
+          gh release create "$RELEASE_TAG" source-release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target main \
+            --prerelease \
+            --title "Memo firmware $FIRMWARE_VERSION" \
+            --notes "Signed Memo firmware binary mirrored from the private source release. The firmware source is not included."

@@ -204,6 +204,16 @@ export class StorageService {
     });
   }
 
+  async getEntry(id: string): Promise<MemoEntry | null> {
+    const db = await this.ensureInit();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_NAME], 'readonly');
+      const request = transaction.objectStore(STORE_NAME).get(id);
+      request.onsuccess = () => resolve((request.result as MemoEntry | undefined) || null);
+      request.onerror = () => reject(request.error || new Error('Failed to read entry'));
+    });
+  }
+
   /**
    * Get entries with pagination, ordered by updatedAt (newest first)
    * Uses indexed range queries for O(log n) performance instead of O(n) cursor skipping

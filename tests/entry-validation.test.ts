@@ -34,3 +34,31 @@ test('rejects audio that is not named for its transcript ID', () => {
 
   assert.equal(entry, null);
 });
+
+test('rejects a native-filtered transcription instead of restoring its raw artifact', () => {
+  const entry = createValidEntry({
+    rawTranscript: 'Thanks for watching.',
+    processedText: '',
+  }, 'filtered-entry');
+
+  assert.equal(entry, null);
+});
+
+test('preserves Memo device provenance in entry context', () => {
+  const entry = createValidEntry({
+    id: 'memo-device-source',
+    processedText: 'Synced from the recorder',
+    timestamp: 456,
+    context: {
+      source: 'memo-device',
+      deviceUid: 'device-1',
+      deviceRecordingId: '0000003b',
+    },
+  }, 'memo-device-source');
+
+  assert.ok(entry);
+  const stored = convertToMemoEntry(entry, 'desktop-device');
+  const restored = convertToFeedEntry(stored);
+  assert.equal(restored.context?.source, 'memo-device');
+  assert.equal(restored.context?.deviceRecordingId, '0000003b');
+});

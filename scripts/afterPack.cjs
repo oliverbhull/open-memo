@@ -32,6 +32,12 @@ module.exports = async function afterPack(context) {
   fs.chmodSync(sttBinPath, 0o755);
   console.log(`✓ memo-stt verified (${fs.statSync(sttBinPath).size} bytes)`);
 
+  const deviceSyncHelper = path.join(appPath, 'Contents', 'Resources', 'device-sync', 'device_sync.py');
+  if (!fs.existsSync(deviceSyncHelper)) {
+    throw new Error('Memo device sync helper was not copied from extraResources');
+  }
+  console.log('✓ Memo device sync helper verified');
+
   // A release must fail if bundle metadata cannot be cleaned before signing.
   await sh('xattr', ['-cr', appPath]);
   await sh('dot_clean', ['-m', appPath]);
@@ -60,6 +66,9 @@ module.exports = async function afterPack(context) {
     throw new Error(`Nemotron bundle is incomplete:\n${missingNemotronFiles.join('\n')}`);
   }
   fs.chmodSync(nemotronRequired[0], 0o755);
+  await sh(nemotronRequired[0], ['-B', '-c', 'import serial; print(serial.VERSION)'], {
+    env: { ...process.env, PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' },
+  });
   console.log('✓ Bundled Nemotron runtime and model verified');
 
   // Python and ONNX Runtime contain nested Mach-O binaries. Sign them from

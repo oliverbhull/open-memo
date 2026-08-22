@@ -43,7 +43,7 @@ The app is an Electron application with three main parts:
 
 - `electron/main/`: app lifecycle, IPC handlers, transcription pipeline, BLE, tray, and settings.
 - `electron/preload/`: typed IPC bridge exposed through `window.electronAPI`.
-- `electron/renderer/`: React UI for feed, settings, onboarding, and voice commands.
+- `electron/renderer/`: React UI for the feed, settings, and onboarding.
 
 `memo-stt` is the Rust speech-to-text engine. The desktop app starts it as a child process and consumes stdout events such as `FINAL:`, `CONNECTED:`, `DISCONNECTED:`, `AUDIO_DATA:`, `RECORDING_STARTED`, and `RECORDING_STOPPED`.
 

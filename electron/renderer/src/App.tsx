@@ -9,7 +9,7 @@ import { useEntries } from './hooks/useEntries';
 import { logger } from './utils/logger';
 import { storageService } from './services/StorageService';
 import { Settings } from './components/Settings';
-import type { MemoSttError, TranscriptionData } from '../../shared/electron-api';
+import type { DeviceSyncStatus, MemoSttError, TranscriptionData } from '../../shared/electron-api';
 import './styles/glass.css';
 
 // Settings Icon Component
@@ -59,6 +59,8 @@ function App() {
   
   // Track if listeners are registered to prevent duplicates (especially in StrictMode)
   const listenersRegisteredRef = useRef(false);
+  const importedUsbIdsRef = useRef(new Set<string>());
+  const lastDeviceSyncStateRef = useRef<DeviceSyncStatus['state']>('disconnected');
 
   const handleCopy = useCallback((text: string) => {
     navigator.clipboard.writeText(text).catch((err) => {
@@ -234,6 +236,56 @@ function App() {
       window.electronAPI.removeErrorListener();
     };
   }, [addEntry]);
+
+  useEffect(() => {
+    if (!window.electronAPI?.listUsbTranscripts) return;
+    let stopped = false;
+
+    const importUsbTranscripts = async () => {
+      try {
+        const transcriptions = await window.electronAPI.listUsbTranscripts();
+        for (const transcription of transcriptions) {
+          if (stopped || !transcription.id || importedUsbIdsRef.current.has(transcription.id)) continue;
+          importedUsbIdsRef.current.add(transcription.id);
+          await addEntry(transcription);
+        }
+      } catch (error) {
+        logger.error('[App] Failed to import USB transcripts:', error);
+      }
+    };
+
+    void importUsbTranscripts();
+    return () => {
+      stopped = true;
+    };
+  }, [addEntry]);
+
+  useEffect(() => {
+    if (!window.electronAPI?.deviceSync) return;
+    const applyStatus = (status: DeviceSyncStatus) => {
+      const previous = lastDeviceSyncStateRef.current;
+      lastDeviceSyncStateRef.current = status.state;
+      if (status.state === previous && status.state !== 'error') return;
+      if (status.state === 'transcribing') {
+        setToast({ message: 'Syncing Memo recordings… dictation will resume automatically.', severity: 'info', duration: 3500 });
+      } else if (status.state === 'complete') {
+        const fallback = status.requestedModel === 'whisper' && status.actualModel === 'nemotron'
+          ? ' (transcribed with Nemotron fallback)'
+          : '';
+        setToast({ message: `Memo sync complete${fallback}`, severity: 'success', duration: 3500 });
+      } else if (status.state === 'updating-firmware') {
+        setToast({ message: 'Updating Memo firmware… keep the device connected.', severity: 'info', duration: 8000 });
+      } else if (status.state === 'firmware-updated') {
+        setToast({ message: 'Memo firmware updated successfully.', severity: 'success', duration: 4500 });
+      } else if (status.state === 'update-error') {
+        setToast({ message: `Recordings synced, but the firmware update was skipped: ${status.error || 'unknown error'}`, severity: 'warning', duration: 7000 });
+      } else if (status.state === 'error') {
+        setToast({ message: status.error || 'Memo device sync failed; recordings remain on the device.', severity: 'error', duration: 6000 });
+      }
+    };
+    void window.electronAPI.deviceSync.getStatus().then(applyStatus);
+    return window.electronAPI.deviceSync.onStatus(applyStatus);
+  }, []);
 
   // Combine storage errors with other errors
   const displayError = error || (storageError ? storageError.message : null);

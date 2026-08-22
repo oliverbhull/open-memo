@@ -113,6 +113,10 @@ export class EntryService extends EventEmitter {
       ? (data as { id?: unknown }).id
       : undefined;
     const id = typeof suppliedId === 'string' && suppliedId ? suppliedId : crypto.randomUUID();
+    const existing = await storageService.getEntry(id);
+    if (existing && !existing.deletedAt) {
+      return convertToFeedEntry(existing);
+    }
     const feedEntry = createValidEntry(data, id);
 
     if (!feedEntry) {

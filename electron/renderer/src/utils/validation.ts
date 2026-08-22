@@ -2,6 +2,7 @@ import { FeedEntryData, AppContext } from '../components/FeedEntry';
 import { MemoEntry } from '../types/storage';
 import { logger } from './logger';
 import type { AudioAttachment } from '../../../shared/electron-api';
+import { resolveTranscriptionText } from '../../../shared/transcription';
 
 interface ValidTranscriptionData {
   id?: string;
@@ -11,6 +12,7 @@ interface ValidTranscriptionData {
   appContext?: AppContext;
   timestamp?: number;
   audio?: AudioAttachment;
+  context?: Record<string, unknown>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -59,6 +61,8 @@ export function validateTranscriptionData(data: unknown): data is ValidTranscrip
     ))
   )) return false;
 
+  if (data.context !== undefined && !isRecord(data.context)) return false;
+
   return true;
 }
 
@@ -90,7 +94,7 @@ export function createValidEntry(
     return null;
   }
 
-  const text = data.processedText || data.rawTranscript || '';
+  const text = resolveTranscriptionText(data);
   if (!text.trim()) {
     logger.warn('Empty transcription text');
     return null;
@@ -108,6 +112,7 @@ export function createValidEntry(
     wasProcessedByLLM: data.wasProcessedByLLM,
     appContext: data.appContext,
     audio: data.audio,
+    context: data.context,
   };
 }
 
@@ -127,11 +132,12 @@ export function convertToMemoEntry(
     updatedAt: entry.timestamp || now,
     deletedAt: undefined,
     context: {
-      source: 'desktop',
+      source: entry.context?.source || 'desktop',
       rawTranscript: entry.rawTranscript,
       wasProcessedByLLM: entry.wasProcessedByLLM,
       appContext: entry.appContext,
       audio: entry.audio,
+      ...entry.context,
     },
   };
 }
