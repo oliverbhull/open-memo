@@ -12,6 +12,7 @@ import type {
   TranscriptionData,
   TranscriptionExportDocument,
 } from '../shared/electron-api';
+import type { MemoEntry } from '../shared/memo-entry';
 
 // Store callback references for proper cleanup
 const transcriptionCallbacks = new Set<(data: TranscriptionData) => void>();
@@ -50,6 +51,22 @@ const electronAPI = {
 
   listUsbTranscripts: (): Promise<TranscriptionData[]> => {
     return ipcRenderer.invoke('usb-transcripts:list');
+  },
+
+  entries: {
+    initialize: (): Promise<{ legacyImportComplete: boolean }> => (
+      ipcRenderer.invoke('entries:initialize')
+    ),
+    importLegacy: (entries: MemoEntry[]): Promise<{ imported: number }> => (
+      ipcRenderer.invoke('entries:import-legacy', entries)
+    ),
+    save: (entry: MemoEntry): Promise<void> => ipcRenderer.invoke('entries:save', entry),
+    get: (id: string): Promise<MemoEntry | null> => ipcRenderer.invoke('entries:get', id),
+    list: (limit: number, offset: number): Promise<MemoEntry[]> => (
+      ipcRenderer.invoke('entries:list', limit, offset)
+    ),
+    getAllActive: (): Promise<MemoEntry[]> => ipcRenderer.invoke('entries:get-all-active'),
+    getTotalWordCount: (): Promise<number> => ipcRenderer.invoke('entries:get-total-word-count'),
   },
 
   deviceSync: {

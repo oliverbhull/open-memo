@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { logger } from './utils/logger';
+import { MemoDatabaseService } from './services/MemoDatabaseService';
 
 const EXPORT_JS = `
 (async () => {
@@ -125,18 +126,30 @@ export async function runMemoExport(): Promise<void> {
     process.env.MEMO_EXPORT_OUT ??
     path.join(os.homedir(), 'Desktop', 'memo-full-export.json');
 
-  const htmlPath = findHtmlPath();
+  const databasePath = path.join(app.getPath('userData'), 'memo.sqlite3');
+  const database = new MemoDatabaseService({ databasePath });
   logger.info(`[Export] userData: ${app.getPath('userData')}`);
-  logger.info(`[Export] html origin: ${htmlPath}`);
 
   let entries: ExportEntry[];
+  let htmlPath: string | null = null;
+  let sourceLabel: string;
   try {
-    entries = await readIndexedDb(htmlPath);
+    const state = await database.initialize();
+    if (state.legacyImportComplete) {
+      entries = await database.getAllEntries();
+      sourceLabel = 'Memo SQLite';
+      logger.info(`[Export] SQLite database: ${databasePath}`);
+    } else {
+      htmlPath = findHtmlPath();
+      entries = await readIndexedDb(htmlPath);
+      sourceLabel = 'Memo legacy IndexedDB';
+      logger.info(`[Export] Legacy HTML origin: ${htmlPath}`);
+    }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`Could not read Memo storage. Quit Memo and run the export again. ${detail}`);
   }
-  const sources = [{ label: 'Memo', userDataPath: app.getPath('userData'), count: entries.length }];
+  const sources = [{ label: sourceLabel, userDataPath: app.getPath('userData'), count: entries.length }];
   logger.info(`[Export] Read ${entries.length} entries`);
 
   const active = entries.filter((entry) => !entry.deletedAt);
@@ -157,6 +170,7 @@ export async function runMemoExport(): Promise<void> {
   const exportDoc = {
     exportedAt: new Date().toISOString(),
     htmlOrigin: htmlPath,
+    databasePath: sourceLabel === 'Memo SQLite' ? databasePath : null,
     sources,
     summary: {
       totalEntries: entries.length,
