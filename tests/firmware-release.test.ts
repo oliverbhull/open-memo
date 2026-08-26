@@ -22,6 +22,14 @@ test('embedded updater key matches the public key used by the mirror workflow', 
   assert.equal(FIRMWARE_SIGNING_PUBLIC_KEY, configured);
 });
 
+test('firmware mirror selects the newest published source release explicitly', () => {
+  const workflow = fs.readFileSync(
+    path.join(process.cwd(), '.github', 'workflows', 'mirror-firmware-release.yml'),
+    'utf-8',
+  );
+  assert.match(workflow, /max_by\(\.published_at\)/);
+});
+
 function fixture(options: { tamperManifest?: boolean; tamperUf2?: boolean } = {}) {
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
   const uf2 = Buffer.from('synthetic signed UF2 fixture');

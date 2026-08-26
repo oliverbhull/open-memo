@@ -32,7 +32,7 @@ jobs:
           fi
 
           release_tag="$(gh api "repos/$SOURCE_REPOSITORY/releases?per_page=30" \
-            --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | startswith("firmware-v")))] | first | .tag_name')"
+            --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | startswith("firmware-v")))] | max_by(.published_at) | .tag_name')"
           if [[ -z "$release_tag" ]]; then
             echo "No published firmware release was found." >&2
             exit 1
