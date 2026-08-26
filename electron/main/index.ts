@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, systemPreferences, shell, Menu, clipboard } from 'electron';
+import { app, autoUpdater, BrowserWindow, ipcMain, systemPreferences, shell, Menu, clipboard } from 'electron';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { MemoSttService, TranscriptionData } from './services/MemoSttService';
@@ -742,6 +742,11 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  isQuitting = true;
+  cleanupMemoStt();
+});
+
+autoUpdater.on('before-quit-for-update', () => {
   isQuitting = true;
   cleanupMemoStt();
 });
