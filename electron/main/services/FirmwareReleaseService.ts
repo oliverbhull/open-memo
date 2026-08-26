@@ -270,7 +270,7 @@ export class FirmwareReleaseService {
       .find((candidate): candidate is GitHubRelease => Boolean(
         candidate
         && !candidate.draft
-        && candidate.prerelease
+        && !candidate.prerelease
         && candidate.tag_name.startsWith('firmware-v'),
       ));
     if (!release) return null;

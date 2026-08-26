@@ -30,12 +30,17 @@ let mainWindow: BrowserWindow | null = null;
 let memoSttService: MemoSttService | null = null;
 let bleManager: BleManager | null = null;
 let audioSourceManager: AudioSourceManager | null = null;
+let openMainWindowHandler: (() => void) | null = null;
 
 /**
  * Set main window reference
  */
 export function setMainWindow(window: BrowserWindow | null) {
   mainWindow = window;
+}
+
+export function setOpenMainWindowHandler(handler: (() => void) | null) {
+  openMainWindowHandler = handler;
 }
 
 /**
@@ -266,11 +271,7 @@ function copyLastTranscript() {
  * Open main window
  */
 function openMainWindow() {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
-  }
+  openMainWindowHandler?.();
 }
 
 function openSettings() {

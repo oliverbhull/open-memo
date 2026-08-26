@@ -2,7 +2,7 @@ import { app, autoUpdater, BrowserWindow, ipcMain, systemPreferences, shell, Men
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { MemoSttService, TranscriptionData } from './services/MemoSttService';
-import { createTray, getMicrophoneInputState, refreshAudioInputDevices, selectSystemInput, setAudioSourceManager, setMainWindow, setLastTranscript, setRecordingState, setProcessingState, setBleConnectionState, updateMenuState, setBleManager, setMemoSttService } from './services/TrayService';
+import { createTray, getMicrophoneInputState, refreshAudioInputDevices, selectSystemInput, setAudioSourceManager, setMainWindow, setOpenMainWindowHandler, setLastTranscript, setRecordingState, setProcessingState, setBleConnectionState, updateMenuState, setBleManager, setMemoSttService } from './services/TrayService';
 import {
   loadSettings,
   loadUserSettings,
@@ -103,11 +103,7 @@ asrModelService.on('state-changed', (state: AsrState) => {
 });
 
 app.on('second-instance', () => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.show();
-    mainWindow.focus();
-    mainWindow.moveTop();
-  }
+  openMainWindow();
 });
 
 function pressReturnForBlePostStopEnter(): void {
@@ -162,28 +158,27 @@ function createWindow(): void {
   });
   if (isDev) mainWindow.webContents.openDevTools();
 
-  // Show and focus the window
-  mainWindow.show();
-  mainWindow.focus();
-  if (process.platform === 'darwin') {
-    app.dock?.show();
-  }
-
   mainWindow.on('closed', () => {
     setMainWindow(null);
     mainWindow = null;
   });
 
-  mainWindow.on('close', (event) => {
-    if (process.platform === 'darwin' && !isQuitting) {
-      event.preventDefault();
-      mainWindow?.hide();
-      app.dock?.hide();
-    }
-  });
-
   // Set main window in tray service
   setMainWindow(mainWindow);
+}
+
+function openMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow();
+  if (!mainWindow) return;
+
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (process.platform === 'darwin') {
+    app.dock?.show();
+    app.focus({ steal: true });
+  }
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.moveTop();
 }
 
 /**
@@ -206,8 +201,7 @@ function createMenuBar() {
           label: 'Settings…',
           accelerator: 'Command+,',
           click: () => {
-            mainWindow?.show();
-            mainWindow?.focus();
+            openMainWindow();
             mainWindow?.webContents.send('settings:open');
           },
         },
@@ -640,7 +634,8 @@ app.whenReady().then(async () => {
   // Create menu bar first (needed for macOS to recognize app)
   createMenuBar();
 
-  createWindow();
+  setOpenMainWindowHandler(openMainWindow);
+  openMainWindow();
   appUpdateService.start();
 
   // Resolve a remembered microphone before memo-stt starts. An unavailable
@@ -691,28 +686,8 @@ app.whenReady().then(async () => {
   });
   void deviceSyncService.start();
   
-  // Ensure app is active and window is in front
-  if (process.platform === 'darwin') {
-    app.dock?.show();
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show();
-      mainWindow.focus();
-      // Bring window to front
-      mainWindow.moveTop();
-    }
-  }
-
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    } else {
-      // Bring existing window to front
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.show();
-        mainWindow.focus();
-        mainWindow.moveTop();
-      }
-    }
+    openMainWindow();
   });
 });
 
