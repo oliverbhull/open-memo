@@ -31,6 +31,16 @@ jobs:
           node-version: "22.12.0"
           cache: npm
 
+      - name: Verify release tag matches app version
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          expected_tag="v$(node -p "require('./package.json').version")"
+          if [[ "${RELEASE_TAG}" != "${expected_tag}" ]]; then
+            echo "Release tag ${RELEASE_TAG} does not match package version ${expected_tag}." >&2
+            exit 1
+          fi
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@1.88.0
 

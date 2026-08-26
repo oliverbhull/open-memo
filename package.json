@@ -1,6 +1,6 @@
 {
   "name": "open-memo",
-  "version": "0.6.0",
+  "version": "0.7.1",
   "description": "Open-source push-to-talk dictation for macOS",
   "homepage": "https://github.com/oliverbhull/open-memo",
   "main": "dist/main.cjs",
@@ -54,7 +54,8 @@
     "url": "https://github.com/oliverbhull/open-memo/issues"
   },
   "dependencies": {
-    "electron-store": "^11.0.2"
+    "electron-store": "^11.0.2",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

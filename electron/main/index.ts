@@ -33,6 +33,7 @@ import { UsbTranscriptService } from './services/UsbTranscriptService';
 import { DeviceSyncService } from './services/DeviceSyncService';
 import { MemoDatabaseService } from './services/MemoDatabaseService';
 import { resolveApplicationContext } from './services/applicationContext';
+import { AppUpdateService } from './services/AppUpdateService';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
 
@@ -85,6 +86,7 @@ let memoSttService: MemoSttService | null = null;
 let deviceSyncService: DeviceSyncService | null = null;
 let bleManager: BleManager | null = null;
 let audioSourceManager: AudioSourceManager | null = null;
+const appUpdateService = new AppUpdateService(() => mainWindow);
 let isRecording = false;
 let pendingBlePostStopEnter = false;
 let lastTextPasteAtMs = 0;
@@ -195,6 +197,10 @@ function createMenuBar() {
       label: app.getName(),
       submenu: [
         { role: 'about' },
+        {
+          label: 'Check for Updates…',
+          click: () => { void appUpdateService.checkManually(); },
+        },
         { type: 'separator' },
         {
           label: 'Settings…',
@@ -635,6 +641,7 @@ app.whenReady().then(async () => {
   createMenuBar();
 
   createWindow();
+  appUpdateService.start();
 
   // Resolve a remembered microphone before memo-stt starts. An unavailable
   // explicit selection remains selected and capture stays stopped.
@@ -714,6 +721,8 @@ let cleanupComplete = false;
 const cleanupMemoStt = () => {
   if (cleanupComplete) return;
   cleanupComplete = true;
+
+  appUpdateService.stop();
 
   deviceSyncService?.stop({ restoreDictation: false });
   deviceSyncService = null;
