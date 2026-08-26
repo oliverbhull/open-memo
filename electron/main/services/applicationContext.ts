@@ -7,12 +7,14 @@ export const MEMO_APPLICATION_CONTEXT: AppContext = {
 };
 
 /**
- * A visible Memo window is the destination for a dictation even if macOS still
+ * A focused Memo window is the destination for a dictation even if macOS still
  * reports the application that was focused immediately before Memo opened.
+ * Merely being visible is insufficient because Memo can remain onscreen behind
+ * the actual dictation destination.
  */
 export function resolveApplicationContext(
   detectedContext: AppContext | undefined,
-  memoWindowIsVisible: boolean,
+  memoWindowIsFocused: boolean,
 ): AppContext | undefined {
-  return memoWindowIsVisible ? { ...MEMO_APPLICATION_CONTEXT } : detectedContext;
+  return memoWindowIsFocused ? { ...MEMO_APPLICATION_CONTEXT } : detectedContext;
 }

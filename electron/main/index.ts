@@ -427,7 +427,7 @@ async function setupMemoSttService(): Promise<void> {
     const { audioCapture, ...transcription } = data;
     const appContext = resolveApplicationContext(
       applicationIconService.enrichContext(data.appContext),
-      !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible(),
+      !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused(),
     );
     let audio: Awaited<ReturnType<typeof audioStorageService.save>> | undefined;
     const rendererAvailable = !!mainWindow && !mainWindow.isDestroyed();
