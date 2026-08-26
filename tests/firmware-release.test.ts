@@ -53,7 +53,7 @@ function fixture(options: { tamperManifest?: boolean; tamperUf2?: boolean } = {}
   const releases = [{
     tag_name: RELEASE_TAG,
     draft: false,
-    prerelease: false,
+    prerelease: true,
     assets: [
       { name: 'memo-firmware-release.json', size: servedManifest.length, browser_download_url: urls.manifest },
       { name: 'memo-firmware-release.json.sig', size: signature.length, browser_download_url: urls.signature },
@@ -79,7 +79,7 @@ function fixture(options: { tamperManifest?: boolean; tamperUf2?: boolean } = {}
   };
 }
 
-test('downloads a normal signed release and caches the verified UF2 bytes', async () => {
+test('downloads a mirrored signed firmware release and caches the verified UF2 bytes', async () => {
   const current = fixture();
   const cache = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'memo-firmware-release-'));
   try {
