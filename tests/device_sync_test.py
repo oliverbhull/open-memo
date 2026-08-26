@@ -40,6 +40,25 @@ class FakePort:
 
 
 class DeviceSyncTests(unittest.TestCase):
+    def test_transport_prefers_usb_and_does_not_start_ble(self):
+        usb = object()
+        with mock.patch.object(device_sync, "open_usb_sync_port", return_value=(usb, {"device_uid": "one"}, "/dev/memo")), \
+             mock.patch.object(device_sync, "open_ble_sync_port") as open_ble:
+            self.assertEqual(
+                device_sync.open_sync_transport(Path("/bridge")),
+                (usb, {"device_uid": "one"}, "/dev/memo", "usb"),
+            )
+            open_ble.assert_not_called()
+
+    def test_transport_falls_back_to_ble(self):
+        ble = object()
+        with mock.patch.object(device_sync, "open_usb_sync_port", return_value=(None, None, None)), \
+             mock.patch.object(device_sync, "open_ble_sync_port", return_value=(ble, {"device_uid": "two"}, "Bluetooth")):
+            self.assertEqual(
+                device_sync.open_sync_transport(Path("/bridge")),
+                (ble, {"device_uid": "two"}, "Bluetooth", "ble"),
+            )
+
     def test_batch_transcription_requires_desktop_grant(self):
         with mock.patch.object(device_sync.sys, "stdin", io.StringIO("CONTINUE\n")):
             device_sync.await_transcription_slot()

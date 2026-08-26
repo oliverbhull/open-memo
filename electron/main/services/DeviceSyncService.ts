@@ -107,6 +107,7 @@ export class DeviceSyncService extends EventEmitter {
       '--requested-model', requestedModel,
       '--actual-model', actualModel,
     ];
+    if (process.platform === 'darwin') args.push('--ble-bridge', resources.bleBridge);
     if (fallbackReason) args.push('--fallback-reason', fallbackReason);
 
     logger.info(`[DeviceSyncService] Starting bundled worker (${requestedModel} -> ${actualModel})`);
@@ -182,6 +183,7 @@ export class DeviceSyncService extends EventEmitter {
     updater: string;
     stt: string;
     nemotron: string;
+    bleBridge: string;
   } {
     const dev = !app.isPackaged;
     const nemotron = dev ? path.join(process.cwd(), '.build', 'nemotron') : path.join(process.resourcesPath, 'nemotron');
@@ -191,6 +193,7 @@ export class DeviceSyncService extends EventEmitter {
       updater: dev ? path.join(process.cwd(), 'sidecars', 'device-sync', 'firmware_update.py') : path.join(process.resourcesPath, 'device-sync', 'firmware_update.py'),
       stt: dev ? path.join(process.cwd(), '.build', 'stt', 'memo-stt') : path.join(process.resourcesPath, 'sttbin', 'memo-stt'),
       nemotron,
+      bleBridge: dev ? path.join(process.cwd(), '.build', 'ble', 'memo-ble-bridge') : path.join(process.resourcesPath, 'device-sync', 'memo-ble-bridge'),
     };
   }
 
@@ -227,6 +230,9 @@ export class DeviceSyncService extends EventEmitter {
       ...(typeof message.firmwareVersion === 'string' ? { firmwareVersion: message.firmwareVersion } : {}),
       ...(typeof message.protocolVersion === 'number' ? { protocolVersion: message.protocolVersion } : {}),
       ...(typeof message.port === 'string' ? { port: message.port } : {}),
+      ...(message.transport === 'usb' || message.transport === 'ble' ? { transport: message.transport } : {}),
+      ...(typeof message.endpoint === 'string' ? { endpoint: message.endpoint } : {}),
+      ...(typeof message.pendingOnDevice === 'number' ? { pendingOnDevice: message.pendingOnDevice } : {}),
       ...(typeof message.requestedModel === 'string' ? { requestedModel: message.requestedModel } : {}),
       ...(typeof message.actualModel === 'string' ? { actualModel: message.actualModel } : {}),
       ...(typeof message.error === 'string' ? { error: message.error } : {}),
@@ -277,6 +283,8 @@ export class DeviceSyncService extends EventEmitter {
 
   private scheduleFirmwareCheck(status: DeviceSyncStatus): void {
     if (
+      status.transport !== 'usb'
+      ||
       status.protocolVersion !== 2
       || !status.deviceUid
       || !status.firmwareVersion
@@ -301,6 +309,8 @@ export class DeviceSyncService extends EventEmitter {
       firmwareVersion: connected.firmwareVersion,
       protocolVersion: connected.protocolVersion,
       port: connected.port,
+      transport: connected.transport,
+      endpoint: connected.endpoint,
     };
     this.publishStatus({ state: 'checking-update', ...baseStatus });
 

@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import re
+import select
 import shutil
 import sqlite3
 import struct
@@ -104,7 +105,76 @@ def read_line(port) -> str:
     return line.decode("ascii", "strict").strip()
 
 
-def open_sync_port():
+class BlePort:
+    """Serial-like byte stream backed by the narrow CoreBluetooth helper."""
+
+    def __init__(self, bridge: Path):
+        self.timeout = 1.0
+        self.process = subprocess.Popen(
+            [str(bridge)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            bufsize=0,
+        )
+        if self.process.stdin is None or self.process.stdout is None:
+            self.close()
+            raise RuntimeError("BLE bridge did not expose a byte stream")
+        self.input = self.process.stdin
+        self.output = self.process.stdout
+        self.buffer = bytearray()
+
+    def write(self, data: bytes) -> None:
+        if self.process.poll() is not None:
+            raise OSError(self._failure())
+        self.input.write(data)
+
+    def flush(self) -> None:
+        self.input.flush()
+
+    def read(self, size: int) -> bytes:
+        deadline = time.monotonic() + float(self.timeout or 0)
+        while len(self.buffer) < size:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not select.select([self.output], [], [], remaining)[0]:
+                break
+            chunk = os.read(self.output.fileno(), max(4096, size - len(self.buffer)))
+            if not chunk:
+                break
+            self.buffer.extend(chunk)
+        result = bytes(self.buffer[:size])
+        del self.buffer[:size]
+        return result
+
+    def readline(self) -> bytes:
+        deadline = time.monotonic() + float(self.timeout or 0)
+        while b"\n" not in self.buffer:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not select.select([self.output], [], [], remaining)[0]:
+                return b""
+            chunk = os.read(self.output.fileno(), 4096)
+            if not chunk:
+                return b""
+            self.buffer.extend(chunk)
+        boundary = self.buffer.index(b"\n") + 1
+        result = bytes(self.buffer[:boundary])
+        del self.buffer[:boundary]
+        return result
+
+    def close(self) -> None:
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait()
+
+    def _failure(self) -> str:
+        if self.process.stderr is None:
+            return "BLE bridge closed"
+        diagnostics = self.process.stderr.read().decode("utf-8", "replace").strip()
+        return diagnostics or "BLE bridge closed"
+
+
+def open_usb_sync_port():
     if serial is None:
         raise RuntimeError("the bundled pyserial dependency is unavailable")
     candidates = sorted(set(glob.glob("/dev/cu.usbmodem*") + glob.glob("/dev/ttyACM*")))
@@ -128,6 +198,34 @@ def open_sync_port():
                 if attempt < 2:
                     time.sleep(0.25)
     return None, None, None
+
+
+def open_ble_sync_port(bridge: Path | None):
+    if bridge is None or not bridge.is_file() or not os.access(bridge, os.X_OK):
+        return None, None, None
+    port = BlePort(bridge)
+    try:
+        # Discovery, connection and encrypted notification subscription may prompt
+        # on first use, so the initial handshake gets a bounded longer deadline.
+        port.timeout = 8.0
+        port.write(b"HELLO\n")
+        port.flush()
+        info = parse_hello(read_line(port), "Bluetooth")
+        port.timeout = 1.0
+        return port, info, "Bluetooth"
+    except (OSError, TimeoutError, UnicodeError, RuntimeError, ValueError):
+        port.close()
+        return None, None, None
+
+
+def open_sync_transport(ble_bridge: Path | None = None):
+    port, info, endpoint = open_usb_sync_port()
+    if port is not None:
+        return port, info, endpoint, "usb"
+    port, info, endpoint = open_ble_sync_port(ble_bridge)
+    if port is not None:
+        return port, info, endpoint, "ble"
+    return None, None, None, None
 
 
 def command(port, text: str, timeout: float | None = None) -> str:
@@ -524,7 +622,7 @@ def prepare_archives(args, connection, batch: dict, journal: dict) -> list[dict]
         if item["size"] > 0:
             requests.append({"id": item["id"], "input": str(stage / "source.mrec"), "wav": str(stage / "audio.wav")})
     if requests:
-        emit("transcribing", batchId=batch["batch_id"], completed=0, total=len(requests), requestedModel=args.requested_model, actualModel=args.actual_model)
+        emit("transcribing", batchId=batch["batch_id"], completed=0, total=len(requests), requestedModel=args.requested_model, actualModel=args.actual_model, transport=journal.get("last_transport"), endpoint=journal.get("last_endpoint"))
         await_transcription_slot()
         env = dict(os.environ)
         env.update({"MEMO_ASR_BACKEND": args.actual_model, "PYTHONNOUSERSITE": "1"})
@@ -573,11 +671,11 @@ def prepare_archives(args, connection, batch: dict, journal: dict) -> list[dict]
             atomic_json(args.journal, journal)
         archives.append({"device_recording_id": item["id"], "source_crc32": item["crc32"], "archive_path": item["archive_path"], "manifest": manifest})
         completed += 1
-        emit("transcribing", batchId=batch["batch_id"], completed=completed, total=len(journal["recordings"]), requestedModel=args.requested_model, actualModel=args.actual_model)
+        emit("transcribing", batchId=batch["batch_id"], completed=completed, total=len(journal["recordings"]), requestedModel=args.requested_model, actualModel=args.actual_model, transport=journal.get("last_transport"), endpoint=journal.get("last_endpoint"))
     return archives
 
 
-def resume_ack(port, info: dict, args, connection, journal: dict) -> None:
+def resume_ack(port, info: dict, args, connection, journal: dict, transport: str = "usb", endpoint: str = "USB") -> None:
     if journal.get("device_uid") != info["device_uid"]:
         raise RuntimeError("a different Memo is connected while a sync batch is awaiting acknowledgement")
     batch = {key: journal[key] for key in ("batch_id", "device_uid", "protocol_version", "firmware_version", "started_at")}
@@ -601,7 +699,7 @@ def resume_ack(port, info: dict, args, connection, journal: dict) -> None:
                 raise RuntimeError(f"unexpected ACK response: {response}")
         item["acknowledged"] = True
         atomic_json(args.journal, journal)
-        emit("verifying", batchId=journal["batch_id"], completed=index + 1, total=len(journal["recordings"]))
+        emit("verifying", batchId=journal["batch_id"], completed=index + 1, total=len(journal["recordings"]), transport=transport, endpoint=endpoint)
     unacknowledged = unacknowledged_batch_ids(port, journal)
     if unacknowledged:
         raise RuntimeError(f"batch recordings remain after acknowledgements: {', '.join(unacknowledged)}")
@@ -613,10 +711,10 @@ def resume_ack(port, info: dict, args, connection, journal: dict) -> None:
     pending_on_device = commit_sync(port, info, journal["batch_id"])
     journal["phase"] = "complete"
     atomic_json(args.journal, journal)
-    emit("complete", batchId=journal["batch_id"], completed=len(journal["recordings"]), total=len(journal["recordings"]), requestedModel=args.requested_model, actualModel=args.actual_model, pendingOnDevice=pending_on_device)
+    emit("complete", batchId=journal["batch_id"], completed=len(journal["recordings"]), total=len(journal["recordings"]), requestedModel=args.requested_model, actualModel=args.actual_model, pendingOnDevice=pending_on_device, transport=transport, endpoint=endpoint)
 
 
-def process_device(port, info: dict, port_name: str, args, connection) -> None:
+def process_device(port, info: dict, endpoint: str, args, connection, transport: str = "usb") -> None:
     if args.journal.exists():
         try:
             journal = json.loads(args.journal.read_text(encoding="utf-8"))
@@ -625,8 +723,8 @@ def process_device(port, info: dict, port_name: str, args, connection) -> None:
         if not isinstance(journal, dict) or journal.get("phase") not in {"pulling", "transcribing", "durable", "acking", "complete"}:
             raise RuntimeError("refusing to overwrite an invalid interrupted sync journal")
         if journal.get("phase") in {"durable", "acking"}:
-            emit("verifying", batchId=journal.get("batch_id"), completed=0, total=len(journal.get("recordings", [])), deviceUid=info["device_uid"], port=port_name)
-            resume_ack(port, info, args, connection, journal)
+            emit("verifying", batchId=journal.get("batch_id"), completed=0, total=len(journal.get("recordings", [])), deviceUid=info["device_uid"], transport=transport, endpoint=endpoint)
+            resume_ack(port, info, args, connection, journal, transport, endpoint)
             return
         if journal.get("phase") in {"pulling", "transcribing"} and journal.get("device_uid") == info["device_uid"]:
             device_recordings = dict(list_recordings(port))
@@ -638,7 +736,7 @@ def process_device(port, info: dict, port_name: str, args, connection) -> None:
                 raise RuntimeError("device contents changed before the interrupted batch became durable")
             batch = {key: journal[key] for key in ("batch_id", "device_uid", "protocol_version", "firmware_version", "started_at")}
             signal_sync(port, info, "BEGIN", journal["batch_id"])
-            emit("transferring", batchId=journal["batch_id"], deviceUid=info["device_uid"], port=port_name, completed=0, total=len(journal["recordings"]))
+            emit("transferring", batchId=journal["batch_id"], deviceUid=info["device_uid"], transport=transport, endpoint=endpoint, completed=0, total=len(journal["recordings"]))
             for index, item in enumerate(journal["recordings"]):
                 source = Path(item["stage"]) / "source.mrec"
                 source_valid = source.is_file() and item.get("crc32") and f"{zlib.crc32(source.read_bytes()) & 0xFFFFFFFF:08x}" == item["crc32"]
@@ -647,14 +745,17 @@ def process_device(port, info: dict, port_name: str, args, connection) -> None:
                     size, crc32 = pull_one(port, int(item["id"], 16), device_recordings[int(item["id"], 16)], source)
                     item.update({"size": size, "crc32": f"{crc32:08x}"})
                     atomic_json(args.journal, journal)
-                emit("transferring", batchId=journal["batch_id"], deviceUid=info["device_uid"], port=port_name, completed=index + 1, total=len(journal["recordings"]))
+                emit("transferring", batchId=journal["batch_id"], deviceUid=info["device_uid"], transport=transport, endpoint=endpoint, completed=index + 1, total=len(journal["recordings"]))
             journal["phase"] = "transcribing"
             atomic_json(args.journal, journal)
             archives = prepare_archives(args, connection, batch, journal)
             commit_local_batch(connection, args.database, batch, archives)
             journal["phase"] = "durable"
             atomic_json(args.journal, journal)
-            resume_ack(port, info, args, connection, journal)
+            journal["last_transport"] = transport
+            journal["last_endpoint"] = endpoint
+            atomic_json(args.journal, journal)
+            resume_ack(port, info, args, connection, journal, transport, endpoint)
             return
         if journal.get("phase") in {"pulling", "transcribing"}:
             raise RuntimeError("a different Memo is connected while an interrupted sync batch is pending")
@@ -666,7 +767,9 @@ def process_device(port, info: dict, port_name: str, args, connection) -> None:
             deviceUid=info["device_uid"],
             firmwareVersion=info.get("firmware_version"),
             protocolVersion=info["protocol_version"],
-            port=port_name,
+            port=endpoint if transport == "usb" else None,
+            transport=transport,
+            endpoint=endpoint,
             completed=0,
             total=0,
         )
@@ -675,23 +778,23 @@ def process_device(port, info: dict, port_name: str, args, connection) -> None:
     started_at = utc_now()
     batch = {"batch_id": batch_id, "device_uid": info["device_uid"], "protocol_version": info["protocol_version"], "firmware_version": info.get("firmware_version"), "started_at": started_at}
     stage_root = args.library / ".staging" / batch_id
-    journal = {**batch, "phase": "pulling", "recordings": [{"id": f"{recording_id:08x}", "reported_size": size, "stage": str(stage_root / f"{recording_id:08x}"), "acknowledged": False} for recording_id, size in recordings]}
+    journal = {**batch, "phase": "pulling", "last_transport": transport, "last_endpoint": endpoint, "recordings": [{"id": f"{recording_id:08x}", "reported_size": size, "stage": str(stage_root / f"{recording_id:08x}"), "acknowledged": False} for recording_id, size in recordings]}
     atomic_json(args.journal, journal)
     signal_sync(port, info, "BEGIN", batch_id)
-    emit("transferring", batchId=batch_id, deviceUid=info["device_uid"], port=port_name, completed=0, total=len(recordings))
+    emit("transferring", batchId=batch_id, deviceUid=info["device_uid"], transport=transport, endpoint=endpoint, completed=0, total=len(recordings))
     for index, ((recording_id, reported_size), item) in enumerate(zip(recordings, journal["recordings"])):
         source = Path(item["stage"]) / "source.mrec"
         size, crc32 = pull_one(port, recording_id, reported_size, source)
         item.update({"size": size, "crc32": f"{crc32:08x}"})
         atomic_json(args.journal, journal)
-        emit("transferring", batchId=batch_id, deviceUid=info["device_uid"], port=port_name, completed=index + 1, total=len(recordings))
+        emit("transferring", batchId=batch_id, deviceUid=info["device_uid"], transport=transport, endpoint=endpoint, completed=index + 1, total=len(recordings))
     journal["phase"] = "transcribing"
     atomic_json(args.journal, journal)
     archives = prepare_archives(args, connection, batch, journal)
     commit_local_batch(connection, args.database, batch, archives)
     journal["phase"] = "durable"
     atomic_json(args.journal, journal)
-    resume_ack(port, info, args, connection, journal)
+    resume_ack(port, info, args, connection, journal, transport, endpoint)
 
 
 def main() -> int:
@@ -708,6 +811,7 @@ def main() -> int:
     parser.add_argument("--actual-model", choices=("nemotron", "whisper"), required=True)
     parser.add_argument("--fallback-reason", default=None)
     parser.add_argument("--poll-seconds", type=float, default=2.0)
+    parser.add_argument("--ble-bridge", type=Path)
     args = parser.parse_args()
     args.library.mkdir(parents=True, exist_ok=True)
     args.batch_directory.mkdir(parents=True, exist_ok=True)
@@ -722,7 +826,7 @@ def main() -> int:
     last_state = None
     try:
         while True:
-            port, info, port_name = open_sync_port()
+            port, info, endpoint, transport = open_sync_transport(args.ble_bridge)
             if port is None:
                 if last_state != "disconnected":
                     emit("disconnected")
@@ -730,13 +834,13 @@ def main() -> int:
                 time.sleep(args.poll_seconds)
                 continue
             try:
-                process_device(port, info, port_name, args, connection)
+                process_device(port, info, endpoint, args, connection, transport)
                 last_state = "connected"
             except (OSError, SerialException, TimeoutError) as error:
-                emit("disconnected", error=str(error))
+                emit("disconnected", error=str(error), transport=transport, endpoint=endpoint)
                 last_state = "disconnected"
             except Exception as error:
-                emit("error", error=str(error), deviceUid=info.get("device_uid") if info else None)
+                emit("error", error=str(error), deviceUid=info.get("device_uid") if info else None, transport=transport, endpoint=endpoint)
                 try:
                     if info and args.journal.exists():
                         failed = json.loads(args.journal.read_text(encoding="utf-8"))

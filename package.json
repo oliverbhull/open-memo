@@ -7,7 +7,7 @@
   "preload": "dist/preload.cjs",
   "type": "module",
   "scripts": {
-    "dev": "npm run build:backends && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
+    "dev": "npm run build:backends && npm run build:ble && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
     "dev:renderer": "vite --config vite.config.ts",
     "dev:main": "esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs --watch",
     "dev:preload": "esbuild electron/preload/index.ts --platform=node --bundle --external:electron --outfile=dist/preload.cjs --format=cjs --watch",
@@ -20,15 +20,16 @@
     "build:nemotron": "bash scripts/shell/build-nemotron.sh",
     "verify:nemotron": "bash scripts/shell/verify-nemotron-bundle.sh",
     "build:backends": "npm run build:stt:release && npm run build:nemotron",
+    "build:ble": "bash scripts/shell/build-ble-bridge.sh",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.json",
     "test": "esbuild tests/*.test.ts --bundle --platform=node --format=esm --outdir=.build/tests && node --test .build/tests/*.test.js && PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s tests -p '*_test.py'",
     "check": "npm run typecheck && npm test",
-    "build:app": "npm run check && npm run build:backends && npm run build:ts && npm run build:renderer",
+    "build:app": "npm run check && npm run build:backends && npm run build:ble && npm run build:ts && npm run build:renderer",
     "build:dir": "npm run build:app && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
     "dist:mac": "npm run build:app && electron-builder --mac --publish=never",
     "release:mac": "npm run dist:mac",
     "build": "npm run dist:mac",
-    "start": "npm run build:backends && npm run build:ts && electron .",
+    "start": "npm run build:backends && npm run build:ble && npm run build:ts && electron .",
     "export-memos": "npm run build:main && npm run build:renderer && MEMO_EXPORT=1 electron ."
   },
   "keywords": [
@@ -161,6 +162,10 @@
           "device_sync.py",
           "firmware_update.py"
         ]
+      },
+      {
+        "from": ".build/ble/memo-ble-bridge",
+        "to": "device-sync/memo-ble-bridge"
       }
     ],
     "afterPack": "scripts/afterPack.cjs",

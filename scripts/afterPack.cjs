@@ -38,6 +38,13 @@ module.exports = async function afterPack(context) {
   }
   console.log('✓ Memo device sync helper verified');
 
+  const bleBridge = path.join(appPath, 'Contents', 'Resources', 'device-sync', 'memo-ble-bridge');
+  if (!fs.existsSync(bleBridge)) {
+    throw new Error('Memo BLE bridge was not copied from extraResources');
+  }
+  fs.chmodSync(bleBridge, 0o755);
+  console.log(`✓ Memo BLE bridge verified (${fs.statSync(bleBridge).size} bytes)`);
+
   // A release must fail if bundle metadata cannot be cleaned before signing.
   await sh('xattr', ['-cr', appPath]);
   await sh('dot_clean', ['-m', appPath]);
@@ -93,6 +100,15 @@ module.exports = async function afterPack(context) {
       nemotronRequired[0],
     ]);
     console.log(`✓ Signed ${nativeLibraries.length} Nemotron native libraries and bundled Python`);
+    await sh('codesign', [
+      '--force',
+      '--options', 'runtime',
+      '--entitlements', path.resolve('config/entitlements.mac.plist'),
+      '--sign', signer,
+      bleBridge,
+    ]);
+    await sh('codesign', ['--verify', '--verbose', bleBridge]);
+    console.log('✓ Memo BLE bridge signed');
   }
 
   // Sign memo-stt before electron-builder signs the enclosing app.

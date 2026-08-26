@@ -77,6 +77,9 @@ export interface DeviceSyncStatus {
   targetFirmwareVersion?: string;
   protocolVersion?: number;
   port?: string;
+  transport?: 'usb' | 'ble';
+  endpoint?: string;
+  pendingOnDevice?: number;
   requestedModel?: AsrModelId;
   actualModel?: AsrModelId;
   error?: string;
