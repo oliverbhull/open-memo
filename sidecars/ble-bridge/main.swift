@@ -145,5 +145,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 }
 
-_ = Bridge()
-RunLoop.main.run()
+let bridge = Bridge()
+withExtendedLifetime(bridge) {
+    RunLoop.main.run()
+}
