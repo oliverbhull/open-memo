@@ -124,7 +124,7 @@ export class EntryService extends EventEmitter {
     }
 
     try {
-      // Convert to MemoEntry and save to IndexedDB
+      // Convert to the canonical MemoEntry stored in SQLite.
       const deviceId = await getDeviceId();
       const memoEntry = convertToMemoEntry(feedEntry, deviceId);
       await storageService.saveEntry(memoEntry);

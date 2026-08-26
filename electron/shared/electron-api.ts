@@ -1,3 +1,5 @@
+import type { MemoEntry } from './memo-entry';
+
 export interface AppContext {
   appName: string;
   windowTitle: string;
@@ -132,6 +134,15 @@ export interface ElectronAPI {
   onTranscription(callback: (data: TranscriptionData) => void): void;
   removeTranscriptionListener(): void;
   listUsbTranscripts(): Promise<TranscriptionData[]>;
+  entries: {
+    initialize(): Promise<{ legacyImportComplete: boolean }>;
+    importLegacy(entries: MemoEntry[]): Promise<{ imported: number }>;
+    save(entry: MemoEntry): Promise<void>;
+    get(id: string): Promise<MemoEntry | null>;
+    list(limit: number, offset: number): Promise<MemoEntry[]>;
+    getAllActive(): Promise<MemoEntry[]>;
+    getTotalWordCount(): Promise<number>;
+  };
   deviceSync: {
     getStatus(): Promise<DeviceSyncStatus>;
     openRecordingsFolder(): Promise<{ success: boolean; error?: string }>;

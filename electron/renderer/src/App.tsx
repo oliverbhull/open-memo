@@ -7,7 +7,6 @@ import { Onboarding } from './components/Onboarding';
 import { ToastNotification, ToastData } from './components/ToastNotification';
 import { useEntries } from './hooks/useEntries';
 import { logger } from './utils/logger';
-import { storageService } from './services/StorageService';
 import { Settings } from './components/Settings';
 import type { DeviceSyncStatus, MemoSttError, TranscriptionData } from '../../shared/electron-api';
 import './styles/glass.css';
@@ -122,26 +121,6 @@ function App() {
       setLoadingMore(false);
     }
   }, [loadMore, loadingMore]);
-
-  // Cleanup database on app quit
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      logger.info('[App] Closing database connection before unload...');
-      storageService.close().catch((err) => {
-        logger.error('[App] Error closing database:', err);
-      });
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      // Also close on component unmount (though this shouldn't happen in normal operation)
-      storageService.close().catch((err) => {
-        logger.error('[App] Error closing database on unmount:', err);
-      });
-    };
-  }, []);
 
   // Check if onboarding is complete on mount
   useEffect(() => {

@@ -6,6 +6,10 @@ This project follows semantic versioning once public releases begin.
 
 ## Unreleased
 
+## 0.5.0 - 2026-08-25
+
+- Store desktop and recorder-derived feed entries in the same local SQLite database, with a one-time fail-closed import that retains the previous IndexedDB data.
+
 ## 0.4.0 - 2026-08-22
 
 - Add crash-safe USB recording sync with recovery after interrupted transfers.

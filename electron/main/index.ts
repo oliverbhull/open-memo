@@ -31,6 +31,7 @@ import type { AsrModelId, AsrState } from '../shared/electron-api';
 import { resolveTranscriptionText } from '../shared/transcription';
 import { UsbTranscriptService } from './services/UsbTranscriptService';
 import { DeviceSyncService } from './services/DeviceSyncService';
+import { MemoDatabaseService } from './services/MemoDatabaseService';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
 
@@ -68,6 +69,10 @@ function selectedSystemMicIsAvailable(): boolean {
 }
 
 app.setName('Memo');
+
+const memoDatabaseService = new MemoDatabaseService({
+  databasePath: path.join(app.getPath('userData'), 'memo.sqlite3'),
+});
 
 const gotSingleInstanceLock = isExportMode || app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -761,6 +766,24 @@ ipcMain.handle('memo-stt:get-status', () => {
 });
 
 ipcMain.handle('usb-transcripts:list', () => usbTranscriptService.list());
+
+ipcMain.handle('entries:initialize', () => memoDatabaseService.initialize());
+
+ipcMain.handle('entries:import-legacy', (_event, entries: unknown) => (
+  memoDatabaseService.importLegacyEntries(entries)
+));
+
+ipcMain.handle('entries:save', (_event, entry: unknown) => memoDatabaseService.saveEntry(entry));
+
+ipcMain.handle('entries:get', (_event, id: unknown) => memoDatabaseService.getEntry(id));
+
+ipcMain.handle('entries:list', (_event, limit: unknown, offset: unknown) => (
+  memoDatabaseService.getEntries(limit, offset)
+));
+
+ipcMain.handle('entries:get-all-active', () => memoDatabaseService.getAllActiveEntries());
+
+ipcMain.handle('entries:get-total-word-count', () => memoDatabaseService.getTotalWordCount());
 
 ipcMain.handle('device-sync:get-status', () => (
   deviceSyncService?.getStatus() || { state: 'disconnected', completed: 0, total: 0 }
