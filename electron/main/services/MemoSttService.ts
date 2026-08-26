@@ -8,6 +8,7 @@ import { loadSettings, store } from './SettingsService';
 import { AudioSourceManager } from './AudioSourceManager';
 import { isWhisperModelInstalled, whisperModelPath } from './AsrModelService';
 import { resolveTranscriptionText } from '../../shared/transcription';
+import { normalizeTranscriptionText } from './textProcessing';
 
 export interface AppContext {
   appName: string;
@@ -810,10 +811,10 @@ export class MemoSttService extends EventEmitter {
 
       // An explicitly empty processed value means native cleanup intentionally
       // suppressed an all-artifact transcript. Do not revive its raw text.
-      const text = resolveTranscriptionText(transcription);
+      const text = normalizeTranscriptionText(resolveTranscriptionText(transcription));
       
-      if (!text || text.trim().length === 0) {
-        logger.warn('Received empty transcription text, skipping');
+      if (!text) {
+        logger.warn('Received empty or punctuation-only transcription text, skipping');
         this.pendingAudioData = null;
         this.emit('processingCompleted');
         return;

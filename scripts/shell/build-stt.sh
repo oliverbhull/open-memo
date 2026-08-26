@@ -16,6 +16,7 @@ AUDIO_PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-audio-retention.patch"
 STRICT_INPUT_PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-strict-input.patch"
 CONTINUOUS_INPUT_PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-continuous-input.patch"
 DEVICE_BATCH_PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-device-batch.patch"
+MEANINGFUL_TRANSCRIPT_PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-meaningful-transcript.patch"
 TRANSCRIPTION_ENGINE="${ROOT_DIR}/sidecars/nemotron/transcription_engine.rs"
 MREC_BATCH="${ROOT_DIR}/sidecars/device-sync/mrec_batch.rs"
 
@@ -47,12 +48,12 @@ else
     echo "Set MEMO_STT_LOCAL_SOURCE for a different source tree." >&2
     exit 1
   fi
-  if [[ ! -f "${PATCH_FILE}" || ! -f "${CLEANUP_PATCH_FILE}" || ! -f "${AUDIO_PATCH_FILE}" || ! -f "${STRICT_INPUT_PATCH_FILE}" || ! -f "${CONTINUOUS_INPUT_PATCH_FILE}" || ! -f "${DEVICE_BATCH_PATCH_FILE}" || ! -f "${TRANSCRIPTION_ENGINE}" || ! -f "${MREC_BATCH}" ]]; then
+  if [[ ! -f "${PATCH_FILE}" || ! -f "${CLEANUP_PATCH_FILE}" || ! -f "${AUDIO_PATCH_FILE}" || ! -f "${STRICT_INPUT_PATCH_FILE}" || ! -f "${CONTINUOUS_INPUT_PATCH_FILE}" || ! -f "${DEVICE_BATCH_PATCH_FILE}" || ! -f "${MEANINGFUL_TRANSCRIPT_PATCH_FILE}" || ! -f "${TRANSCRIPTION_ENGINE}" || ! -f "${MREC_BATCH}" ]]; then
     echo "Nemotron memo-stt patch sources are missing." >&2
     exit 1
   fi
 
-  PATCH_HASH="$(shasum -a 256 "${PATCH_FILE}" "${CLEANUP_PATCH_FILE}" "${AUDIO_PATCH_FILE}" "${STRICT_INPUT_PATCH_FILE}" "${CONTINUOUS_INPUT_PATCH_FILE}" "${DEVICE_BATCH_PATCH_FILE}" "${TRANSCRIPTION_ENGINE}" "${MREC_BATCH}" | shasum -a 256 | awk '{print $1}')"
+  PATCH_HASH="$(shasum -a 256 "${PATCH_FILE}" "${CLEANUP_PATCH_FILE}" "${AUDIO_PATCH_FILE}" "${STRICT_INPUT_PATCH_FILE}" "${CONTINUOUS_INPUT_PATCH_FILE}" "${DEVICE_BATCH_PATCH_FILE}" "${MEANINGFUL_TRANSCRIPT_PATCH_FILE}" "${TRANSCRIPTION_ENGINE}" "${MREC_BATCH}" | shasum -a 256 | awk '{print $1}')"
   SOURCE_DIR="${SOURCE_ROOT}/${CRATE_NAME}-${CRATE_VERSION}"
   PATCH_MARKER="${SOURCE_DIR}/.memo-nemotron-patch"
   CURRENT_HASH=""
@@ -77,6 +78,7 @@ else
     patch -d "${SOURCE_DIR}" -p1 --forward --batch < "${STRICT_INPUT_PATCH_FILE}"
     patch -d "${SOURCE_DIR}" -p1 --forward --batch < "${CONTINUOUS_INPUT_PATCH_FILE}"
     patch -d "${SOURCE_DIR}" -p1 --forward --batch < "${DEVICE_BATCH_PATCH_FILE}"
+    patch -d "${SOURCE_DIR}" -p1 --forward --batch < "${MEANINGFUL_TRANSCRIPT_PATCH_FILE}"
     printf '%s\n' "${PATCH_HASH}" > "${PATCH_MARKER}"
   fi
 

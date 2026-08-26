@@ -4,6 +4,12 @@ export function stripLeadingDashSpace(text: string): string {
   return trimmed.startsWith('-') ? trimmed.slice(1).trimStart() : trimmed;
 }
 
+/** Trim model whitespace and reject no-speech artifacts such as a lone period. */
+export function normalizeTranscriptionText(text: string): string {
+  const trimmed = text.trim();
+  return /[\p{L}\p{N}]/u.test(trimmed) ? trimmed : '';
+}
+
 /** Convert a trailing spoken "enter" into an explicit keypress instruction. */
 export function stripTrailingEnter(
   text: string,

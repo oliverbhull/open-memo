@@ -1,0 +1,52 @@
+diff --git a/src/main.rs b/src/main.rs
+index 4fc40eb..2784fac 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -145,6 +145,11 @@ fn strip_leading_dash_space(text: &str) -> String {
+     }
+ }
+ 
++/// Punctuation-only Whisper output is a no-speech artifact, not a transcript.
++fn has_meaningful_transcript(text: &str) -> bool {
++    text.chars().any(char::is_alphanumeric)
++}
++
+ /// Join streaming transcription segments with proper sentence boundaries.
+ /// Ensures each non-final segment ends with punctuation so sentences don't run together.
+ fn join_segments(parts: &[String]) -> String {
+@@ -2040,7 +2045,7 @@ fn run_system_audio(
+                                         }
+                                         eng.set_prompt(prompt);
+                                         match eng.transcribe(&segment_audio) {
+-                                            Ok(text) if !text.trim().is_empty() => {
++                                            Ok(text) if has_meaningful_transcript(&text) => {
+                                                 let trimmed = text.trim().to_string();
+                                                 *prev_text.lock().unwrap() = Some(trimmed.clone());
+                                                 res.lock().unwrap().push(trimmed);
+@@ -2263,7 +2268,7 @@ fn run_system_audio(
+                                     parts.push(final_text.trim().to_string());
+                                 }
+                                 let combined = join_segments(&parts);
+-                                if combined.trim().is_empty() {
++                                if !has_meaningful_transcript(&combined) {
+                                     eng.transcribe(&samples)
+                                 } else {
+                                     if pre_processed_count > 0 {
+@@ -2522,7 +2527,7 @@ fn run_system_audio(
+                                                 }
+                                                 eng.set_prompt(prompt);
+                                                 match eng.transcribe(&segment_audio) {
+-                                                    Ok(text) if !text.trim().is_empty() => {
++                                                    Ok(text) if has_meaningful_transcript(&text) => {
+                                                         let trimmed = text.trim().to_string();
+                                                         *prev_text.lock().unwrap() =
+                                                             Some(trimmed.clone());
+@@ -2766,7 +2771,7 @@ fn run_system_audio(
+                                             parts.push(final_text.trim().to_string());
+                                         }
+                                         let combined = join_segments(&parts);
+-                                        if combined.trim().is_empty() {
++                                        if !has_meaningful_transcript(&combined) {
+                                             eng.transcribe(&samples)
+                                         } else {
+                                             if pre_processed_count > 0 {

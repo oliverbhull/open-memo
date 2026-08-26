@@ -6,6 +6,7 @@ import {
   MAX_PHRASE_REPLACEMENT_RULES,
 } from '../electron/main/services/phraseReplacement.ts';
 import {
+  normalizeTranscriptionText,
   stripLeadingDashSpace,
   stripTrailingEnter,
 } from '../electron/main/services/textProcessing.ts';
@@ -14,6 +15,13 @@ import { resolveTranscriptionText } from '../electron/shared/transcription.ts';
 test('removes only a leading transcription dash', () => {
   assert.equal(stripLeadingDashSpace(' - Hello there'), 'Hello there');
   assert.equal(stripLeadingDashSpace('Hello - there'), 'Hello - there');
+});
+
+test('trims transcription edges and rejects punctuation-only Whisper output', () => {
+  assert.equal(normalizeTranscriptionText('  dictated words.  '), 'dictated words.');
+  assert.equal(normalizeTranscriptionText('.'), '');
+  assert.equal(normalizeTranscriptionText(' ... '), '');
+  assert.equal(normalizeTranscriptionText(''), '');
 });
 
 test('converts a trailing spoken enter only when enabled', () => {

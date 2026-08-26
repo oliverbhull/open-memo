@@ -20,7 +20,7 @@ import os from 'os';
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { logger } from './utils/logger';
-import { stripLeadingDashSpace, stripTrailingEnter } from './services/textProcessing';
+import { normalizeTranscriptionText, stripLeadingDashSpace, stripTrailingEnter } from './services/textProcessing';
 import { runMemoExport } from './exportMemos';
 import { audioStorageService } from './services/AudioStorageService';
 import { applicationIconService } from './services/ApplicationIconService';
@@ -32,6 +32,7 @@ import { resolveTranscriptionText } from '../shared/transcription';
 import { UsbTranscriptService } from './services/UsbTranscriptService';
 import { DeviceSyncService } from './services/DeviceSyncService';
 import { MemoDatabaseService } from './services/MemoDatabaseService';
+import { resolveApplicationContext } from './services/applicationContext';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
 
@@ -380,18 +381,17 @@ async function setupMemoSttService(): Promise<void> {
     
     // Update last transcript and paste: support "say enter" to press Enter after paste
     const rawText = resolveTranscriptionText(data);
-    const normalized = stripLeadingDashSpace(rawText);
+    const normalized = normalizeTranscriptionText(stripLeadingDashSpace(rawText));
     const settings = loadSettings();
     const afterPhrases = applyPhraseReplacements(normalized, settings.phraseReplacements);
-    const { textToPaste, pressEnter: pressEnterThisTime } = stripTrailingEnter(afterPhrases, settings.sayEnterToPressEnter ?? false);
+    const { textToPaste: textBeforeNormalization, pressEnter: pressEnterThisTime } = stripTrailingEnter(afterPhrases, settings.sayEnterToPressEnter ?? false);
+    const textToPaste = normalizeTranscriptionText(textBeforeNormalization);
     const pressEnter = pressEnterThisTime || pendingBlePostStopEnter;
 
     if (textToPaste) {
       setLastTranscript(textToPaste);
-      // Prepend space so consecutive dictations don't run together
-      const pasteText = ' ' + textToPaste;
       try {
-        clipboard.writeText(pasteText);
+        clipboard.writeText(textToPaste);
         execFileSync(
           'osascript',
           ['-e', 'tell application "System Events" to keystroke "v" using command down'],
@@ -419,7 +419,10 @@ async function setupMemoSttService(): Promise<void> {
     // Generate one canonical ID for both the memo and its optional WAV file.
     const entryId = randomUUID();
     const { audioCapture, ...transcription } = data;
-    const appContext = applicationIconService.enrichContext(data.appContext);
+    const appContext = resolveApplicationContext(
+      applicationIconService.enrichContext(data.appContext),
+      !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible(),
+    );
     let audio: Awaited<ReturnType<typeof audioStorageService.save>> | undefined;
     const rendererAvailable = !!mainWindow && !mainWindow.isDestroyed();
     if (rendererAvailable && settings.saveAudio && audioCapture?.wavBuffer) {

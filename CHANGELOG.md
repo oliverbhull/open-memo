@@ -6,6 +6,13 @@ This project follows semantic versioning once public releases begin.
 
 ## Unreleased
 
+## 0.6.0 - 2026-08-26
+
+- Add bounded, encrypted Bluetooth recorder sync through the existing crash-safe archive, CRC verification, transcription, and exact acknowledgement pipeline.
+- Establish the trusted Bluetooth recorder through a physical USB connection, prefer USB when both transports are available, and keep firmware updates USB-only.
+- Bundle and verify the native macOS Bluetooth bridge while retaining USB recovery and the separate Bluetooth microphone workflow.
+- Suppress punctuation-only speech artifacts, normalize pasted transcription text, and attribute dictation to Memo while its window is visible.
+
 ## 0.5.0 - 2026-08-25
 
 - Store desktop and recorder-derived feed entries in the same local SQLite database, with a one-time fail-closed import that retains the previous IndexedDB data.
