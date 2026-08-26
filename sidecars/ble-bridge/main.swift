@@ -15,6 +15,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var rx: CBCharacteristic?
     private var writeQueue: [Data] = []
     private var writeActive = false
+    private var commandBuffer = Data()
     private var discoveryTimer: Timer?
 
     override init() {
@@ -93,7 +94,21 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         FileHandle.standardInput.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty else { exit(0) }
-            DispatchQueue.main.async { self?.enqueue(data) }
+            DispatchQueue.main.async { self?.acceptInput(data) }
+        }
+    }
+
+    private func acceptInput(_ data: Data) {
+        commandBuffer.append(data)
+        while let newline = commandBuffer.firstIndex(of: 0x0a) {
+            let end = commandBuffer.index(after: newline)
+            let command = Data(commandBuffer[..<end])
+            commandBuffer.removeSubrange(..<end)
+            enqueue(command)
+        }
+        if commandBuffer.count > 63 {
+            diagnostic("refusing unterminated command larger than 63 bytes")
+            exit(6)
         }
     }
 

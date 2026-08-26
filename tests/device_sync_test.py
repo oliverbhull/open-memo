@@ -25,6 +25,7 @@ class FakePort:
         self.payload = io.BytesIO(payload)
         self.timeout = 1.0
         self.writes: list[bytes] = []
+        self.closed = False
 
     def write(self, data: bytes) -> None:
         self.writes.append(data)
@@ -37,6 +38,9 @@ class FakePort:
 
     def read(self, size: int) -> bytes:
         return self.payload.read(size)
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class DeviceSyncTests(unittest.TestCase):
@@ -58,6 +62,47 @@ class DeviceSyncTests(unittest.TestCase):
                 device_sync.open_sync_transport(Path("/bridge")),
                 (ble, {"device_uid": "two"}, "Bluetooth", "ble"),
             )
+
+    def test_usb_connection_establishes_and_replaces_ble_trust(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            trusted = Path(temporary) / "trusted.json"
+            device_sync.remember_usb_device(trusted, {"protocol_version": 2, "device_uid": "aabb"})
+            self.assertEqual(device_sync.trusted_device_uid(trusted), "aabb")
+            device_sync.remember_usb_device(trusted, {"protocol_version": 2, "device_uid": "ccdd"})
+            self.assertEqual(device_sync.trusted_device_uid(trusted), "ccdd")
+
+    def test_invalid_trusted_identity_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            trusted = Path(temporary) / "trusted.json"
+            trusted.write_text('{"device_uid":"not a uid"}')
+            with self.assertRaisesRegex(RuntimeError, "trusted Memo identity is invalid"):
+                device_sync.trusted_device_uid(trusted)
+
+    def test_ble_rejects_a_different_device_uid(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bridge = root / "bridge"
+            bridge.write_text("stub")
+            bridge.chmod(0o755)
+            trusted = root / "trusted.json"
+            device_sync.atomic_json(trusted, {"device_uid": "aabb"})
+            port = FakePort([b"MEMO-SYNC 2 ccdd 2.0.1 00000000 0\n"], b"")
+            with mock.patch.object(device_sync, "BlePort", return_value=port):
+                opened, info, endpoint = device_sync.open_ble_sync_port(bridge, trusted)
+            self.assertEqual((opened, info, endpoint), (None, None, None))
+            self.assertTrue(port.closed)
+
+    def test_ble_does_not_scan_before_usb_trust_is_established(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bridge = Path(temporary) / "bridge"
+            bridge.write_text("stub")
+            bridge.chmod(0o755)
+            with mock.patch.object(device_sync, "BlePort") as ble_port:
+                self.assertEqual(
+                    device_sync.open_ble_sync_port(bridge, Path(temporary) / "missing.json"),
+                    (None, None, None),
+                )
+            ble_port.assert_not_called()
 
     def test_batch_transcription_requires_desktop_grant(self):
         with mock.patch.object(device_sync.sys, "stdin", io.StringIO("CONTINUE\n")):

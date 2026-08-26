@@ -100,6 +100,7 @@ export class DeviceSyncService extends EventEmitter {
       '--library', path.join(userData, 'device-recordings'),
       '--batch-directory', path.join(userData, 'batches'),
       '--journal', path.join(userData, 'device-sync-journal.json'),
+      '--trusted-device', path.join(userData, 'trusted-memo-device.json'),
       '--lock', path.join(userData, 'device-sync.lock'),
       '--stt-bin', resources.stt,
       '--nemotron-root', resources.nemotron,

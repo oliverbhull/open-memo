@@ -87,6 +87,28 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def trusted_device_uid(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise RuntimeError("refusing BLE sync because the trusted Memo identity is unreadable") from error
+    uid = value.get("device_uid") if isinstance(value, dict) else None
+    if not isinstance(uid, str) or not re.fullmatch(r"[0-9a-f]+", uid):
+        raise RuntimeError("refusing BLE sync because the trusted Memo identity is invalid")
+    return uid
+
+
+def remember_usb_device(path: Path, info: dict) -> None:
+    uid = info.get("device_uid")
+    if info.get("protocol_version", 0) < 2 or not isinstance(uid, str):
+        return
+    existing = trusted_device_uid(path)
+    if existing != uid:
+        atomic_json(path, {"device_uid": uid, "trusted_via": "usb", "created_at": utc_now()})
+
+
 def parse_hello(response: str, port_name: str) -> dict:
     fields = response.split()
     if fields == ["MEMO-SYNC", "1"]:
@@ -200,8 +222,16 @@ def open_usb_sync_port():
     return None, None, None
 
 
-def open_ble_sync_port(bridge: Path | None):
+def open_ble_sync_port(bridge: Path | None, trusted_device: Path | None = None):
     if bridge is None or not bridge.is_file() or not os.access(bridge, os.X_OK):
+        return None, None, None
+    if trusted_device is None:
+        return None, None, None
+    try:
+        trusted_uid = trusted_device_uid(trusted_device)
+    except RuntimeError:
+        return None, None, None
+    if trusted_uid is None:
         return None, None, None
     port = BlePort(bridge)
     try:
@@ -211,6 +241,8 @@ def open_ble_sync_port(bridge: Path | None):
         port.write(b"HELLO\n")
         port.flush()
         info = parse_hello(read_line(port), "Bluetooth")
+        if info["device_uid"] != trusted_uid:
+            raise RuntimeError("refusing BLE sync from an untrusted Memo")
         port.timeout = 1.0
         return port, info, "Bluetooth"
     except (OSError, TimeoutError, UnicodeError, RuntimeError, ValueError):
@@ -218,11 +250,11 @@ def open_ble_sync_port(bridge: Path | None):
         return None, None, None
 
 
-def open_sync_transport(ble_bridge: Path | None = None):
+def open_sync_transport(ble_bridge: Path | None = None, trusted_device: Path | None = None):
     port, info, endpoint = open_usb_sync_port()
     if port is not None:
         return port, info, endpoint, "usb"
-    port, info, endpoint = open_ble_sync_port(ble_bridge)
+    port, info, endpoint = open_ble_sync_port(ble_bridge, trusted_device)
     if port is not None:
         return port, info, endpoint, "ble"
     return None, None, None, None
@@ -803,6 +835,7 @@ def main() -> int:
     parser.add_argument("--library", type=Path, required=True)
     parser.add_argument("--batch-directory", type=Path, required=True)
     parser.add_argument("--journal", type=Path, required=True)
+    parser.add_argument("--trusted-device", type=Path, required=True)
     parser.add_argument("--lock", type=Path, required=True)
     parser.add_argument("--stt-bin", type=Path, required=True)
     parser.add_argument("--nemotron-root", type=Path, required=True)
@@ -826,7 +859,7 @@ def main() -> int:
     last_state = None
     try:
         while True:
-            port, info, endpoint, transport = open_sync_transport(args.ble_bridge)
+            port, info, endpoint, transport = open_sync_transport(args.ble_bridge, args.trusted_device)
             if port is None:
                 if last_state != "disconnected":
                     emit("disconnected")
@@ -834,6 +867,8 @@ def main() -> int:
                 time.sleep(args.poll_seconds)
                 continue
             try:
+                if transport == "usb":
+                    remember_usb_device(args.trusted_device, info)
                 process_device(port, info, endpoint, args, connection, transport)
                 last_state = "connected"
             except (OSError, SerialException, TimeoutError) as error:
