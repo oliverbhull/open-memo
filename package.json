@@ -19,7 +19,9 @@
     "build:stt:release": "bash scripts/shell/build-stt.sh",
     "build:granite": "bash scripts/shell/build-granite.sh",
     "verify:granite": "bash scripts/shell/verify-granite-bundle.sh",
-    "build:backends": "npm run build:stt:release && npm run build:granite",
+    "build:pnc": "bash scripts/shell/build-pnc.sh",
+    "verify:pnc": "bash scripts/shell/verify-pnc-bundle.sh",
+    "build:backends": "npm run build:stt:release && npm run build:granite && npm run build:pnc",
     "build:ble": "bash scripts/shell/build-ble-bridge.sh",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.json",
     "test": "esbuild tests/*.test.ts --bundle --platform=node --format=esm --outdir=.build/tests && node --test .build/tests/*.test.js && PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s tests -p '*_test.py'",
@@ -164,6 +166,18 @@
           "manifest.json",
           "VERSIONS",
           "device-runtime/**"
+        ]
+      },
+      {
+        "from": ".build/pnc/",
+        "to": "pnc",
+        "filter": [
+          "memo-pnc",
+          "compiled/**",
+          "tokenizer.vocab",
+          "manifest.json",
+          "VERSIONS",
+          "NOTICE.md"
         ]
       },
       {

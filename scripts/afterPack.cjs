@@ -78,6 +78,24 @@ module.exports = async function afterPack(context) {
   });
   console.log('✓ Bundled Granite Core ML INT4 runtime and model verified');
 
+  const pncPath = path.join(appPath, 'Contents', 'Resources', 'pnc');
+  const pncCompiledModels = fs.readdirSync(path.join(pncPath, 'compiled'))
+    .filter((name) => name.endsWith('.mlmodelc'));
+  if (pncCompiledModels.length !== 1) throw new Error('PnC bundle must contain exactly one compiled Core ML model');
+  const pncWorker = path.join(pncPath, 'memo-pnc');
+  const pncRequired = [
+    pncWorker,
+    path.join(pncPath, 'compiled', pncCompiledModels[0]),
+    path.join(pncPath, 'tokenizer.vocab'),
+    path.join(pncPath, 'manifest.json'),
+    path.join(pncPath, 'VERSIONS'),
+    path.join(pncPath, 'NOTICE.md'),
+  ];
+  const missingPncFiles = pncRequired.filter((required) => !fs.existsSync(required));
+  if (missingPncFiles.length > 0) throw new Error(`PnC bundle is incomplete:\n${missingPncFiles.join('\n')}`);
+  fs.chmodSync(pncWorker, 0o755);
+  console.log('✓ Bundled DistilBERT punctuation and capitalization model verified');
+
   // The device-sync Python runtime and Granite worker are nested native code.
   if (shouldSign) {
     const signer = process.env.CSC_NAME || process.env.CODE_SIGN_IDENTITY || 'Developer ID Application';
@@ -103,7 +121,12 @@ module.exports = async function afterPack(context) {
       '--entitlements', path.resolve('config/entitlements.mac.plist'),
       '--sign', signer, graniteWorker,
     ]);
-    console.log(`✓ Signed ${nativeLibraries.length} device runtime libraries, Python, and Granite worker`);
+    await sh('codesign', [
+      '--force', '--options', 'runtime',
+      '--entitlements', path.resolve('config/entitlements.mac.plist'),
+      '--sign', signer, pncWorker,
+    ]);
+    console.log(`✓ Signed ${nativeLibraries.length} device runtime libraries, Python, Granite worker, and PnC worker`);
     await sh('codesign', [
       '--force',
       '--options', 'runtime',

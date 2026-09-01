@@ -70,6 +70,12 @@ jobs:
           path: .build/granite
           key: ${{ runner.os }}-${{ runner.arch }}-granite-${{ hashFiles('scripts/shell/build-granite.sh', 'scripts/python/convert-granite-coreml.py', 'sidecars/granite/**') }}
 
+      - name: Cache punctuation bundle
+        uses: actions/cache@v4
+        with:
+          path: .build/pnc
+          key: ${{ runner.os }}-${{ runner.arch }}-pnc-${{ hashFiles('scripts/shell/build-pnc.sh', 'scripts/python/convert-distilbert-pnc-coreml.py', 'sidecars/pnc/**') }}
+
       - name: Install dependencies
         run: npm ci
 
@@ -115,6 +121,7 @@ jobs:
       - name: Verify signed app
         run: |
           bash scripts/shell/verify-granite-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/granite
+          bash scripts/shell/verify-pnc-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/pnc
           codesign --verify --deep --strict --verbose=2 dist/mac-arm64/Memo.app
           spctl --assess --type execute --verbose dist/mac-arm64/Memo.app
 
