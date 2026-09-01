@@ -8,6 +8,7 @@ This project follows semantic versioning once public releases begin.
 
 - Replace bundled Nemotron with IBM Granite Speech 5.0 470M TurboCTC as the default ASR model, converted to a native Core ML INT4 package.
 - Add a native Swift Granite worker, pinned reproducible conversion pipeline, legacy settings migration, and packaged INT4 verification while retaining optional Whisper.
+- Restore capitalization, commas, periods, and question marks with a fail-open, locally running DistilBERT Core ML postprocessor.
 
 ## 0.6.0 - 2026-08-26
 
