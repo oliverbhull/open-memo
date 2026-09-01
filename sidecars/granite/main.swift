@@ -131,17 +131,49 @@ private final class GraniteRuntime {
     tokenizer = try GraniteTokenizer(url: tokenizerURL)
   }
 
-  func transcribe(_ samples: [Int16]) throws -> String {
-    var texts: [String] = []
-    let chunks = stride(from: 0, to: max(1, samples.count), by: maxSamples)
-    for start in chunks {
-      let end = min(samples.count, start + maxSamples)
-      let array = try features.make(start < end ? Array(samples[start..<end]) : [])
-      let provider = try MLDictionaryFeatureProvider(dictionary: ["input_features": MLFeatureValue(multiArray: array)])
-      let output = try model.prediction(from: provider)
-      guard let logits = output.featureValue(for: "logits")?.multiArrayValue else { throw NSError(domain: "MemoGranite", code: 2, userInfo: [NSLocalizedDescriptionKey: "Core ML output logits missing"]) }
-      let steps = logits.shape[1].intValue, vocab = logits.shape[2].intValue
-      var ids: [Int] = [], previous = -1
+  func warmup() throws {
+    _ = try transcribeChunk([])
+  }
+
+  func transcribeChunk(_ samples: [Int16]) throws -> String {
+    let started = CFAbsoluteTimeGetCurrent()
+    let array = try features.make(samples)
+    let featured = CFAbsoluteTimeGetCurrent()
+    let provider = try MLDictionaryFeatureProvider(dictionary: ["input_features": MLFeatureValue(multiArray: array)])
+    let output = try model.prediction(from: provider)
+    let predicted = CFAbsoluteTimeGetCurrent()
+    guard let logits = output.featureValue(for: "logits")?.multiArrayValue else { throw NSError(domain: "MemoGranite", code: 2, userInfo: [NSLocalizedDescriptionKey: "Core ML output logits missing"]) }
+    let steps = logits.shape[1].intValue, vocab = logits.shape[2].intValue
+    var ids: [Int] = [], previous = -1
+    if logits.dataType == .float32 {
+      let values = logits.dataPointer.bindMemory(to: Float.self, capacity: logits.count)
+      let stepStride = logits.strides[1].intValue
+      let tokenStride = logits.strides[2].intValue
+      for step in 0..<steps {
+        var best = 0, bestValue = -Float.infinity
+        let stepOffset = step * stepStride
+        for token in 0..<vocab {
+          let value = values[stepOffset + token * tokenStride]
+          if value > bestValue { bestValue = value; best = token }
+        }
+        if best != previous && best != 0 { ids.append(best) }
+        previous = best
+      }
+    } else if logits.dataType == .float16 {
+      let values = logits.dataPointer.bindMemory(to: UInt16.self, capacity: logits.count)
+      let stepStride = logits.strides[1].intValue
+      let tokenStride = logits.strides[2].intValue
+      for step in 0..<steps {
+        var best = 0, bestValue = -Float.infinity
+        let stepOffset = step * stepStride
+        for token in 0..<vocab {
+          let value = Float(Float16(bitPattern: values[stepOffset + token * tokenStride]))
+          if value > bestValue { bestValue = value; best = token }
+        }
+        if best != previous && best != 0 { ids.append(best) }
+        previous = best
+      }
+    } else {
       for step in 0..<steps {
         var best = 0, bestValue = -Float.infinity
         for token in 0..<vocab {
@@ -151,10 +183,11 @@ private final class GraniteRuntime {
         if best != previous && best != 0 { ids.append(best) }
         previous = best
       }
-      let text = tokenizer.decode(ids)
-      if !text.isEmpty { texts.append(text) }
     }
-    return texts.joined(separator: " ")
+    let text = tokenizer.decode(ids)
+    let decoded = CFAbsoluteTimeGetCurrent()
+    logError(String(format: "TIMING:features_ms=%.1f prediction_ms=%.1f decode_ms=%.1f total_ms=%.1f", (featured - started) * 1_000, (predicted - featured) * 1_000, (decoded - predicted) * 1_000, (decoded - started) * 1_000))
+    return text
   }
 }
 
@@ -167,20 +200,33 @@ guard let modelPath = value(after: "--model-path"), let tokenizerPath = value(af
 }
 do {
   let runtime = try GraniteRuntime(modelURL: URL(fileURLWithPath: modelPath), tokenizerURL: URL(fileURLWithPath: tokenizerPath))
+  try runtime.warmup()
   var samples: [Int16] = []
+  var completedTexts: [String] = []
   print("READY"); fflush(stdout)
   while let line = readLine() {
     do {
       let message = try JSONDecoder().decode(Message.self, from: Data(line.utf8))
       switch message.type {
-      case "start": samples.removeAll(keepingCapacity: true)
-      case "abort": samples.removeAll(keepingCapacity: true)
+      case "start": samples.removeAll(keepingCapacity: true); completedTexts.removeAll(keepingCapacity: true)
+      case "abort": samples.removeAll(keepingCapacity: true); completedTexts.removeAll(keepingCapacity: true)
       case "audio":
         guard let encoded = message.pcm16le, let data = Data(base64Encoded: encoded), data.count % 2 == 0 else { throw NSError(domain: "MemoGranite", code: 3, userInfo: [NSLocalizedDescriptionKey: "invalid PCM16 audio"] ) }
         data.withUnsafeBytes { raw in for pair in stride(from: 0, to: data.count, by: 2) { samples.append(Int16(bitPattern: UInt16(raw[pair]) | UInt16(raw[pair + 1]) << 8)) } }
-      case "end": emit("FINAL:", try runtime.transcribe(samples)); samples.removeAll(keepingCapacity: true)
+        while samples.count >= maxSamples {
+          let text = try runtime.transcribeChunk(Array(samples.prefix(maxSamples)))
+          if !text.isEmpty { completedTexts.append(text) }
+          samples.removeFirst(maxSamples)
+        }
+      case "end":
+        if !samples.isEmpty || completedTexts.isEmpty {
+          let text = try runtime.transcribeChunk(samples)
+          if !text.isEmpty { completedTexts.append(text) }
+        }
+        emit("FINAL:", completedTexts.joined(separator: " "))
+        samples.removeAll(keepingCapacity: true); completedTexts.removeAll(keepingCapacity: true)
       default: throw NSError(domain: "MemoGranite", code: 4, userInfo: [NSLocalizedDescriptionKey: "unknown event \(message.type)"])
       }
-    } catch { samples.removeAll(keepingCapacity: true); print("ERROR:\(error.localizedDescription)"); fflush(stdout) }
+    } catch { samples.removeAll(keepingCapacity: true); completedTexts.removeAll(keepingCapacity: true); print("ERROR:\(error.localizedDescription)"); fflush(stdout) }
   }
 } catch { logError("Granite startup failed: \(error)"); exit(1) }

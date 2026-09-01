@@ -53,7 +53,6 @@ export class MemoSttService extends EventEmitter {
   private isBleConnected = false;
   private audioSourceManager: AudioSourceManager | null = null;
   private pendingAudioData: { wavBuffer?: Buffer; duration?: number } | null = null;
-  private readonly audioWaiters = new Set<() => void>();
   /** Timestamp (ms) when the current process was spawned — used to detect quick-exit device errors */
   private processStartedAt: number | null = null;
   /** Quick-exit threshold: if process exits within this many ms with non-zero code, assume audio device error */
@@ -748,8 +747,6 @@ export class MemoSttService extends EventEmitter {
       }
       this.pendingAudioData ??= {};
       this.pendingAudioData.wavBuffer = wavBuffer;
-      this.audioWaiters.forEach((resolve) => resolve());
-      this.audioWaiters.clear();
       return;
     }
     
@@ -822,7 +819,7 @@ export class MemoSttService extends EventEmitter {
       }
 
       // Emit transcription event (normal flow)
-      const audioCapture = await this.takePendingAudio();
+      const audioCapture = this.takePendingAudio();
       this.emit('transcription', {
         ...transcription,
         processedText: text,
@@ -837,22 +834,10 @@ export class MemoSttService extends EventEmitter {
     }
   }
 
-  private async takePendingAudio(): Promise<CapturedAudio | undefined> {
+  private takePendingAudio(): CapturedAudio | undefined {
     if (!loadSettings().saveAudio) {
       this.pendingAudioData = null;
       return undefined;
-    }
-
-    if (!this.pendingAudioData?.wavBuffer) {
-      await new Promise<void>((resolve) => {
-        const finish = () => {
-          clearTimeout(timeout);
-          this.audioWaiters.delete(finish);
-          resolve();
-        };
-        const timeout = setTimeout(finish, 1_500);
-        this.audioWaiters.add(finish);
-      });
     }
 
     const pending = this.pendingAudioData;
