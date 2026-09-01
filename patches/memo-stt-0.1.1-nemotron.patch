@@ -29,7 +29,7 @@ index 4772659..8b59e51 100644
 +    active: Arc<AtomicBool>,
 +    handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 +) {
-+    if !engine.lock().unwrap().is_nemotron() {
++    if !engine.lock().unwrap().is_worker_backend() {
 +        return;
 +    }
 +
@@ -180,7 +180,7 @@ index 4772659..8b59e51 100644
 -        .unwrap_or(true);
 +    // Nemotron keeps one cache-aware model session for the complete transmission,
 +    // so the legacy segment pre-transcription path stays disabled.
-+    let streaming_enabled = !engine.lock().unwrap().is_nemotron()
++    let streaming_enabled = !engine.lock().unwrap().is_worker_backend()
 +        && std::env::var("STREAMING_TRANSCRIBE")
 +            .map(|v| v != "0" && v.to_lowercase() != "false")
 +            .unwrap_or(true);

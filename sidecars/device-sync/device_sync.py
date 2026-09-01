@@ -661,7 +661,8 @@ def prepare_archives(args, connection, batch: dict, journal: dict) -> list[dict]
         if args.actual_model == "whisper":
             env["MEMO_WHISPER_MODEL_PATH"] = str(args.whisper_model)
         else:
-            env.update({"MEMO_ASR_PYTHON": str(args.nemotron_root / "runtime/bin/python3.12"), "MEMO_ASR_SCRIPT": str(args.nemotron_root / "memo_nemotron.py"), "MEMO_ASR_MODEL_PATH": str(args.nemotron_root / "model")})
+            compiled = next((args.granite_root / "compiled").glob("*.mlmodelc"))
+            env.update({"MEMO_ASR_WORKER": str(args.granite_root / "memo-granite-asr"), "MEMO_ASR_MODEL_PATH": str(compiled), "MEMO_ASR_TOKENIZER_PATH": str(args.granite_root / "tokenizer.json")})
         results = transcribe_batch(args.stt_bin, requests, env)
     archives = []
     completed = 0
@@ -838,10 +839,10 @@ def main() -> int:
     parser.add_argument("--trusted-device", type=Path, required=True)
     parser.add_argument("--lock", type=Path, required=True)
     parser.add_argument("--stt-bin", type=Path, required=True)
-    parser.add_argument("--nemotron-root", type=Path, required=True)
+    parser.add_argument("--granite-root", type=Path, required=True)
     parser.add_argument("--whisper-model", type=Path, required=True)
-    parser.add_argument("--requested-model", choices=("nemotron", "whisper"), required=True)
-    parser.add_argument("--actual-model", choices=("nemotron", "whisper"), required=True)
+    parser.add_argument("--requested-model", choices=("granite", "whisper"), required=True)
+    parser.add_argument("--actual-model", choices=("granite", "whisper"), required=True)
     parser.add_argument("--fallback-reason", default=None)
     parser.add_argument("--poll-seconds", type=float, default=2.0)
     parser.add_argument("--ble-bridge", type=Path)

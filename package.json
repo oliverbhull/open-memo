@@ -17,9 +17,9 @@
     "build:overlay-preload": "esbuild electron/preload/overlay.ts --platform=node --bundle --external:electron --outfile=dist/overlay-preload.cjs --format=cjs",
     "build:renderer": "vite build --config vite.config.ts",
     "build:stt:release": "bash scripts/shell/build-stt.sh",
-    "build:nemotron": "bash scripts/shell/build-nemotron.sh",
-    "verify:nemotron": "bash scripts/shell/verify-nemotron-bundle.sh",
-    "build:backends": "npm run build:stt:release && npm run build:nemotron",
+    "build:granite": "bash scripts/shell/build-granite.sh",
+    "verify:granite": "bash scripts/shell/verify-granite-bundle.sh",
+    "build:backends": "npm run build:stt:release && npm run build:granite",
     "build:ble": "bash scripts/shell/build-ble-bridge.sh",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.json",
     "test": "esbuild tests/*.test.ts --bundle --platform=node --format=esm --outdir=.build/tests && node --test .build/tests/*.test.js && PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s tests -p '*_test.py'",
@@ -33,7 +33,8 @@
     "export-memos": "npm run build:main && npm run build:renderer && MEMO_EXPORT=1 electron ."
   },
   "keywords": [
-    "nemotron",
+    "granite",
+    "coreml",
     "speech-to-text",
     "dictation",
     "push-to-talk",
@@ -80,6 +81,7 @@
     "nodeGypRebuild": false,
     "npmRebuild": true,
     "mac": {
+      "minimumSystemVersion": "15.0",
       "icon": "assets/app-icons/app-icon.icns",
       "category": "public.app-category.productivity",
       "hardenedRuntime": true,
@@ -153,8 +155,16 @@
         ]
       },
       {
-        "from": ".build/nemotron/",
-        "to": "nemotron"
+        "from": ".build/granite/",
+        "to": "granite",
+        "filter": [
+          "memo-granite-asr",
+          "compiled/**",
+          "tokenizer.json",
+          "manifest.json",
+          "VERSIONS",
+          "device-runtime/**"
+        ]
       },
       {
         "from": "sidecars/device-sync/",

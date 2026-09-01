@@ -80,9 +80,9 @@ export class AsrModelService extends EventEmitter {
     return {
       selectedModel,
       models: {
-        nemotron: {
-          id: 'nemotron',
-          name: 'Nemotron',
+        granite: {
+          id: 'granite',
+          name: 'Granite Speech 5.0',
           installState: 'included',
           downloadedBytes: 0,
           totalBytes: 0,
@@ -106,7 +106,7 @@ export class AsrModelService extends EventEmitter {
   }
 
   async selectModel(model: AsrModelId, restartStt: () => void): Promise<AsrSelectionResult> {
-    if (model !== 'nemotron' && model !== 'whisper') {
+    if (model !== 'granite' && model !== 'whisper') {
       return { success: false, state: this.getState(), error: `Unsupported speech model: ${String(model)}` };
     }
 

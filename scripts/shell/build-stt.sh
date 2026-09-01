@@ -44,12 +44,12 @@ if [[ -n "${LOCAL_SOURCE}" ]]; then
   cp "${SOURCE_BIN}" "${OUTPUT_BIN}"
 else
   if [[ "${CRATE_NAME}" != "memo-stt" || "${CRATE_VERSION}" != "0.1.1" ]]; then
-    echo "The bundled Nemotron patch is pinned to memo-stt 0.1.1." >&2
+    echo "The bundled ASR worker patch is pinned to memo-stt 0.1.1." >&2
     echo "Set MEMO_STT_LOCAL_SOURCE for a different source tree." >&2
     exit 1
   fi
   if [[ ! -f "${PATCH_FILE}" || ! -f "${CLEANUP_PATCH_FILE}" || ! -f "${AUDIO_PATCH_FILE}" || ! -f "${STRICT_INPUT_PATCH_FILE}" || ! -f "${CONTINUOUS_INPUT_PATCH_FILE}" || ! -f "${DEVICE_BATCH_PATCH_FILE}" || ! -f "${MEANINGFUL_TRANSCRIPT_PATCH_FILE}" || ! -f "${TRANSCRIPTION_ENGINE}" || ! -f "${MREC_BATCH}" ]]; then
-    echo "Nemotron memo-stt patch sources are missing." >&2
+    echo "Memo ASR worker patch sources are missing." >&2
     exit 1
   fi
 
@@ -82,7 +82,7 @@ else
     printf '%s\n' "${PATCH_HASH}" > "${PATCH_MARKER}"
   fi
 
-  echo "Building patched ${CRATE_NAME} ${CRATE_VERSION} with the Nemotron backend"
+  echo "Building patched ${CRATE_NAME} ${CRATE_VERSION} with the Granite backend"
   CARGO_TARGET_DIR="${LOCAL_TARGET_DIR}" cargo build \
     --release \
     --manifest-path "${SOURCE_DIR}/Cargo.toml" \

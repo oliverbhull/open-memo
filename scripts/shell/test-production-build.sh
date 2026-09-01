@@ -19,7 +19,7 @@ esac
 
 APP_PATH="dist/mac-arm64/Memo.app"
 test -d "$APP_PATH"
-bash scripts/shell/verify-nemotron-bundle.sh "$APP_PATH/Contents/Resources/nemotron"
+bash scripts/shell/verify-granite-bundle.sh "$APP_PATH/Contents/Resources/granite"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
 echo "Production build verified at $APP_PATH"

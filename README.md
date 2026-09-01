@@ -12,7 +12,7 @@ Hold a hotkey, speak naturally, release, and your words appear wherever your cur
 ## Why Open Memo
 
 - **Fast dictation anywhere:** paste text into the active macOS app.
-- **On-device transcription:** Nemotron is included; Whisper can be downloaded and selected in Settings.
+- **On-device transcription:** INT4 Granite Speech runs through Core ML; Whisper remains an optional download.
 - **No account required:** download, grant permissions, and start talking.
 - **Useful history:** see the native icon for the app where each dictation occurred.
 - **Optional audio retention:** save a local WAV recording linked to its transcript.
@@ -22,7 +22,7 @@ Hold a hotkey, speak naturally, release, and your words appear wherever your cur
 
 Download the latest signed macOS build from [GitHub Releases](https://github.com/oliverbhull/open-memo/releases).
 
-Open Memo currently targets macOS on Apple Silicon. On first launch, macOS may ask for:
+Open Memo targets Apple Silicon on macOS 15 or newer. On first launch, macOS may ask for:
 
 - **Microphone:** record your voice.
 - **Accessibility:** paste transcribed text into the active app.
@@ -36,11 +36,11 @@ Open Memo currently targets macOS on Apple Silicon. On first launch, macOS may a
 3. Release to transcribe.
 4. Open Memo pastes the result at your cursor.
 
-Nemotron is selected by default and ships inside the app. To use Whisper, open Settings and choose it under **Speech model**. Memo shows whether Whisper is installed, downloads the 181 MiB model with visible progress when needed, verifies it, and switches the local transcription process automatically.
+IBM Granite Speech 5.0 470M TurboCTC is selected by default and ships as a Core ML INT4 model. To use Whisper, open Settings and choose it under **Speech model**. Memo shows whether Whisper is installed, downloads the 181 MiB model with visible progress when needed, verifies it, and switches the local transcription process automatically.
 
 ## Privacy
 
-Open Memo is designed around local transcription. Dictation audio is processed on your Mac by `memo-stt`; an account is not required for core dictation. Nemotron works without an additional download. Selecting Whisper makes a one-time model download from the pinned `ggerganov/whisper.cpp` model repository; after that, Whisper transcription is fully local.
+Open Memo is designed around local transcription. Dictation audio is processed on your Mac by `memo-stt` and the native Core ML Granite worker; an account is not required for core dictation. Granite works without an additional download. Selecting Whisper makes a one-time model download from the pinned `ggerganov/whisper.cpp` model repository; after that, Whisper transcription is fully local.
 
 Audio retention is off by default. Enable **Save dictation audio** in Settings to keep future recordings under Memo's local application-data folder. Each WAV filename uses the same ID as its transcript, is playable from the feed, and is removed when that transcript is deleted. Existing recordings are not removed when the setting is turned off.
 
@@ -56,6 +56,7 @@ Prerequisites:
 - Node.js 22.12+ and npm.
 - Rust 1.88.0+ and Cargo.
 - Xcode Command Line Tools.
+- `uv` and the Hugging Face `hf` CLI for reproducible Granite conversion.
 
 ```bash
 git clone https://github.com/oliverbhull/open-memo.git
@@ -73,6 +74,8 @@ npm run build:dir
 ```
 
 `npm run dev` runs this STT build step automatically before starting Electron.
+
+Granite builds pin `ibm-granite/granite-speech-5.0-470m-turboctc` at a specific revision, convert it to Core ML, and apply symmetric per-block INT4 weight quantization. Set `MEMO_GRANITE_MODEL_SOURCE` to use an already-downloaded model directory; otherwise the build downloads the pinned revision.
 
 `npm run export-memos` writes an atomic JSON backup to `~/Desktop/memo-full-export.json`. Quit any running Memo instance before exporting; set `MEMO_EXPORT_OUT` to choose another destination. The JSON includes linked-audio metadata but does not embed the WAV files; Settings provides an **Open folder** action for those recordings.
 

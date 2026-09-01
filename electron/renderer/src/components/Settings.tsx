@@ -314,7 +314,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const whisperDownloading = whisperStatus?.installState === 'downloading';
   const displayedAsrModel: AsrModelId = pendingAsrModel
     ?? (whisperDownloading ? 'whisper' : asrState?.selectedModel)
-    ?? 'nemotron';
+    ?? 'granite';
   const whisperPercent = whisperStatus && whisperStatus.totalBytes > 0
     ? Math.min(100, Math.round((whisperStatus.downloadedBytes / whisperStatus.totalBytes) * 100))
     : 0;
@@ -472,7 +472,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       textOverflow: 'ellipsis',
                     }}
                   >
-                    <option value="nemotron">Nemotron — Included</option>
+                    <option value="granite">Granite Speech 5.0 — Included</option>
                     <option value="whisper">
                       {whisperStatus?.installState === 'downloaded'
                         ? 'Whisper — Downloaded'
