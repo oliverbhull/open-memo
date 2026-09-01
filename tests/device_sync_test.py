@@ -288,7 +288,7 @@ class DeviceSyncTests(unittest.TestCase):
             "started_at": "now",
             "recordings": [],
         }
-        args = SimpleNamespace(database=Path("/tmp/db"), batch_directory=Path("/tmp"), journal=Path("/tmp/journal"), requested_model="nemotron", actual_model="nemotron")
+        args = SimpleNamespace(database=Path("/tmp/db"), batch_directory=Path("/tmp"), journal=Path("/tmp/journal"), requested_model="granite", actual_model="granite")
         connection = mock.Mock()
         connection.execute.return_value.fetchall.return_value = [{"source_sha256": "a" * 64}]
         order = []

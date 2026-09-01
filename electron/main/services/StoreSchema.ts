@@ -28,7 +28,7 @@ export const storeDefaults: StoreSchema = {
   preferBleWhenAvailable: true,
   autoReconnect: true,
   selectedSystemMicName: null,
-  asrModel: 'nemotron',
+  asrModel: 'granite',
   lastSystemMicDevice: null,
   lastSystemMicSampleRate: null,
   postEnter: false,

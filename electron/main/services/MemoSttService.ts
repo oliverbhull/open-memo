@@ -290,9 +290,9 @@ export class MemoSttService extends EventEmitter {
       const requestedAsrModel = settings.asrModel;
       const asrModel = requestedAsrModel === 'whisper' && isWhisperModelInstalled()
         ? 'whisper'
-        : 'nemotron';
-      if (requestedAsrModel === 'whisper' && asrModel === 'nemotron') {
-        logger.warn('[MemoSttService] Selected Whisper model is missing; falling back to Nemotron');
+        : 'granite';
+      if (requestedAsrModel === 'whisper' && asrModel === 'granite') {
+        logger.warn('[MemoSttService] Selected Whisper model is missing; falling back to Granite');
       }
       env.MEMO_ASR_BACKEND = asrModel;
 
@@ -303,42 +303,43 @@ export class MemoSttService extends EventEmitter {
           `(model=${env.MEMO_WHISPER_MODEL_PATH})`,
         );
       } else {
-        const nemotronRoot = isDev
-          ? path.join(process.cwd(), '.build', 'nemotron')
-          : path.join(process.resourcesPath, 'nemotron');
-        const bundledPython = path.join(nemotronRoot, 'runtime', 'bin', 'python3.12');
-        const bundledWorker = path.join(nemotronRoot, 'memo_nemotron.py');
-        const bundledModel = path.join(nemotronRoot, 'model');
+        const graniteRoot = isDev
+          ? path.join(process.cwd(), '.build', 'granite')
+          : path.join(process.resourcesPath, 'granite');
+        const bundledWorker = path.join(graniteRoot, 'memo-granite-asr');
+        const compiledRoot = path.join(graniteRoot, 'compiled');
+        const bundledModel = fs.readdirSync(compiledRoot)
+          .find((entry) => entry.endsWith('.mlmodelc'));
+        const bundledTokenizer = path.join(graniteRoot, 'tokenizer.json');
 
         // Development overrides make backend work easier without weakening the
         // release contract: packaged apps always use their signed resources.
-        env.MEMO_ASR_PYTHON = isDev && process.env.MEMO_ASR_PYTHON
-          ? process.env.MEMO_ASR_PYTHON
-          : bundledPython;
-        env.MEMO_ASR_SCRIPT = isDev && process.env.MEMO_ASR_SCRIPT
-          ? process.env.MEMO_ASR_SCRIPT
+        env.MEMO_ASR_WORKER = isDev && process.env.MEMO_ASR_WORKER
+          ? process.env.MEMO_ASR_WORKER
           : bundledWorker;
         env.MEMO_ASR_MODEL_PATH = isDev && process.env.MEMO_ASR_MODEL_PATH
           ? process.env.MEMO_ASR_MODEL_PATH
-          : bundledModel;
-        env.PYTHONNOUSERSITE = '1';
+          : path.join(compiledRoot, bundledModel ?? 'GraniteSpeech.mlmodelc');
+        env.MEMO_ASR_TOKENIZER_PATH = isDev && process.env.MEMO_ASR_TOKENIZER_PATH
+          ? process.env.MEMO_ASR_TOKENIZER_PATH
+          : bundledTokenizer;
 
         const requiredResources = [
-          ['Python runtime', env.MEMO_ASR_PYTHON],
-          ['worker', env.MEMO_ASR_SCRIPT],
+          ['worker', env.MEMO_ASR_WORKER],
           ['model', env.MEMO_ASR_MODEL_PATH],
+          ['tokenizer', env.MEMO_ASR_TOKENIZER_PATH],
         ] as const;
         for (const [label, resourcePath] of requiredResources) {
           if (!resourcePath || !fs.existsSync(resourcePath)) {
             throw new Error(
-              `Bundled Nemotron ${label} not found at ${resourcePath || '(unset)'}. ` +
-              'Run npm run build:nemotron first.',
+              `Bundled Granite ${label} not found at ${resourcePath || '(unset)'}. ` +
+              'Run npm run build:granite first.',
             );
           }
         }
         logger.info(
-          `[MemoSttService #${this.instanceId}] ASR model: Nemotron ` +
-          `(runtime=${env.MEMO_ASR_PYTHON}, model=${env.MEMO_ASR_MODEL_PATH})`,
+          `[MemoSttService #${this.instanceId}] ASR model: Granite Core ML INT4 ` +
+          `(worker=${env.MEMO_ASR_WORKER}, model=${env.MEMO_ASR_MODEL_PATH})`,
         );
       }
       // Radio mode: use External Microphone (headphone jack) like memo-RF

@@ -13,7 +13,7 @@ permissions:
 jobs:
   build:
     name: Build macOS app
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - name: Checkout
@@ -48,11 +48,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Cache Nemotron bundle
+      - name: Cache Granite bundle
         uses: actions/cache@v4
         with:
-          path: .build/nemotron
-          key: ${{ runner.os }}-${{ runner.arch }}-nemotron-${{ hashFiles('scripts/shell/build-nemotron.sh', 'sidecars/nemotron/requirements.txt', 'sidecars/nemotron/memo_nemotron.py') }}
+          path: .build/granite
+          key: ${{ runner.os }}-${{ runner.arch }}-granite-${{ hashFiles('scripts/shell/build-granite.sh', 'scripts/python/convert-granite-coreml.py', 'sidecars/granite/**') }}
 
       - name: Install dependencies
         run: npm ci
@@ -60,8 +60,8 @@ jobs:
       - name: Build unsigned app
         run: npm run build:dir
 
-      - name: Verify packaged Nemotron backend
-        run: bash scripts/shell/verify-nemotron-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/nemotron
+      - name: Verify packaged Granite backend
+        run: bash scripts/shell/verify-granite-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/granite
 
       - name: Upload app smoke-build artifact
         uses: actions/upload-artifact@v4
