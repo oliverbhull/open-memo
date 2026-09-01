@@ -25,7 +25,7 @@
   <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" text-anchor="middle">
     <g fill="#111827">
       <rect x="112" y="83" width="94" height="56" rx="12" fill="#eef2ff" stroke="#c7d2fe" stroke-width="2"/>
-      <text x="159" y="119" font-size="23" font-weight="700">Space</text>
+      <text x="159" y="119" font-size="23" font-weight="700">Fn</text>
       <text x="159" y="183" font-size="21" font-weight="700">Hold</text>
       <text x="159" y="211" font-size="15" fill="#64748b">your hotkey</text>
     </g>
