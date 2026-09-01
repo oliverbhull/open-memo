@@ -129,12 +129,18 @@ jobs:
         run: |
           mkdir -p release-artifacts
           shopt -s nullglob
+          dmg_artifacts=(dist/Open-Memo-*.dmg)
+          if (( ${#dmg_artifacts[@]} != 1 )); then
+            echo "Expected exactly one DMG, found ${#dmg_artifacts[@]}." >&2
+            exit 1
+          fi
           artifacts=(dist/Open-Memo-*.dmg dist/Open-Memo-*.zip dist/latest-mac.yml)
           if (( ${#artifacts[@]} == 0 )); then
             echo "No release artifacts were produced." >&2
             exit 1
           fi
           cp "${artifacts[@]}" release-artifacts/
+          cp "${dmg_artifacts[0]}" release-artifacts/Open-Memo-latest-arm64.dmg
           ls -lh release-artifacts
 
       - name: Upload release artifacts
