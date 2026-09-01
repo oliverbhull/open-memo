@@ -1,62 +1,52 @@
 # Open Memo
 
-[![CI](https://github.com/oliverbhull/open-memo/actions/workflows/ci.yml/badge.svg)](https://github.com/oliverbhull/open-memo/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/oliverbhull/open-memo)](https://github.com/oliverbhull/open-memo/releases)
-[![macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://github.com/oliverbhull/open-memo/releases)
+Open-source, push-to-talk dictation for Apple silicon Macs running macOS 15 or
+newer.
 
-Open Memo is an open-source push-to-talk dictation app for macOS.
+Hold a hotkey, speak naturally, and release. Your words appear wherever your
+cursor is—without an account, subscription, or cloud transcription.
 
-Hold a hotkey, speak naturally, release, and your words appear wherever your cursor is. Open Memo runs speech-to-text locally through the `memo-stt` Rust engine, so there is no account, no subscription, and no cloud round trip for normal dictation.
+[![Download Open Memo for macOS](https://img.shields.io/badge/Download_for_macOS-111111?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/oliverbhull/open-memo/releases/latest/download/Open-Memo-latest-arm64.dmg)
 
-## Why Open Memo
-
-- **Fast dictation anywhere:** paste text into the active macOS app.
-- **On-device transcription:** INT4 Granite Speech runs through Core ML; Whisper remains an optional download.
-- **No account required:** download, grant permissions, and start talking.
-- **Useful history:** see the native icon for the app where each dictation occurred.
-- **Optional audio retention:** save a local WAV recording linked to its transcript.
-- **Hardware-friendly:** optional support for Memo Bluetooth microphones.
+Requires macOS 15 or newer on an Apple silicon Mac. Looking for an older
+version? Visit
+[GitHub Releases](https://github.com/oliverbhull/open-memo/releases).
 
 ## Install
 
-Download the latest signed macOS build from [GitHub Releases](https://github.com/oliverbhull/open-memo/releases).
+1. Download and open the `.dmg`.
+2. Drag **Memo** into the **Applications** folder.
+3. Open Memo and allow the permissions macOS requests.
+4. Choose a hotkey, then hold it whenever you want to dictate.
 
-Open Memo targets Apple Silicon on macOS 15 or newer. On first launch, macOS may ask for:
+Memo needs microphone access to hear you, Accessibility access to insert text,
+and Input Monitoring access to detect your hotkey. Bluetooth permission is only
+needed if you use a Memo Bluetooth microphone.
 
-- **Microphone:** record your voice.
-- **Accessibility:** paste transcribed text into the active app.
-- **Input Monitoring:** detect the push-to-talk hotkey.
-- **Bluetooth:** connect optional Memo hardware.
+## What you get
 
-## How It Works
+- Fast dictation in any Mac app.
+- Private, on-device transcription.
+- Automatic punctuation and capitalization.
+- A searchable history of your dictations.
+- Optional local audio recordings.
+- Support for Memo Bluetooth microphones and recorders.
 
-1. Choose your input source and hotkey.
-2. Hold the hotkey and speak.
-3. Release to transcribe.
-4. Open Memo pastes the result at your cursor.
-
-IBM Granite Speech 5.0 470M TurboCTC is selected by default and ships as a Core ML INT4 model. A local INT8 DistilBERT postprocessor restores capitalization, commas, periods, and question marks before Memo applies your phrase replacements. To use Whisper, open Settings and choose it under **Speech model**. Memo shows whether Whisper is installed, downloads the 181 MiB model with visible progress when needed, verifies it, and switches the local transcription process automatically.
+Granite is included and ready to use. You can also choose Whisper in Settings;
+Memo will download it once and then run it locally.
 
 ## Privacy
 
-Open Memo is designed around local transcription. Dictation audio is processed on your Mac by `memo-stt` and the native Core ML Granite worker, and final text formatting runs through the local DistilBERT Core ML postprocessor; an account is not required for core dictation. Granite and text formatting work without an additional download. Selecting Whisper makes a one-time model download from the pinned `ggerganov/whisper.cpp` model repository; after that, Whisper transcription is fully local.
+Your speech is transcribed on your Mac. Open Memo does not require an account,
+and audio retention is off by default. If you turn on **Save dictation audio**,
+recordings stay in Memo's local application-data folder until you delete them.
 
-Audio retention is off by default. Enable **Save dictation audio** in Settings to keep future recordings under Memo's local application-data folder. Each WAV filename uses the same ID as its transcript, is playable from the feed, and is removed when that transcript is deleted. Existing recordings are not removed when the setting is turned off.
+## For developers
 
-Memo keeps desktop dictations and recorder-derived feed entries in one local SQLite database at `~/Library/Application Support/Memo/memo.sqlite3`. Recorder archives and optional WAV audio remain ordinary files so they can be recovered independently. On the first launch after upgrading, Memo copies earlier IndexedDB history into SQLite in one transaction and retains the old IndexedDB unchanged as a rollback source.
-
-The menu-bar **Microphone** submenu follows the macOS system-default input unless you explicitly select a microphone. An explicit selection is strict: Memo uses that input or reports it unavailable, without substituting another microphone. AirPods can remain the macOS output while Memo stays on a selected DJI input. Memo keeps the selected input stream ready to avoid Bluetooth warm-up delay, but only adds audio to a dictation while recording. Memo remembers the selection and automatically reopens it when it reconnects. Selecting the current microphone again also forces Memo to reopen it. Microsoft Teams virtual inputs are excluded.
-
-## Development
-
-Prerequisites:
-
-- macOS.
-- Node.js 22.12+ and npm.
-- Rust 1.88.0+ and Cargo.
-- Xcode Command Line Tools.
-- `uv` and the Hugging Face `hf` CLI for reproducible Granite conversion.
+Open Memo is open source under the [MIT License](LICENSE). To run it locally,
+you'll need macOS, Node.js 22.12+, Rust 1.88.0+, Xcode Command Line Tools,
+[`uv`](https://docs.astral.sh/uv/), and the
+[Hugging Face CLI](https://huggingface.co/docs/huggingface_hub/guides/cli).
 
 ```bash
 git clone https://github.com/oliverbhull/open-memo.git
@@ -66,46 +56,11 @@ npm run check
 npm run dev
 ```
 
-Development, CI, and production builds install the published `memo-stt` Cargo package from crates.io:
-
-```bash
-npm run build:stt:release
-npm run build:dir
-```
-
-`npm run dev` runs this STT build step automatically before starting Electron.
-
-Granite builds pin `ibm-granite/granite-speech-5.0-470m-turboctc` at a specific revision, convert it to Core ML, and apply symmetric per-block INT4 weight quantization. Set `MEMO_GRANITE_MODEL_SOURCE` to use an already-downloaded model directory; otherwise the build downloads the pinned revision.
-
-`npm run export-memos` writes an atomic JSON backup to `~/Desktop/memo-full-export.json`. Quit any running Memo instance before exporting; set `MEMO_EXPORT_OUT` to choose another destination. The JSON includes linked-audio metadata but does not embed the WAV files; Settings provides an **Open folder** action for those recordings.
-
-For a user-facing export, open Settings and select **Export JSON** beside the word count. You can export every active transcription or choose an inclusive date-and-time range before selecting the destination in the macOS save dialog.
-
-`npm run build:dir` creates an unsigned app bundle for smoke testing. Maintainer signing and release notes live in [docs/maintainers/signing-and-release.md](docs/maintainers/signing-and-release.md).
-
-## Memo firmware updates
-
-When a Memo recorder connects over USB, Open Memo first synchronizes and
-durably saves its recordings. Once the recorder is empty and idle, the app
-checks the public firmware release channel. A newer UF2 is downloaded only
-after its release manifest passes Memo's embedded Ed25519 signature check; its
-SHA-256, nRF52840 family, board identity, and code-partition boundaries are
-checked again before flashing. The same device UID and exact target firmware
-version must return after the update.
-
-The installed app contains no GitHub token and no bundled firmware image.
-Network, signature, device-state, or flash verification failures leave the
-firmware update unapplied and do not discard synced recordings.
-
-## Documentation
+More information:
 
 - [Contributing](CONTRIBUTING.md)
 - [Troubleshooting](docs/troubleshooting.md)
-- [Signing and release](docs/maintainers/signing-and-release.md)
 - [Changelog](CHANGELOG.md)
 - [Support](SUPPORT.md)
 - [Security](SECURITY.md)
-
-## License
-
-Open Memo is released under the [MIT License](LICENSE).
+- [Signing and release](docs/maintainers/signing-and-release.md)
