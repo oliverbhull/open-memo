@@ -1,9 +1,16 @@
 name: Mirror signed firmware release
 
 on:
+  repository_dispatch:
+    types: [firmware-release-published]
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "17 9 * * *"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Exact private firmware release tag; leave blank to reconcile the latest release"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -25,14 +32,25 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.MEMO_FIRMWARE_READ_TOKEN }}
           SOURCE_REPOSITORY: oliverbhull/memo-firmware
+          REQUESTED_RELEASE_TAG: ${{ github.event.client_payload.release_tag || inputs.release_tag }}
         run: |
           if [[ -z "$GH_TOKEN" ]]; then
             echo "Missing MEMO_FIRMWARE_READ_TOKEN." >&2
             exit 1
           fi
 
-          release_tag="$(gh api "repos/$SOURCE_REPOSITORY/releases?per_page=30" \
-            --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | startswith("firmware-v")))] | max_by(.published_at) | .tag_name')"
+          release_tag="$REQUESTED_RELEASE_TAG"
+          if [[ -n "$release_tag" ]]; then
+            if [[ ! "$release_tag" =~ ^firmware-v[0-9A-Za-z._+-]+$ ]]; then
+              echo "Requested firmware release tag has an invalid format." >&2
+              exit 1
+            fi
+            release_tag="$(gh api "repos/$SOURCE_REPOSITORY/releases/tags/$release_tag" \
+              --jq 'select(.draft == false and .prerelease == false and (.tag_name | startswith("firmware-v"))) | .tag_name')"
+          else
+            release_tag="$(gh api "repos/$SOURCE_REPOSITORY/releases?per_page=30" \
+              --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | startswith("firmware-v")))] | max_by(.published_at) | .tag_name')"
+          fi
           if [[ -z "$release_tag" ]]; then
             echo "No published firmware release was found." >&2
             exit 1
