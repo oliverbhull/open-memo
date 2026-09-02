@@ -15,6 +15,14 @@
   </a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/oliverbhull/open-memo/releases"><img src="https://img.shields.io/github/v/release/oliverbhull/open-memo?style=flat-square&amp;label=version" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/macOS-15%2B-lightgrey?style=flat-square&amp;logo=apple" alt="macOS 15 or newer">
+  <img src="https://img.shields.io/badge/Apple_silicon-required-lightgrey?style=flat-square" alt="Apple silicon required">
+  <a href="https://github.com/oliverbhull/open-memo/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/oliverbhull/open-memo/ci.yml?style=flat-square&amp;label=build" alt="Build status"></a>
+</p>
+
 Open Memo lets you write with your voice anywhere on your Mac. Hold **Fn**,
 speak, and release. Your words appear at your cursor, ready to use.
 
