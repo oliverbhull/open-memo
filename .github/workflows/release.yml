@@ -60,15 +60,15 @@ jobs:
             ~/.cargo/git
             .build/memo-stt-source
             .build/memo-stt-target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('scripts/shell/build-stt.sh', 'patches/memo-stt-0.1.1-*.patch', 'sidecars/nemotron/transcription_engine.rs') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('scripts/shell/build-stt.sh', 'patches/memo-stt-0.1.1-*.patch', 'sidecars/conomo-adapter/transcription_engine.rs') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Cache Granite bundle
+      - name: Cache conomo bundle
         uses: actions/cache@v4
         with:
-          path: .build/granite
-          key: ${{ runner.os }}-${{ runner.arch }}-granite-${{ hashFiles('scripts/shell/build-granite.sh', 'scripts/python/convert-granite-coreml.py', 'sidecars/granite/**') }}
+          path: .build/conomo
+          key: ${{ runner.os }}-${{ runner.arch }}-conomo-${{ hashFiles('scripts/shell/build-conomo.sh', 'sidecars/conomo/requirements-device.txt') }}
 
       - name: Cache punctuation bundle
         uses: actions/cache@v4
@@ -100,14 +100,16 @@ jobs:
 
       - name: Build signed and notarized app
         env:
+          CONOMO_URL: ${{ secrets.CONOMO_URL }}
+          CONOMO_SHA256: ${{ secrets.CONOMO_SHA256 }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           CSC_NAME: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
-          if [[ -z "${APPLE_TEAM_ID}" || -z "${APPLE_API_KEY_BASE64}" || -z "${APPLE_API_KEY_ID}" || -z "${APPLE_API_ISSUER}" ]]; then
-            echo "Missing Apple notarization secrets." >&2
+          if [[ -z "${CONOMO_URL}" || -z "${CONOMO_SHA256}" || -z "${APPLE_TEAM_ID}" || -z "${APPLE_API_KEY_BASE64}" || -z "${APPLE_API_KEY_ID}" || -z "${APPLE_API_ISSUER}" ]]; then
+            echo "Missing conomo or Apple release secrets." >&2
             exit 1
           fi
 
@@ -120,7 +122,7 @@ jobs:
 
       - name: Verify signed app
         run: |
-          bash scripts/shell/verify-granite-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/granite
+          bash scripts/shell/verify-conomo-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/conomo
           bash scripts/shell/verify-pnc-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/pnc
           codesign --verify --deep --strict --verbose=2 dist/mac-arm64/Memo.app
           spctl --assess --type execute --verbose dist/mac-arm64/Memo.app

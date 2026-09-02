@@ -10,14 +10,14 @@ CRATE_VERSION="${MEMO_STT_VERSION:-0.1.1}"
 FEATURES="${MEMO_STT_FEATURES:-binary}"
 LOCAL_SOURCE="${MEMO_STT_LOCAL_SOURCE:-}"
 SOURCE_ROOT="${ROOT_DIR}/.build/memo-stt-source"
-PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-nemotron.patch"
+PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-conomo.patch"
 CLEANUP_PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-cleanup.patch"
 AUDIO_PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-audio-retention.patch"
 STRICT_INPUT_PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-strict-input.patch"
 CONTINUOUS_INPUT_PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-continuous-input.patch"
 DEVICE_BATCH_PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-device-batch.patch"
 MEANINGFUL_TRANSCRIPT_PATCH_FILE="${ROOT_DIR}/patches/memo-stt-0.1.1-meaningful-transcript.patch"
-TRANSCRIPTION_ENGINE="${ROOT_DIR}/sidecars/nemotron/transcription_engine.rs"
+TRANSCRIPTION_ENGINE="${ROOT_DIR}/sidecars/conomo-adapter/transcription_engine.rs"
 MREC_BATCH="${ROOT_DIR}/sidecars/device-sync/mrec_batch.rs"
 
 mkdir -p "${OUTPUT_DIR}"
@@ -55,7 +55,7 @@ else
 
   PATCH_HASH="$(shasum -a 256 "${PATCH_FILE}" "${CLEANUP_PATCH_FILE}" "${AUDIO_PATCH_FILE}" "${STRICT_INPUT_PATCH_FILE}" "${CONTINUOUS_INPUT_PATCH_FILE}" "${DEVICE_BATCH_PATCH_FILE}" "${MEANINGFUL_TRANSCRIPT_PATCH_FILE}" "${TRANSCRIPTION_ENGINE}" "${MREC_BATCH}" | shasum -a 256 | awk '{print $1}')"
   SOURCE_DIR="${SOURCE_ROOT}/${CRATE_NAME}-${CRATE_VERSION}"
-  PATCH_MARKER="${SOURCE_DIR}/.memo-nemotron-patch"
+  PATCH_MARKER="${SOURCE_DIR}/.memo-conomo-patch"
   CURRENT_HASH=""
   if [[ -f "${PATCH_MARKER}" ]]; then
     CURRENT_HASH="$(tr -d '[:space:]' < "${PATCH_MARKER}")"
@@ -82,7 +82,7 @@ else
     printf '%s\n' "${PATCH_HASH}" > "${PATCH_MARKER}"
   fi
 
-  echo "Building patched ${CRATE_NAME} ${CRATE_VERSION} with the Granite backend"
+  echo "Building patched ${CRATE_NAME} ${CRATE_VERSION} with the conomo backend"
   CARGO_TARGET_DIR="${LOCAL_TARGET_DIR}" cargo build \
     --release \
     --manifest-path "${SOURCE_DIR}/Cargo.toml" \

@@ -248,8 +248,8 @@ function App() {
       if (status.state === 'transcribing') {
         setToast({ message: 'Syncing Memo recordings… dictation will resume automatically.', severity: 'info', duration: 3500 });
       } else if (status.state === 'complete') {
-        const fallback = status.requestedModel === 'whisper' && status.actualModel === 'granite'
-          ? ' (transcribed with Granite fallback)'
+        const fallback = status.requestedModel === 'whisper' && status.actualModel === 'conomo'
+          ? ' (transcribed with conomo fallback)'
           : '';
         setToast({ message: `Memo sync complete${fallback}`, severity: 'success', duration: 3500 });
       } else if (status.state === 'updating-firmware') {

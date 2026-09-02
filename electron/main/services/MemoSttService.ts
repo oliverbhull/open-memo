@@ -289,9 +289,9 @@ export class MemoSttService extends EventEmitter {
       const requestedAsrModel = settings.asrModel;
       const asrModel = requestedAsrModel === 'whisper' && isWhisperModelInstalled()
         ? 'whisper'
-        : 'granite';
-      if (requestedAsrModel === 'whisper' && asrModel === 'granite') {
-        logger.warn('[MemoSttService] Selected Whisper model is missing; falling back to Granite');
+        : 'conomo';
+      if (requestedAsrModel === 'whisper' && asrModel === 'conomo') {
+        logger.warn('[MemoSttService] Selected Whisper model is missing; falling back to conomo');
       }
       env.MEMO_ASR_BACKEND = asrModel;
 
@@ -302,43 +302,29 @@ export class MemoSttService extends EventEmitter {
           `(model=${env.MEMO_WHISPER_MODEL_PATH})`,
         );
       } else {
-        const graniteRoot = isDev
-          ? path.join(process.cwd(), '.build', 'granite')
-          : path.join(process.resourcesPath, 'granite');
-        const bundledWorker = path.join(graniteRoot, 'memo-granite-asr');
-        const compiledRoot = path.join(graniteRoot, 'compiled');
-        const bundledModel = fs.readdirSync(compiledRoot)
-          .find((entry) => entry.endsWith('.mlmodelc'));
-        const bundledTokenizer = path.join(graniteRoot, 'tokenizer.json');
+        const conomoRoot = isDev
+          ? path.join(process.cwd(), '.build', 'conomo')
+          : path.join(process.resourcesPath, 'conomo');
+        const bundledWorker = path.join(conomoRoot, 'conomo');
 
-        // Development overrides make backend work easier without weakening the
-        // release contract: packaged apps always use their signed resources.
+        // Development can use an explicitly supplied worker. Packaged apps
+        // always use the signed conomo executable in their resources.
         env.MEMO_ASR_WORKER = isDev && process.env.MEMO_ASR_WORKER
           ? process.env.MEMO_ASR_WORKER
           : bundledWorker;
-        env.MEMO_ASR_MODEL_PATH = isDev && process.env.MEMO_ASR_MODEL_PATH
-          ? process.env.MEMO_ASR_MODEL_PATH
-          : path.join(compiledRoot, bundledModel ?? 'GraniteSpeech.mlmodelc');
-        env.MEMO_ASR_TOKENIZER_PATH = isDev && process.env.MEMO_ASR_TOKENIZER_PATH
-          ? process.env.MEMO_ASR_TOKENIZER_PATH
-          : bundledTokenizer;
 
-        const requiredResources = [
-          ['worker', env.MEMO_ASR_WORKER],
-          ['model', env.MEMO_ASR_MODEL_PATH],
-          ['tokenizer', env.MEMO_ASR_TOKENIZER_PATH],
-        ] as const;
+        const requiredResources = [['worker', env.MEMO_ASR_WORKER]] as const;
         for (const [label, resourcePath] of requiredResources) {
           if (!resourcePath || !fs.existsSync(resourcePath)) {
             throw new Error(
-              `Bundled Granite ${label} not found at ${resourcePath || '(unset)'}. ` +
-              'Run npm run build:granite first.',
+              `Bundled conomo ${label} not found at ${resourcePath || '(unset)'}. ` +
+              'Run npm run build:conomo first.',
             );
           }
         }
         logger.info(
-          `[MemoSttService #${this.instanceId}] ASR model: Granite Core ML INT4 ` +
-          `(worker=${env.MEMO_ASR_WORKER}, model=${env.MEMO_ASR_MODEL_PATH})`,
+          `[MemoSttService #${this.instanceId}] ASR model: conomo ` +
+          `(worker=${env.MEMO_ASR_WORKER})`,
         );
       }
       // Radio mode: use External Microphone (headphone jack) like memo-RF

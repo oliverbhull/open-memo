@@ -1,3 +1,0 @@
-numpy==2.4.6
-onnxruntime-genai==0.14.1
-pyserial==3.5

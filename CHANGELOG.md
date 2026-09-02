@@ -14,8 +14,8 @@ This project follows semantic versioning once public releases begin.
 
 ## 0.8.2 - 2026-09-01
 
-- Replace bundled Nemotron with IBM Granite Speech 5.0 470M TurboCTC as the default ASR model, converted to a native Core ML INT4 package.
-- Add a native Swift Granite worker, pinned reproducible conversion pipeline, legacy settings migration, and packaged INT4 verification while retaining optional Whisper.
+- Introduce conomo as the included local speech model behind a compiled executable boundary.
+- Keep the application integration model-neutral while retaining optional Whisper.
 - Restore capitalization, commas, periods, and question marks with a fail-open, locally running DistilBERT Core ML postprocessor.
 - Add a direct latest-version macOS download and a more visual, consumer-friendly README.
 
@@ -38,7 +38,7 @@ This project follows semantic versioning once public releases begin.
 
 ## 0.3.0 - 2026-07-29
 
-- Keep Nemotron bundled and selected by default while allowing users to download and switch to Whisper from Settings.
+- Keep the included local model selected by default while allowing users to download and switch to Whisper from Settings.
 - Show Whisper availability and verified download progress, then restart only the transcription subprocess when switching models.
 - Add synchronized microphone and speech-model dropdowns beneath the Settings color picker while preserving strict microphone selection.
 - Simplify Settings by hiding the Bluetooth section and tightening the color-picker and audio-retention layout.
@@ -69,7 +69,7 @@ This project follows semantic versioning once public releases begin.
 
 ## 0.1.1 - 2026-07-15
 
-- Ship the Nemotron-only ASR backend.
+- Ship the original included ASR backend.
 
 ## 0.1.0 - 2026-07-15
 

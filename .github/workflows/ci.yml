@@ -44,24 +44,27 @@ jobs:
             ~/.cargo/git
             .build/memo-stt-source
             .build/memo-stt-target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('scripts/shell/build-stt.sh', 'patches/memo-stt-0.1.1-*.patch', 'sidecars/nemotron/transcription_engine.rs') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('scripts/shell/build-stt.sh', 'patches/memo-stt-0.1.1-*.patch', 'sidecars/conomo-adapter/transcription_engine.rs') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Cache Granite bundle
+      - name: Cache conomo bundle
         uses: actions/cache@v4
         with:
-          path: .build/granite
-          key: ${{ runner.os }}-${{ runner.arch }}-granite-${{ hashFiles('scripts/shell/build-granite.sh', 'scripts/python/convert-granite-coreml.py', 'sidecars/granite/**') }}
+          path: .build/conomo
+          key: ${{ runner.os }}-${{ runner.arch }}-conomo-${{ hashFiles('scripts/shell/build-conomo.sh', 'sidecars/conomo/requirements-device.txt') }}
 
       - name: Install dependencies
         run: npm ci
 
       - name: Build unsigned app
-        run: npm run build:dir
+        run: |
+          export CONOMO_SOURCE="scripts/fixtures/conomo"
+          export CONOMO_SHA256="$(shasum -a 256 "${CONOMO_SOURCE}" | awk '{print $1}')"
+          npm run build:dir
 
-      - name: Verify packaged Granite backend
-        run: bash scripts/shell/verify-granite-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/granite
+      - name: Verify packaged conomo backend
+        run: bash scripts/shell/verify-conomo-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/conomo
 
       - name: Upload app smoke-build artifact
         uses: actions/upload-artifact@v4

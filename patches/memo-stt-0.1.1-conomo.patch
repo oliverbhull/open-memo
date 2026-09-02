@@ -23,7 +23,7 @@ index 4772659..8b59e51 100644
      ToggleLock,
  }
 
-+fn start_nemotron_live_feeder(
++fn start_worker_live_feeder(
 +    engine: Arc<Mutex<TranscriptionEngine>>,
 +    audio_buffer: Arc<Mutex<Vec<i16>>>,
 +    active: Arc<AtomicBool>,
@@ -39,7 +39,7 @@ index 4772659..8b59e51 100644
 +    }
 +
 +    if let Err(error) = engine.lock().unwrap().begin_live_stream() {
-+        eprintln!("Nemotron stream start failed: {error}");
++        eprintln!("worker stream start failed: {error}");
 +        return;
 +    }
 +
@@ -62,7 +62,7 @@ index 4772659..8b59e51 100644
 +            };
 +            if !chunk.is_empty() {
 +                if let Err(error) = engine.lock().unwrap().feed_live_audio(&chunk) {
-+                    eprintln!("Nemotron live audio failed: {error}");
++                    eprintln!("worker live audio failed: {error}");
 +                    active_for_thread.store(false, Ordering::Release);
 +                    break;
 +                }
@@ -72,7 +72,7 @@ index 4772659..8b59e51 100644
 +    *handle.lock().unwrap() = Some(join_handle);
 +}
 +
-+fn stop_nemotron_live_feeder(
++fn stop_worker_live_feeder(
 +    active: &Arc<AtomicBool>,
 +    handle: &Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 +) {
@@ -98,8 +98,8 @@ index 4772659..8b59e51 100644
      let press_enter_after_paste = Arc::new(AtomicBool::new(false));
      let is_recording = Arc::new(AtomicBool::new(false));
      let audio_buffer = Arc::new(Mutex::new(Vec::<i16>::new()));
-+    let nemotron_feeder_active = Arc::new(AtomicBool::new(false));
-+    let nemotron_feeder_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>> =
++    let worker_feeder_active = Arc::new(AtomicBool::new(false));
++    let worker_feeder_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>> =
 +        Arc::new(Mutex::new(None));
 
      // Vocabulary storage for voice commands
@@ -108,11 +108,11 @@ index 4772659..8b59e51 100644
                                      println_ui_flush!("🎤 Recording... (button pressed)");
                                      ptt_release_visible = false;
                                      audio_buffer_clone.lock().unwrap().clear();
-+                                    start_nemotron_live_feeder(
++                                    start_worker_live_feeder(
 +                                        engine_clone.clone(),
 +                                        audio_buffer_clone.clone(),
-+                                        nemotron_feeder_active.clone(),
-+                                        nemotron_feeder_handle.clone(),
++                                        worker_feeder_active.clone(),
++                                        worker_feeder_handle.clone(),
 +                                    );
                                  }
                                  NotificationResult::Control(0x32) => {
@@ -121,9 +121,9 @@ index 4772659..8b59e51 100644
                                          }
                                      }
 
-+                                    stop_nemotron_live_feeder(
-+                                        &nemotron_feeder_active,
-+                                        &nemotron_feeder_handle,
++                                    stop_worker_live_feeder(
++                                        &worker_feeder_active,
++                                        &worker_feeder_handle,
 +                                    );
 +
                                      // Get the buffered audio
@@ -178,7 +178,7 @@ index 4772659..8b59e51 100644
 -    let streaming_enabled = std::env::var("STREAMING_TRANSCRIBE")
 -        .map(|v| v != "0" && v.to_lowercase() != "false")
 -        .unwrap_or(true);
-+    // Nemotron keeps one cache-aware model session for the complete transmission,
++    // worker keeps one cache-aware model session for the complete transmission,
 +    // so the legacy segment pre-transcription path stays disabled.
 +    let streaming_enabled = !engine.lock().unwrap().is_worker_backend()
 +        && std::env::var("STREAMING_TRANSCRIBE")
@@ -191,8 +191,8 @@ index 4772659..8b59e51 100644
      let segment_boundary: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
      let segmenter_active = Arc::new(AtomicBool::new(false));
      let last_segment_text: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-+    let nemotron_feeder_active = Arc::new(AtomicBool::new(false));
-+    let nemotron_feeder_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>> =
++    let worker_feeder_active = Arc::new(AtomicBool::new(false));
++    let worker_feeder_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>> =
 +        Arc::new(Mutex::new(None));
 
      let audio_buffer_clone = audio_buffer.clone();
@@ -201,11 +201,11 @@ index 4772659..8b59e51 100644
                          }
                      }
 
-+                    start_nemotron_live_feeder(
++                    start_worker_live_feeder(
 +                        engine_clone.clone(),
 +                        audio_buffer_clone.clone(),
-+                        nemotron_feeder_active.clone(),
-+                        nemotron_feeder_handle.clone(),
++                        worker_feeder_active.clone(),
++                        worker_feeder_handle.clone(),
 +                    );
 +
                      if streaming_enabled {
@@ -215,7 +215,7 @@ index 4772659..8b59e51 100644
                          recording_stream_clone.lock().unwrap().take();
                      }
 
-+                    stop_nemotron_live_feeder(&nemotron_feeder_active, &nemotron_feeder_handle);
++                    stop_worker_live_feeder(&worker_feeder_active, &worker_feeder_handle);
 +
                      let samples = {
                          let mut buf = audio_buffer_clone.lock().unwrap();
@@ -233,11 +233,11 @@ index 4772659..8b59e51 100644
                          {
                              println_ui_flush!("🎤 Recording...");
                              audio_buffer_clone.lock().unwrap().clear();
-+                            start_nemotron_live_feeder(
++                            start_worker_live_feeder(
 +                                engine_clone.clone(),
 +                                audio_buffer_clone.clone(),
-+                                nemotron_feeder_active.clone(),
-+                                nemotron_feeder_handle.clone(),
++                                worker_feeder_active.clone(),
++                                worker_feeder_handle.clone(),
 +                            );
 
                              if streaming_enabled {
@@ -246,9 +246,9 @@ index 4772659..8b59e51 100644
                                  recording_stream_clone.lock().unwrap().take();
                              }
 
-+                            stop_nemotron_live_feeder(
-+                                &nemotron_feeder_active,
-+                                &nemotron_feeder_handle,
++                            stop_worker_live_feeder(
++                                &worker_feeder_active,
++                                &worker_feeder_handle,
 +                            );
 +
                              let samples = {

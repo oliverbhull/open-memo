@@ -48,7 +48,7 @@ export class PunctuationService {
       this.process.once('error', (error) => this.handleExit(error));
       this.process.once('exit', (code, signal) => this.handleExit(new Error(`worker exited (${code ?? signal})`)));
     } catch (error) {
-      logger.warn('[PunctuationService] Unavailable; using raw Granite text:', error);
+      logger.warn('[PunctuationService] Unavailable; using raw conomo text:', error);
       this.process = null;
     }
   }

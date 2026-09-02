@@ -80,9 +80,9 @@ export class AsrModelService extends EventEmitter {
     return {
       selectedModel,
       models: {
-        granite: {
-          id: 'granite',
-          name: 'Granite Speech 5.0',
+        conomo: {
+          id: 'conomo',
+          name: 'conomo',
           installState: 'included',
           downloadedBytes: 0,
           totalBytes: 0,
@@ -106,7 +106,7 @@ export class AsrModelService extends EventEmitter {
   }
 
   async selectModel(model: AsrModelId, restartStt: () => void): Promise<AsrSelectionResult> {
-    if (model !== 'granite' && model !== 'whisper') {
+    if (model !== 'conomo' && model !== 'whisper') {
       return { success: false, state: this.getState(), error: `Unsupported speech model: ${String(model)}` };
     }
 

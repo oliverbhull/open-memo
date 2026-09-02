@@ -92,7 +92,7 @@ export interface ToastData {
   duration: number;
 }
 
-export type AsrModelId = 'granite' | 'whisper';
+export type AsrModelId = 'conomo' | 'whisper';
 
 export type AsrModelInstallState =
   | 'included'

@@ -49,6 +49,8 @@ Saving the original audio is optional and off by default.
 4. Hold **Fn** and start talking.
 
 Open Memo requires macOS 15 or newer and an Apple silicon Mac.
+Conomo is included and ready to use. You can also choose Whisper in Settings;
+Memo downloads it once and then runs it locally.
 
 ## Private by design
 

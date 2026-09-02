@@ -89,8 +89,8 @@ export class DeviceSyncService extends EventEmitter {
     }
 
     const requestedModel = loadSettings().asrModel;
-    const actualModel = requestedModel === 'whisper' && isWhisperModelInstalled() ? 'whisper' : 'granite';
-    const fallbackReason = requestedModel === 'whisper' && actualModel === 'granite'
+    const actualModel = requestedModel === 'whisper' && isWhisperModelInstalled() ? 'whisper' : 'conomo';
+    const fallbackReason = requestedModel === 'whisper' && actualModel === 'conomo'
       ? 'selected Whisper model was not installed'
       : '';
     const userData = app.getPath('userData');
@@ -103,7 +103,7 @@ export class DeviceSyncService extends EventEmitter {
       '--trusted-device', path.join(userData, 'trusted-memo-device.json'),
       '--lock', path.join(userData, 'device-sync.lock'),
       '--stt-bin', resources.stt,
-      '--granite-root', resources.granite,
+      '--conomo-root', resources.conomo,
       '--whisper-model', whisperModelPath(),
       '--requested-model', requestedModel,
       '--actual-model', actualModel,
@@ -183,17 +183,17 @@ export class DeviceSyncService extends EventEmitter {
     helper: string;
     updater: string;
     stt: string;
-    granite: string;
+    conomo: string;
     bleBridge: string;
   } {
     const dev = !app.isPackaged;
-    const granite = dev ? path.join(process.cwd(), '.build', 'granite') : path.join(process.resourcesPath, 'granite');
+    const conomo = dev ? path.join(process.cwd(), '.build', 'conomo') : path.join(process.resourcesPath, 'conomo');
     return {
-      python: path.join(granite, 'device-runtime', 'bin', 'python3.12'),
+      python: path.join(conomo, 'device-runtime', 'bin', 'python3.12'),
       helper: dev ? path.join(process.cwd(), 'sidecars', 'device-sync', 'device_sync.py') : path.join(process.resourcesPath, 'device-sync', 'device_sync.py'),
       updater: dev ? path.join(process.cwd(), 'sidecars', 'device-sync', 'firmware_update.py') : path.join(process.resourcesPath, 'device-sync', 'firmware_update.py'),
       stt: dev ? path.join(process.cwd(), '.build', 'stt', 'memo-stt') : path.join(process.resourcesPath, 'sttbin', 'memo-stt'),
-      granite,
+      conomo,
       bleBridge: dev ? path.join(process.cwd(), '.build', 'ble', 'memo-ble-bridge') : path.join(process.resourcesPath, 'device-sync', 'memo-ble-bridge'),
     };
   }

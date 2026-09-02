@@ -17,11 +17,11 @@
     "build:overlay-preload": "esbuild electron/preload/overlay.ts --platform=node --bundle --external:electron --outfile=dist/overlay-preload.cjs --format=cjs",
     "build:renderer": "vite build --config vite.config.ts",
     "build:stt:release": "bash scripts/shell/build-stt.sh",
-    "build:granite": "bash scripts/shell/build-granite.sh",
-    "verify:granite": "bash scripts/shell/verify-granite-bundle.sh",
+    "build:conomo": "bash scripts/shell/build-conomo.sh",
+    "verify:conomo": "bash scripts/shell/verify-conomo-bundle.sh",
     "build:pnc": "bash scripts/shell/build-pnc.sh",
     "verify:pnc": "bash scripts/shell/verify-pnc-bundle.sh",
-    "build:backends": "npm run build:stt:release && npm run build:granite && npm run build:pnc",
+    "build:backends": "npm run build:stt:release && npm run build:conomo && npm run build:pnc",
     "build:ble": "bash scripts/shell/build-ble-bridge.sh",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.json",
     "check": "npm run typecheck",
@@ -34,7 +34,7 @@
     "export-memos": "npm run build:main && npm run build:renderer && MEMO_EXPORT=1 electron ."
   },
   "keywords": [
-    "granite",
+    "conomo",
     "coreml",
     "speech-to-text",
     "dictation",
@@ -156,13 +156,10 @@
         ]
       },
       {
-        "from": ".build/granite/",
-        "to": "granite",
+        "from": ".build/conomo/",
+        "to": "conomo",
         "filter": [
-          "memo-granite-asr",
-          "compiled/**",
-          "tokenizer.json",
-          "manifest.json",
+          "conomo",
           "VERSIONS",
           "device-runtime/**"
         ]

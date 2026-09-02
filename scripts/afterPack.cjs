@@ -50,33 +50,23 @@ module.exports = async function afterPack(context) {
   await sh('dot_clean', ['-m', appPath]);
   console.log('✓ Extended attributes cleaned');
 
-  // Verify the self-contained Granite Core ML resources before signing.
-  const granitePath = path.join(appPath, 'Contents', 'Resources', 'granite');
-  const compiledModels = fs.readdirSync(path.join(granitePath, 'compiled'))
-    .filter((name) => name.endsWith('.mlmodelc'));
-  if (compiledModels.length !== 1) throw new Error('Granite bundle must contain exactly one compiled Core ML model');
-  const graniteWorker = path.join(granitePath, 'memo-granite-asr');
-  const devicePython = path.join(granitePath, 'device-runtime', 'bin', 'python3.12');
-  const graniteRequired = [
-    graniteWorker,
+  // Verify the self-contained conomo executable before signing.
+  const conomoPath = path.join(appPath, 'Contents', 'Resources', 'conomo');
+  const conomoWorker = path.join(conomoPath, 'conomo');
+  const devicePython = path.join(conomoPath, 'device-runtime', 'bin', 'python3.12');
+  const conomoRequired = [
+    conomoWorker,
     devicePython,
-    path.join(granitePath, 'compiled', compiledModels[0]),
-    path.join(granitePath, 'tokenizer.json'),
-    path.join(granitePath, 'manifest.json'),
-    path.join(granitePath, 'VERSIONS'),
+    path.join(conomoPath, 'VERSIONS'),
   ];
-  const missingGraniteFiles = graniteRequired.filter((required) => !fs.existsSync(required));
-  if (missingGraniteFiles.length > 0) throw new Error(`Granite bundle is incomplete:\n${missingGraniteFiles.join('\n')}`);
-  const manifest = JSON.parse(fs.readFileSync(path.join(granitePath, 'manifest.json'), 'utf8'));
-  if (manifest.quantization !== 'int4' || !(manifest.int4_operations > 0)) {
-    throw new Error('Packaged Granite model is not verified as INT4');
-  }
-  fs.chmodSync(graniteWorker, 0o755);
+  const missingFiles = conomoRequired.filter((required) => !fs.existsSync(required));
+  if (missingFiles.length > 0) throw new Error(`conomo bundle is incomplete:\n${missingFiles.join('\n')}`);
+  fs.chmodSync(conomoWorker, 0o755);
   fs.chmodSync(devicePython, 0o755);
   await sh(devicePython, ['-B', '-c', 'import serial; print(serial.VERSION)'], {
     env: { ...process.env, PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' },
   });
-  console.log('✓ Bundled Granite Core ML INT4 runtime and model verified');
+  console.log('✓ Bundled conomo executable verified');
 
   const pncPath = path.join(appPath, 'Contents', 'Resources', 'pnc');
   const pncCompiledModels = fs.readdirSync(path.join(pncPath, 'compiled'))
@@ -96,10 +86,10 @@ module.exports = async function afterPack(context) {
   fs.chmodSync(pncWorker, 0o755);
   console.log('✓ Bundled DistilBERT punctuation and capitalization model verified');
 
-  // The device-sync Python runtime and Granite worker are nested native code.
+  // The device-sync Python runtime and conomo worker are nested native code.
   if (shouldSign) {
     const signer = process.env.CSC_NAME || process.env.CODE_SIGN_IDENTITY || 'Developer ID Application';
-    const nativeLibraries = walkFiles(path.join(granitePath, 'device-runtime'))
+    const nativeLibraries = walkFiles(path.join(conomoPath, 'device-runtime'))
       .filter((filePath) => filePath.endsWith('.so') || filePath.endsWith('.dylib'));
     for (const nativeLibrary of nativeLibraries) {
       await sh('codesign', [
@@ -119,14 +109,14 @@ module.exports = async function afterPack(context) {
     await sh('codesign', [
       '--force', '--options', 'runtime',
       '--entitlements', path.resolve('config/entitlements.mac.plist'),
-      '--sign', signer, graniteWorker,
+      '--sign', signer, conomoWorker,
     ]);
     await sh('codesign', [
       '--force', '--options', 'runtime',
       '--entitlements', path.resolve('config/entitlements.mac.plist'),
       '--sign', signer, pncWorker,
     ]);
-    console.log(`✓ Signed ${nativeLibraries.length} device runtime libraries, Python, Granite worker, and PnC worker`);
+    console.log(`✓ Signed ${nativeLibraries.length} device runtime libraries, Python, conomo worker, and PnC worker`);
     await sh('codesign', [
       '--force',
       '--options', 'runtime',

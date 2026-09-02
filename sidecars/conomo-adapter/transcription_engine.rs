@@ -14,23 +14,23 @@ const TRANSCRIPTION_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub enum TranscriptionEngine {
     Whisper(SttEngine),
-    Granite(GraniteEngine),
+    Worker(WorkerEngine),
 }
 
 impl TranscriptionEngine {
     pub fn from_env(input_sample_rate: u32) -> Result<Self> {
         match env::var("MEMO_ASR_BACKEND")
-            .unwrap_or_else(|_| "granite".to_string())
+            .unwrap_or_else(|_| "conomo".to_string())
             .to_lowercase()
             .as_str()
         {
-            "granite" => Ok(Self::Granite(GraniteEngine::new(input_sample_rate)?)),
+            "conomo" => Ok(Self::Worker(WorkerEngine::new(input_sample_rate)?)),
             "whisper" => {
                 let model = required_path("MEMO_WHISPER_MODEL_PATH")?;
                 Ok(Self::Whisper(SttEngine::new(model, input_sample_rate)?))
             }
             backend => Err(Error(format!(
-                "Unknown ASR backend {backend:?}; expected granite or whisper"
+                "Unknown ASR backend {backend:?}; expected conomo or whisper"
             ))),
         }
     }
@@ -38,18 +38,18 @@ impl TranscriptionEngine {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Whisper(_) => "Whisper GGML",
-            Self::Granite(_) => "Granite Core ML INT4",
+            Self::Worker(_) => "conomo",
         }
     }
 
     pub fn is_worker_backend(&self) -> bool {
-        matches!(self, Self::Granite(_))
+        matches!(self, Self::Worker(_))
     }
 
     pub fn warmup(&self) -> Result<()> {
         match self {
             Self::Whisper(engine) => engine.warmup(),
-            Self::Granite(_) => Ok(()),
+            Self::Worker(_) => Ok(()),
         }
     }
 
@@ -57,26 +57,26 @@ impl TranscriptionEngine {
         if let Self::Whisper(engine) = self {
             engine.set_prompt(prompt);
         }
-        // Granite's CTC runtime has no prompt input. Memo still
-        // applies its normal command detection and phrase replacements.
+        // The worker protocol has no prompt input. Memo still applies its
+        // normal command detection and phrase replacements.
     }
 
     pub fn begin_live_stream(&mut self) -> Result<()> {
-        if let Self::Granite(engine) = self {
+        if let Self::Worker(engine) = self {
             engine.begin_live_stream()?;
         }
         Ok(())
     }
 
     pub fn feed_live_audio(&mut self, samples: &[i16]) -> Result<()> {
-        if let Self::Granite(engine) = self {
+        if let Self::Worker(engine) = self {
             engine.feed_live_audio(samples)?;
         }
         Ok(())
     }
 
     pub fn abort_live_stream(&mut self) {
-        if let Self::Granite(engine) = self {
+        if let Self::Worker(engine) = self {
             engine.abort_live_stream();
         }
     }
@@ -84,12 +84,12 @@ impl TranscriptionEngine {
     pub fn transcribe(&mut self, samples: &[i16]) -> Result<String> {
         match self {
             Self::Whisper(engine) => engine.transcribe(samples),
-            Self::Granite(engine) => engine.finish_transcription(samples),
+            Self::Worker(engine) => engine.finish_transcription(samples),
         }
     }
 }
 
-pub struct GraniteEngine {
+pub struct WorkerEngine {
     child: Child,
     stdin: ChildStdin,
     responses: Receiver<String>,
@@ -98,48 +98,32 @@ pub struct GraniteEngine {
     streamed_input_samples: usize,
 }
 
-impl GraniteEngine {
+impl WorkerEngine {
     fn new(input_sample_rate: u32) -> Result<Self> {
         let worker = required_path("MEMO_ASR_WORKER")?;
-        let model = required_path("MEMO_ASR_MODEL_PATH")?;
-        let tokenizer = required_path("MEMO_ASR_TOKENIZER_PATH")?;
 
         if !worker.is_file() {
             return Err(Error(format!(
-                "Granite worker not found: {}",
+                "conomo worker not found: {}",
                 worker.display()
             )));
         }
-        if !model.is_dir() {
-            return Err(Error(format!(
-                "Granite model not found: {}",
-                model.display()
-            )));
-        }
-        if !tokenizer.is_file() {
-            return Err(Error(format!("Granite tokenizer not found: {}", tokenizer.display())));
-        }
-
         let mut child = Command::new(&worker)
-            .arg("--model-path")
-            .arg(&model)
-            .arg("--tokenizer-path")
-            .arg(&tokenizer)
             .arg("--worker")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
-            .map_err(|e| Error(format!("Failed to launch bundled Granite worker: {e}")))?;
+            .map_err(|e| Error(format!("Failed to launch bundled conomo worker: {e}")))?;
 
         let stdin = child
             .stdin
             .take()
-            .ok_or_else(|| Error("Failed to open Granite worker stdin".to_string()))?;
+            .ok_or_else(|| Error("Failed to open conomo worker stdin".to_string()))?;
         let stdout = child
             .stdout
             .take()
-            .ok_or_else(|| Error("Failed to open Granite worker stdout".to_string()))?;
+            .ok_or_else(|| Error("Failed to open conomo worker stdout".to_string()))?;
         let (response_tx, responses) = mpsc::channel();
         std::thread::spawn(move || {
             for line in BufReader::new(stdout)
@@ -157,18 +141,18 @@ impl GraniteEngine {
 
         let ready = responses
             .recv_timeout(WORKER_READY_TIMEOUT)
-            .map_err(|e| Error(format!("Failed waiting for Granite worker: {e}")))?;
+            .map_err(|e| Error(format!("Failed waiting for conomo worker: {e}")))?;
         if ready.trim() != "READY" {
             let status = child.try_wait().ok().flatten();
             return Err(Error(format!(
-                "Granite worker did not become ready (line={:?}, status={status:?})",
+                "conomo worker did not become ready (line={:?}, status={status:?})",
                 ready.trim()
             )));
         }
 
         eprintln!(
-            "Granite worker ready (worker={}, model={})",
-            worker.display(), model.display()
+            "conomo worker ready (worker={})",
+            worker.display()
         );
 
         Ok(Self {
@@ -229,17 +213,17 @@ impl GraniteEngine {
                 Err(error) => {
                     let status = self.child.try_wait().ok().flatten();
                     return Err(Error(format!(
-                        "Granite worker did not return a transcript ({error}; status={status:?})"
+                        "conomo worker did not return a transcript ({error}; status={status:?})"
                     )));
                 }
             };
             let line = line.trim();
             if let Some(message) = line.strip_prefix("ERROR:") {
-                return Err(Error(format!("Granite transcription failed: {message}")));
+                return Err(Error(format!("conomo transcription failed: {message}")));
             }
             if let Some(payload) = line.strip_prefix("FINAL:") {
                 let parsed: Value = serde_json::from_str(payload)
-                    .map_err(|e| Error(format!("Invalid Granite FINAL payload: {e}")))?;
+                    .map_err(|e| Error(format!("Invalid conomo FINAL payload: {e}")))?;
                 return Ok(parsed
                     .get("processedText")
                     .and_then(Value::as_str)
@@ -279,11 +263,11 @@ impl GraniteEngine {
             .write_all(line.as_bytes())
             .and_then(|_| self.stdin.write_all(b"\n"))
             .and_then(|_| self.stdin.flush())
-            .map_err(|e| Error(format!("Failed sending audio to Granite worker: {e}")))
+            .map_err(|e| Error(format!("Failed sending audio to conomo worker: {e}")))
     }
 }
 
-impl Drop for GraniteEngine {
+impl Drop for WorkerEngine {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();

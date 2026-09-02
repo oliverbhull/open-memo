@@ -28,7 +28,7 @@ export const storeDefaults: StoreSchema = {
   preferBleWhenAvailable: true,
   autoReconnect: true,
   selectedSystemMicName: null,
-  asrModel: 'granite',
+  asrModel: 'conomo',
   lastSystemMicDevice: null,
   lastSystemMicSampleRate: null,
   postEnter: false,

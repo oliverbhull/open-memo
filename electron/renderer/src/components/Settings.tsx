@@ -330,7 +330,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const whisperDownloading = whisperStatus?.installState === 'downloading';
   const displayedAsrModel: AsrModelId = pendingAsrModel
     ?? (whisperDownloading ? 'whisper' : asrState?.selectedModel)
-    ?? 'granite';
+    ?? 'conomo';
   const whisperPercent = whisperStatus && whisperStatus.totalBytes > 0
     ? Math.min(100, Math.round((whisperStatus.downloadedBytes / whisperStatus.totalBytes) * 100))
     : 0;
@@ -488,7 +488,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       textOverflow: 'ellipsis',
                     }}
                   >
-                    <option value="granite">Granite Speech 5.0 — Included</option>
+                    <option value="conomo">conomo — Included</option>
                     <option value="whisper">
                       {whisperStatus?.installState === 'downloaded'
                         ? 'Whisper — Downloaded'

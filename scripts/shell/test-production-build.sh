@@ -19,7 +19,7 @@ esac
 
 APP_PATH="dist/mac-arm64/Memo.app"
 test -d "$APP_PATH"
-bash scripts/shell/verify-granite-bundle.sh "$APP_PATH/Contents/Resources/granite"
+bash scripts/shell/verify-conomo-bundle.sh "$APP_PATH/Contents/Resources/conomo"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
 echo "Production build verified at $APP_PATH"
