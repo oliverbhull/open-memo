@@ -86,7 +86,7 @@ Developer ID Application: Your Name (TEAMID)
 
 GitHub Actions is the source of truth for public releases.
 
-1. Update `package.json` and `CHANGELOG.md`.
+1. Update the version in `package.json` and `package-lock.json`.
 2. Merge to `main`.
 3. Create an annotated version tag, for example:
 

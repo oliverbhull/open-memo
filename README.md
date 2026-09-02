@@ -76,6 +76,4 @@ npm run dev
 ## Learn more
 
 [Troubleshooting](docs/troubleshooting.md) ·
-[Changelog](CHANGELOG.md) ·
-[Security](SECURITY.md) ·
 [Signing and release](docs/maintainers/signing-and-release.md)
