@@ -1,44 +1,66 @@
-# Open Memo
+<p align="center">
+  <img src="assets/app-icons/app-icon-192.png" width="96" alt="Open Memo app icon">
+</p>
 
-Open-source, push-to-talk dictation for Apple silicon Macs running macOS 15 or
-newer.
+<h1 align="center">Open Memo</h1>
 
-Hold a hotkey, speak naturally, and release. Your words appear wherever your
-cursor is—without an account, subscription, or cloud transcription.
+<p align="center">
+  Push-to-talk dictation that runs privately on your Mac.
+</p>
 
-[![Download Open Memo for macOS](https://img.shields.io/badge/Download_for_macOS-111111?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/oliverbhull/open-memo/releases/latest/download/Open-Memo-latest-arm64.dmg)
+<p align="center">
+  <a href="https://github.com/oliverbhull/open-memo/releases/latest/download/Open-Memo-latest-arm64.dmg">
+    <img src="assets/readme/download-macos.svg" alt="Download Open Memo for macOS">
+  </a>
+</p>
 
-Requires macOS 15 or newer on an Apple silicon Mac. Looking for an older
-version? Visit
-[GitHub Releases](https://github.com/oliverbhull/open-memo/releases).
+<p align="center">
+  <a href="https://github.com/oliverbhull/open-memo/releases"><img src="https://img.shields.io/github/v/release/oliverbhull/open-memo?style=flat-square&label=version" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/macOS-15%2B-lightgrey?style=flat-square&logo=apple" alt="macOS 15 or newer">
+  <img src="https://img.shields.io/badge/Apple_silicon-required-lightgrey?style=flat-square" alt="Apple silicon required">
+  <a href="https://github.com/oliverbhull/open-memo/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/oliverbhull/open-memo/ci.yml?style=flat-square&label=build" alt="Build status"></a>
+</p>
+
+Hold a hotkey, speak naturally, and release. Open Memo adds punctuation and
+places the finished text wherever your cursor is—without an account,
+subscription, or cloud transcription.
+
+## How it works
+
+![Hold your hotkey, speak, release, and your words appear](assets/readme/how-it-works.svg)
 
 ## Install
 
 1. Download and open the `.dmg`.
 2. Drag **Memo** into the **Applications** folder.
 3. Open Memo and allow the permissions macOS requests.
-4. Choose a hotkey, then hold it whenever you want to dictate.
+4. Choose a hotkey and start dictating.
 
-Memo needs microphone access to hear you, Accessibility access to insert text,
-and Input Monitoring access to detect your hotkey. Bluetooth permission is only
-needed if you use a Memo Bluetooth microphone.
+Open Memo requires macOS 15 or newer on an Apple silicon Mac. Looking for an
+older version? Visit [GitHub Releases](https://github.com/oliverbhull/open-memo/releases).
 
-## What you get
+## Built for everyday writing
 
-- Fast dictation in any Mac app.
-- Private, on-device transcription.
-- A searchable history of your dictations.
-- Optional local audio recordings.
-- Support for Memo Bluetooth microphones and recorders.
+- **Works anywhere** — dictate into email, messages, notes, documents, and more.
+- **Runs locally** — your speech is transcribed on your Mac.
+- **Writes naturally** — automatic punctuation and capitalization clean up your words.
+- **Keeps a history** — find and reuse previous dictations.
+- **Gives you control** — saving the original audio is optional and off by default.
+- **Connects to Memo** — supports Memo Bluetooth microphones and recorders.
 
 Granite is included and ready to use. You can also choose Whisper in Settings;
-Memo will download it once and then run it locally.
+Memo downloads it once and then runs it locally.
 
-## Privacy
+## Permissions and privacy
 
-Your speech is transcribed on your Mac. Open Memo does not require an account,
-and audio retention is off by default. If you turn on **Save dictation audio**,
-recordings stay in Memo's local application-data folder until you delete them.
+Memo needs **Microphone** access to hear you, **Accessibility** access to insert
+text, and **Input Monitoring** access to detect your hotkey. Bluetooth permission
+is only needed when using a Memo Bluetooth microphone.
+
+Open Memo does not require an account. Audio retention is off by default. If you
+turn on **Save dictation audio**, recordings remain in Memo's local app-data
+folder until you delete them.
 
 ## For developers
 
@@ -55,9 +77,11 @@ npm run check
 npm run dev
 ```
 
-More information:
+## Learn more
 
-- [Troubleshooting](docs/troubleshooting.md)
-- [Changelog](CHANGELOG.md)
-- [Security](SECURITY.md)
-- [Signing and release](docs/maintainers/signing-and-release.md)
+[Contributing](CONTRIBUTING.md) ·
+[Troubleshooting](docs/troubleshooting.md) ·
+[Changelog](CHANGELOG.md) ·
+[Support](SUPPORT.md) ·
+[Security](SECURITY.md) ·
+[Signing and release](docs/maintainers/signing-and-release.md)
