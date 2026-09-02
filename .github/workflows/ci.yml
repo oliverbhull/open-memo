@@ -51,7 +51,7 @@ jobs:
       - name: Cache conomo bundle
         uses: actions/cache@v4
         with:
-          path: .build/conomo
+          path: .build/conomo/device-runtime
           key: ${{ runner.os }}-${{ runner.arch }}-conomo-${{ hashFiles('scripts/shell/build-conomo.sh', 'sidecars/conomo/requirements-device.txt') }}
 
       - name: Install dependencies
@@ -59,6 +59,8 @@ jobs:
 
       - name: Build unsigned app
         run: |
+          mkdir -p .build/conomo
+          cp -R scripts/fixtures/conomo-bundle/. .build/conomo/
           export CONOMO_SOURCE="scripts/fixtures/conomo"
           export CONOMO_SHA256="$(shasum -a 256 "${CONOMO_SOURCE}" | awk '{print $1}')"
           npm run build:dir

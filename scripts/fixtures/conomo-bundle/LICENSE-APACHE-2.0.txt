@@ -1,0 +1,1 @@
+CI fixture placeholder; not a distributable runtime license.
