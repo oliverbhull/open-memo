@@ -6,6 +6,12 @@ This project follows semantic versioning once public releases begin.
 
 ## Unreleased
 
+## 0.8.3 - 2026-09-01
+
+- Simplify the public repository and present Open Memo as a focused macOS dictation app.
+- Improve supermicrophone BLE discovery, trusted-device selection, sync errors, and recorder audio playback.
+- Update the signed macOS release workflow and publish a stable latest-version DMG download.
+
 ## 0.8.2 - 2026-09-01
 
 - Replace bundled Nemotron with IBM Granite Speech 5.0 470M TurboCTC as the default ASR model, converted to a native Core ML INT4 package.
