@@ -130,10 +130,13 @@ def read_line(port) -> str:
 class BlePort:
     """Serial-like byte stream backed by the narrow CoreBluetooth helper."""
 
-    def __init__(self, bridge: Path):
+    def __init__(self, bridge: Path, excluded: set[str] | None = None):
         self.timeout = 1.0
+        command = [str(bridge)]
+        for identifier in sorted(excluded or set()):
+            command.extend(["--exclude", identifier])
         self.process = subprocess.Popen(
-            [str(bridge)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             bufsize=0,
         )
         if self.process.stdin is None or self.process.stdout is None:
@@ -227,27 +230,35 @@ def open_ble_sync_port(bridge: Path | None, trusted_device: Path | None = None):
         return None, None, None
     if trusted_device is None:
         return None, None, None
-    try:
-        trusted_uid = trusted_device_uid(trusted_device)
-    except RuntimeError:
-        return None, None, None
+    trusted_uid = trusted_device_uid(trusted_device)
     if trusted_uid is None:
         return None, None, None
-    port = BlePort(bridge)
-    try:
-        # Discovery, connection and encrypted notification subscription may prompt
-        # on first use, so the initial handshake gets a bounded longer deadline.
-        port.timeout = 8.0
-        port.write(b"HELLO\n")
-        port.flush()
-        info = parse_hello(read_line(port), "Bluetooth")
-        if info["device_uid"] != trusted_uid:
-            raise RuntimeError("refusing BLE sync from an untrusted Memo")
-        port.timeout = 1.0
-        return port, info, "Bluetooth"
-    except (OSError, TimeoutError, UnicodeError, RuntimeError, ValueError):
-        port.close()
-        return None, None, None
+    excluded: set[str] = set()
+    for _ in range(8):
+        port = BlePort(bridge, excluded)
+        try:
+            # Discovery, connection and encrypted notification subscription may prompt
+            # on first use, so the initial handshake gets a bounded longer deadline.
+            port.timeout = 10.0
+            port.write(b"HELLO\n")
+            port.flush()
+            bridge_line = read_line(port).split()
+            if len(bridge_line) != 2 or bridge_line[0] != "BRIDGE":
+                raise RuntimeError("BLE bridge did not identify the connected peripheral")
+            peripheral_id = bridge_line[1]
+            info = parse_hello(read_line(port), "Bluetooth")
+            if info["device_uid"] == trusted_uid:
+                port.timeout = 1.0
+                return port, info, "Bluetooth"
+            excluded.add(peripheral_id)
+            port.close()
+        except (OSError, TimeoutError, UnicodeError, RuntimeError, ValueError) as error:
+            port.close()
+            if port.process.returncode == 3:
+                return None, None, None
+            details = port._failure() if port.process.returncode not in (0, -15) else str(error)
+            raise RuntimeError(f"BLE sync unavailable: {details}") from error
+    raise RuntimeError("BLE sync unavailable: too many untrusted Memo recorders are advertising")
 
 
 def open_sync_transport(ble_bridge: Path | None = None, trusted_device: Path | None = None):
@@ -737,7 +748,7 @@ def resume_ack(port, info: dict, args, connection, journal: dict, transport: str
         raise RuntimeError(f"batch recordings remain after acknowledgements: {', '.join(unacknowledged)}")
     batch = {key: journal[key] for key in ("batch_id", "device_uid", "protocol_version", "firmware_version", "started_at")}
     complete_batch(connection, args.database, batch, journal, args.batch_directory)
-    rows = connection.execute("""SELECT r.source_sha256,d.device_uid,r.device_recording_id,r.captured_at,r.ingested_at,r.duration_seconds,t.text transcript FROM recordings r JOIN devices d ON d.id=r.device_id JOIN transcripts t ON t.recording_id=r.id AND t.version=(SELECT MAX(t2.version) FROM transcripts t2 WHERE t2.recording_id=r.id) JOIN batch_recordings br ON br.recording_id=r.id WHERE br.batch_id=? AND r.classification='audio' AND trim(t.text)<>'' ORDER BY br.position""", (journal["batch_id"],)).fetchall()
+    rows = connection.execute("""SELECT r.source_sha256,d.device_uid,r.device_recording_id,r.captured_at,r.ingested_at,r.duration_seconds,r.audio_path,t.text transcript FROM recordings r JOIN devices d ON d.id=r.device_id JOIN transcripts t ON t.recording_id=r.id AND t.version=(SELECT MAX(t2.version) FROM transcripts t2 WHERE t2.recording_id=r.id) JOIN batch_recordings br ON br.recording_id=r.id WHERE br.batch_id=? AND r.classification='audio' AND trim(t.text)<>'' ORDER BY br.position""", (journal["batch_id"],)).fetchall()
     for row in rows:
         emit_recording(dict(row))
     pending_on_device = commit_sync(port, info, journal["batch_id"])
@@ -857,13 +868,23 @@ def main() -> int:
         return 2
     connection = connect_database(args.database)
     last_state = None
+    last_error = None
     try:
         while True:
-            port, info, endpoint, transport = open_sync_transport(args.ble_bridge, args.trusted_device)
+            try:
+                port, info, endpoint, transport = open_sync_transport(args.ble_bridge, args.trusted_device)
+            except RuntimeError as error:
+                if last_state != "error" or str(error) != last_error:
+                    emit("error", error=str(error), transport="ble", endpoint="Bluetooth")
+                last_state = "error"
+                last_error = str(error)
+                time.sleep(args.poll_seconds)
+                continue
             if port is None:
                 if last_state != "disconnected":
                     emit("disconnected")
                     last_state = "disconnected"
+                    last_error = None
                 time.sleep(args.poll_seconds)
                 continue
             try:
@@ -871,6 +892,7 @@ def main() -> int:
                     remember_usb_device(args.trusted_device, info)
                 process_device(port, info, endpoint, args, connection, transport)
                 last_state = "connected"
+                last_error = None
             except (OSError, SerialException, TimeoutError) as error:
                 emit("disconnected", error=str(error), transport=transport, endpoint=endpoint)
                 last_state = "disconnected"

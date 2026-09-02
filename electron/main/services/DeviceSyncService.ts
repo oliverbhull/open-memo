@@ -83,7 +83,7 @@ export class DeviceSyncService extends EventEmitter {
     const resources = this.resolveResources();
     for (const [label, resource] of Object.entries(resources)) {
       if (!fs.existsSync(resource)) {
-        this.publishStatus({ state: 'error', completed: 0, total: 0, code: 'missing-resource', error: `Memo device sync ${label} is missing: ${resource}` });
+        this.publishStatus({ state: 'error', completed: 0, total: 0, code: 'missing-resource', error: `supermicrophone sync ${label} is missing: ${resource}` });
         return;
       }
     }

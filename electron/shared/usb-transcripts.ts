@@ -7,6 +7,7 @@ export interface UsbTranscriptRow {
   captured_at: string | null;
   ingested_at: string;
   duration_seconds: number | null;
+  audio_path: string | null;
   transcript: string;
 }
 
@@ -32,6 +33,17 @@ export function normalizeUsbTranscriptRows(value: unknown): TranscriptionData[] 
       id: `memo-device-${row.source_sha256.toLowerCase()}`,
       processedText: row.transcript.trim(),
       timestamp,
+      ...(typeof row.audio_path === 'string' && row.audio_path.trim()
+        ? {
+            audio: {
+              fileName: 'audio.wav',
+              mimeType: 'audio/wav' as const,
+              ...(typeof row.duration_seconds === 'number' && Number.isFinite(row.duration_seconds)
+                ? { duration: row.duration_seconds }
+                : {}),
+            },
+          }
+        : {}),
       context: {
         source: 'memo-device',
         deviceUid: row.device_uid,

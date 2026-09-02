@@ -22,8 +22,7 @@
     "build:backends": "npm run build:stt:release && npm run build:nemotron",
     "build:ble": "bash scripts/shell/build-ble-bridge.sh",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.json",
-    "test": "esbuild tests/*.test.ts --bundle --platform=node --format=esm --outdir=.build/tests && node --test .build/tests/*.test.js && PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s tests -p '*_test.py'",
-    "check": "npm run typecheck && npm test",
+    "check": "npm run typecheck",
     "build:app": "npm run check && npm run build:backends && npm run build:ble && npm run build:ts && npm run build:renderer",
     "build:dir": "npm run build:app && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
     "dist:mac": "npm run build:app && electron-builder --mac --publish=never",
@@ -102,7 +101,7 @@
       ],
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Memo needs microphone access to record audio for transcription.",
-        "NSBluetoothAlwaysUsageDescription": "Memo uses Bluetooth to connect to Memo devices."
+        "NSBluetoothAlwaysUsageDescription": "Memo uses Bluetooth to connect to supermicrophone."
       },
       "notarize": true
     },

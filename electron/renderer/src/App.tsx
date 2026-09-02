@@ -259,7 +259,7 @@ function App() {
       } else if (status.state === 'update-error') {
         setToast({ message: `Recordings synced, but the firmware update was skipped: ${status.error || 'unknown error'}`, severity: 'warning', duration: 7000 });
       } else if (status.state === 'error') {
-        setToast({ message: status.error || 'Memo device sync failed; recordings remain on the device.', severity: 'error', duration: 6000 });
+        setToast({ message: status.error || 'supermicrophone sync failed; recordings remain on the device.', severity: 'error', duration: 6000 });
       }
     };
     void window.electronAPI.deviceSync.getStatus().then(applyStatus);

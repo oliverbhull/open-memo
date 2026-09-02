@@ -4,6 +4,18 @@ import Foundation
 private let serviceID = CBUUID(string: "7E400001-B5A3-F393-E0A9-E50E24DCCA9E")
 private let rxID = CBUUID(string: "7E400002-B5A3-F393-E0A9-E50E24DCCA9E")
 private let txID = CBUUID(string: "7E400003-B5A3-F393-E0A9-E50E24DCCA9E")
+private let excludedPeripheralIDs: Set<UUID> = {
+    var values = Set<UUID>()
+    var arguments = CommandLine.arguments.dropFirst().makeIterator()
+    while let argument = arguments.next() {
+        guard argument == "--exclude", let value = arguments.next(), let identifier = UUID(uuidString: value) else {
+            diagnostic("invalid BLE bridge arguments")
+            exit(6)
+        }
+        values.insert(identifier)
+    }
+    return values
+}()
 
 private func diagnostic(_ message: String) {
     FileHandle.standardError.write(Data((message + "\n").utf8))
@@ -21,7 +33,11 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     override init() {
         super.init()
         manager = CBCentralManager(delegate: self, queue: nil)
-        discoveryTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { _ in
+    }
+
+    private func startDiscoveryTimer() {
+        discoveryTimer?.invalidate()
+        discoveryTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { _ in
             diagnostic("no Memo recorder found")
             exit(3)
         }
@@ -35,12 +51,13 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             }
             return
         }
+        startDiscoveryTimer()
         central.scanForPeripherals(withServices: [serviceID], options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
     }
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        guard self.peripheral == nil else { return }
+        guard self.peripheral == nil, !excludedPeripheralIDs.contains(peripheral.identifier) else { return }
         self.peripheral = peripheral
         discoveryTimer?.invalidate()
         central.stopScan()
@@ -91,6 +108,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             diagnostic("Memo notification subscription failed")
             exit(4)
         }
+        FileHandle.standardOutput.write(Data("BRIDGE \(peripheral.identifier.uuidString)\n".utf8))
         FileHandle.standardInput.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty else { exit(0) }

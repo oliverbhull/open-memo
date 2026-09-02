@@ -1,5 +1,6 @@
 import { app } from 'electron';
 import { execFile } from 'node:child_process';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { TranscriptionData } from '../../shared/electron-api';
@@ -17,6 +18,7 @@ WITH ranked AS (
     r.captured_at,
     r.ingested_at,
     r.duration_seconds,
+    r.audio_path,
     t.text AS transcript,
     ROW_NUMBER() OVER (
       PARTITION BY r.source_sha256
@@ -33,7 +35,7 @@ WITH ranked AS (
   WHERE r.classification = 'audio' AND trim(t.text) <> ''
 )
 SELECT source_sha256, device_uid, device_recording_id, captured_at,
-       ingested_at, duration_seconds, transcript
+       ingested_at, duration_seconds, audio_path, transcript
 FROM ranked
 WHERE source_rank = 1
 ORDER BY COALESCE(captured_at, ingested_at), source_sha256;
@@ -57,6 +59,39 @@ export class UsbTranscriptService {
         logger.warn('[UsbTranscriptService] Unable to read Memo USB transcripts:', error);
       }
       return [];
+    }
+  }
+
+  async readAudio(entryId: string): Promise<Buffer | null> {
+    const match = /^memo-device-([0-9a-f]{64})$/i.exec(entryId);
+    if (!match?.[1]) return null;
+
+    const userData = app.getPath('userData');
+    const database = path.join(userData, 'memo.sqlite3');
+    const library = path.join(userData, 'device-recordings');
+    const sourceSha256 = match[1].toLowerCase();
+    try {
+      const { stdout } = await execFileAsync(
+        '/usr/bin/sqlite3',
+        ['-json', database, `SELECT audio_path FROM recordings WHERE lower(source_sha256)='${sourceSha256}' AND classification='audio' AND audio_path IS NOT NULL ORDER BY ingested_at DESC LIMIT 1;`],
+        { encoding: 'utf8', maxBuffer: 1024 * 1024 },
+      );
+      const rows = stdout.trim() ? JSON.parse(stdout) as Array<{ audio_path?: unknown }> : [];
+      const audioPath = rows[0]?.audio_path;
+      if (typeof audioPath !== 'string' || path.basename(audioPath) !== 'audio.wav') return null;
+
+      const [realLibrary, realAudioPath] = await Promise.all([
+        fs.realpath(library),
+        fs.realpath(audioPath),
+      ]);
+      const relative = path.relative(realLibrary, realAudioPath);
+      if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null;
+      return await fs.readFile(realAudioPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn(`[UsbTranscriptService] Unable to read supermicrophone audio for ${entryId}:`, error);
+      }
+      return null;
     }
   }
 }

@@ -53,7 +53,7 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
     const subtitleText = isDesktopEntry 
       ? appContext.windowTitle || 'Unknown'
       : isMemoDeviceEntry
-        ? `Memo device${deviceRecordingId ? ` • ${deviceRecordingId}` : ''}`
+        ? `supermicrophone${deviceRecordingId ? ` • ${deviceRecordingId}` : ''}`
       : (location ? formatAddress(location) : 'Unknown Location');
     
     const isProcessing = recordingState === 'processing';
@@ -111,6 +111,17 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
     const displayText = isProcessing ? 'Transcribing...' : entry.text;
     const sourceIcon = isDesktopEntry ? (
       <AppIcon appName={appContext.appName || 'Unknown'} bundleId={appContext.bundleId} size={18} />
+    ) : isMemoDeviceEntry ? (
+      <img
+        src={appIconBase}
+        alt="Memo"
+        className="appIcon"
+        style={{
+          width: 14,
+          height: 14,
+          borderRadius: 3,
+        }}
+      />
     ) : (
       <img 
         src={appIconBase} 

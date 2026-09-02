@@ -11,6 +11,22 @@ interface SettingsProps {
   onClose: () => void;
 }
 
+const FolderIcon = () => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+  </svg>
+);
+
 function toLocalDateTime(timestamp: number): string {
   const date = new Date(timestamp);
   const localTime = new Date(timestamp - date.getTimezoneOffset() * 60_000);
@@ -691,19 +707,21 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   </label>
                   <button
                     type="button"
+                    aria-label="Open dictation audio folder"
+                    title="Open dictation audio folder"
                     onClick={() => { void window.electronAPI.audio.openFolder(); }}
                     style={{
                       border: 0,
-                      padding: 0,
+                      padding: '4px',
                       color: primary,
                       background: 'transparent',
                       cursor: 'pointer',
-                      font: 'inherit',
-                      fontSize: '12px',
-                      whiteSpace: 'nowrap',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                     }}
                   >
-                    Open folder
+                    <FolderIcon />
                   </button>
                 </div>
 
@@ -714,22 +732,24 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   gap: '12px',
                   padding: '2px 4px',
                 }}>
-                  <span style={{ fontSize: '12px', userSelect: 'none' }}>Memo device recordings</span>
+                  <span style={{ fontSize: '12px', userSelect: 'none' }}>supermicrophone recordings</span>
                   <button
                     type="button"
+                    aria-label="Open supermicrophone recordings folder"
+                    title="Open supermicrophone recordings folder"
                     onClick={() => { void window.electronAPI.deviceSync.openRecordingsFolder(); }}
                     style={{
                       border: 0,
-                      padding: 0,
+                      padding: '4px',
                       color: primary,
                       background: 'transparent',
                       cursor: 'pointer',
-                      font: 'inherit',
-                      fontSize: '12px',
-                      whiteSpace: 'nowrap',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                     }}
                   >
-                    Open folder
+                    <FolderIcon />
                   </button>
                 </div>
 

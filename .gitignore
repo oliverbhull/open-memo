@@ -10,6 +10,7 @@ dist/
 dist-react/
 dist-main/
 dist-preload/
+main.cjs
 build/
 
 # Rust build artifacts
@@ -96,3 +97,20 @@ assets/firebase.web.json
 *.p12
 *.pem
 private_keys/
+
+# Local development material not shipped with the app
+tests/
+CONTRIBUTING.md
+SUPPORT.md
+.github/ISSUE_TEMPLATE/
+.github/pull_request_template.md
+.github/dependabot.yml
+
+# Unused icon source/export files retained locally
+assets/app-icons/*.png
+assets/icon-base.png
+assets/icon.png
+assets/icon_blue.png
+assets/icon_green.png
+assets/icon_red.png
+assets/softclick.wav

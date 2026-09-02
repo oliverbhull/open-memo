@@ -172,10 +172,7 @@ function openMainWindow(): void {
   if (!mainWindow) return;
 
   if (mainWindow.isMinimized()) mainWindow.restore();
-  if (process.platform === 'darwin') {
-    app.dock?.show();
-    app.focus({ steal: true });
-  }
+  if (process.platform === 'darwin') app.focus({ steal: true });
   mainWindow.show();
   mainWindow.focus();
   mainWindow.moveTop();
@@ -627,6 +624,9 @@ app.whenReady().then(async () => {
 
   // Run migration from file-based settings to electron-store
   migrateToElectronStore();
+
+  // Memo owns a normal app window, so keep one foreground app identity on macOS.
+  if (process.platform === 'darwin') app.setActivationPolicy('regular');
 
   // Dock icon: use the app bundle icon from electron-builder (app-icon.icns). Avoid
   // app.dock.setIcon(single 128px bitmap) — it breaks inactive/active Dock rendering.
@@ -1102,7 +1102,6 @@ ipcMain.handle('settings:setSaveAudio', async (_event, enabled: boolean) => {
 ipcMain.handle('settings:setStartAtLogin', async (_event, enabled: boolean) => {
   app.setLoginItemSettings({
     openAtLogin: enabled,
-    openAsHidden: true, // Start hidden (tray only)
     name: 'Memo',
     path: process.execPath
   });
@@ -1114,7 +1113,7 @@ ipcMain.handle('settings:setStartAtLogin', async (_event, enabled: boolean) => {
 
 ipcMain.handle('audio:get', async (_event, entryId: string) => {
   try {
-    const data = await audioStorageService.read(entryId);
+    const data = await audioStorageService.read(entryId) ?? await usbTranscriptService.readAudio(entryId);
     return data ? { success: true, data } : { success: false, error: 'Audio not found' };
   } catch (error) {
     logger.error(`[AudioStorage] Failed to read memo ${entryId}:`, error);
