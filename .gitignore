@@ -100,13 +100,21 @@ private_keys/
 
 # Local development material not shipped with the app
 tests/
+docs/
+.env.example
+tsconfig.base.json
 CONTRIBUTING.md
 SUPPORT.md
 .github/ISSUE_TEMPLATE/
 .github/pull_request_template.md
 .github/dependabot.yml
+scripts/clean-remove.sh
+scripts/diagnose.sh
+scripts/shell/deploy-production.sh
+scripts/shell/test-production-build.sh
 
 # Unused icon source/export files retained locally
+assets/models/
 assets/app-icons/*.png
 assets/icon-base.png
 assets/icon.png

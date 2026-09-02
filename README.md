@@ -72,8 +72,3 @@ npm install
 npm run check
 npm run dev
 ```
-
-## Learn more
-
-[Troubleshooting](docs/troubleshooting.md) ·
-[Signing and release](docs/maintainers/signing-and-release.md)

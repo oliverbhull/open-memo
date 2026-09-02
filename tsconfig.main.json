@@ -1,14 +1,21 @@
 {
-  "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
     "outDir": "dist",
     "rootDir": ".",
     "noEmit": false,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
     "sourceMap": true,
+    "strict": false,
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "target": "ES2022",
     "lib": ["ES2022"],
+    "types": ["node"],
     "verbatimModuleSyntax": false
   },
   "include": ["electron/main/**/*", "electron/preload/**/*", "electron/shared/**/*"]
