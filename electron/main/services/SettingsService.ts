@@ -53,7 +53,7 @@ export function settingsPath(): string {
 
 export function loadSettings(): Settings {
   return {
-    asrModel: store.get('asrModel') === 'whisper' ? 'whisper' : 'nemotron',
+    asrModel: store.get('asrModel') === 'whisper' ? 'whisper' : 'granite',
     postEnter: store.get('postEnter', false),
     sayEnterToPressEnter: store.get('sayEnterToPressEnter', false),
     pushToTalkMode: store.get('pushToTalkMode', false),
@@ -72,7 +72,7 @@ export function saveSettings(next: Settings): void {
   const settings: Settings = {
     ...loadSettings(),
     ...next,
-    asrModel: next.asrModel === 'whisper' ? 'whisper' : 'nemotron',
+    asrModel: next.asrModel === 'whisper' ? 'whisper' : 'granite',
     postEnter: next.postEnter === true,
     sayEnterToPressEnter: next.sayEnterToPressEnter === true,
     pushToTalkMode: next.pushToTalkMode === true,
@@ -117,9 +117,7 @@ function migrateSettingsJson(raw: Record<string, unknown>): void {
   const current = loadSettings();
   saveSettings({
     ...current,
-    asrModel: raw.asrModel === 'whisper' || raw.asrModel === 'nemotron'
-      ? raw.asrModel
-      : current.asrModel,
+    asrModel: raw.asrModel === 'whisper' ? 'whisper' : 'granite',
     postEnter: typeof raw.postEnter === 'boolean' ? raw.postEnter : current.postEnter,
     sayEnterToPressEnter: typeof raw.sayEnterToPressEnter === 'boolean'
       ? raw.sayEnterToPressEnter

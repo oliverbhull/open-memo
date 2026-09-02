@@ -1,7 +1,7 @@
 diff --git a/src/main.rs b/src/main.rs
 --- a/src/main.rs
 +++ b/src/main.rs
-@@ -481,6 +481,45 @@
+@@ -481,6 +481,42 @@
      if let Some(join_handle) = handle.lock().unwrap().take() {
          let _ = join_handle.join();
      }
@@ -15,35 +15,32 @@ diff --git a/src/main.rs b/src/main.rs
 +        return;
 +    }
 +
-+    let samples = samples.to_vec();
-+    std::thread::spawn(move || {
-+        use base64::{engine::general_purpose::STANDARD, Engine as _};
++    use base64::{engine::general_purpose::STANDARD, Engine as _};
 +
-+        let channels = 1u16;
-+        let bits_per_sample = 16u16;
-+        let pcm_data_len = samples.len() * 2;
-+        let mut wav_data = Vec::with_capacity(44 + pcm_data_len);
-+        wav_data.extend_from_slice(b"RIFF");
-+        wav_data.extend_from_slice(&(36u32 + pcm_data_len as u32).to_le_bytes());
-+        wav_data.extend_from_slice(b"WAVEfmt ");
-+        wav_data.extend_from_slice(&16u32.to_le_bytes());
-+        wav_data.extend_from_slice(&1u16.to_le_bytes());
-+        wav_data.extend_from_slice(&channels.to_le_bytes());
-+        wav_data.extend_from_slice(&sample_rate.to_le_bytes());
-+        wav_data.extend_from_slice(
-+            &(sample_rate * channels as u32 * (bits_per_sample as u32 / 8)).to_le_bytes(),
-+        );
-+        wav_data.extend_from_slice(&(channels * (bits_per_sample / 8)).to_le_bytes());
-+        wav_data.extend_from_slice(&bits_per_sample.to_le_bytes());
-+        wav_data.extend_from_slice(b"data");
-+        wav_data.extend_from_slice(&(pcm_data_len as u32).to_le_bytes());
-+        for sample in samples {
-+            wav_data.extend_from_slice(&sample.to_le_bytes());
-+        }
++    let channels = 1u16;
++    let bits_per_sample = 16u16;
++    let pcm_data_len = samples.len() * 2;
++    let mut wav_data = Vec::with_capacity(44 + pcm_data_len);
++    wav_data.extend_from_slice(b"RIFF");
++    wav_data.extend_from_slice(&(36u32 + pcm_data_len as u32).to_le_bytes());
++    wav_data.extend_from_slice(b"WAVEfmt ");
++    wav_data.extend_from_slice(&16u32.to_le_bytes());
++    wav_data.extend_from_slice(&1u16.to_le_bytes());
++    wav_data.extend_from_slice(&channels.to_le_bytes());
++    wav_data.extend_from_slice(&sample_rate.to_le_bytes());
++    wav_data.extend_from_slice(
++        &(sample_rate * channels as u32 * (bits_per_sample as u32 / 8)).to_le_bytes(),
++    );
++    wav_data.extend_from_slice(&(channels * (bits_per_sample / 8)).to_le_bytes());
++    wav_data.extend_from_slice(&bits_per_sample.to_le_bytes());
++    wav_data.extend_from_slice(b"data");
++    wav_data.extend_from_slice(&(pcm_data_len as u32).to_le_bytes());
++    for sample in samples {
++        wav_data.extend_from_slice(&sample.to_le_bytes());
++    }
 +
-+        println!("AUDIO_DURATION:{:.2}", pcm_data_len as f32 / 2.0 / sample_rate as f32);
-+        println!("AUDIO_WAV:{}", STANDARD.encode(wav_data));
-+    });
++    println!("AUDIO_DURATION:{:.2}", pcm_data_len as f32 / 2.0 / sample_rate as f32);
++    println!("AUDIO_WAV:{}", STANDARD.encode(wav_data));
  }
 
  /// Compute RMS (root mean square) of i16 samples for VAD.

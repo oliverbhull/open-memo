@@ -92,7 +92,7 @@ export interface ToastData {
   duration: number;
 }
 
-export type AsrModelId = 'nemotron' | 'whisper';
+export type AsrModelId = 'granite' | 'whisper';
 
 export type AsrModelInstallState =
   | 'included'

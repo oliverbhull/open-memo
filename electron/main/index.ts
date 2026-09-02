@@ -34,6 +34,7 @@ import { DeviceSyncService } from './services/DeviceSyncService';
 import { MemoDatabaseService } from './services/MemoDatabaseService';
 import { resolveApplicationContext } from './services/applicationContext';
 import { AppUpdateService } from './services/AppUpdateService';
+import { PunctuationService } from './services/PunctuationService';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
 
@@ -95,6 +96,7 @@ let isQuitting = false;
 let micDeviceRecoveryTimer: NodeJS.Timeout | null = null;
 const asrModelService = new AsrModelService();
 const usbTranscriptService = new UsbTranscriptService();
+const punctuationService = new PunctuationService();
 
 asrModelService.on('state-changed', (state: AsrState) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -379,8 +381,9 @@ async function setupMemoSttService(): Promise<void> {
     // Update last transcript and paste: support "say enter" to press Enter after paste
     const rawText = resolveTranscriptionText(data);
     const normalized = normalizeTranscriptionText(stripLeadingDashSpace(rawText));
+    const formatted = await punctuationService.format(normalized);
     const settings = loadSettings();
-    const afterPhrases = applyPhraseReplacements(normalized, settings.phraseReplacements);
+    const afterPhrases = applyPhraseReplacements(formatted, settings.phraseReplacements);
     const { textToPaste: textBeforeNormalization, pressEnter: pressEnterThisTime } = stripTrailingEnter(afterPhrases, settings.sayEnterToPressEnter ?? false);
     const textToPaste = normalizeTranscriptionText(textBeforeNormalization);
     const pressEnter = pressEnterThisTime || pendingBlePostStopEnter;
@@ -637,6 +640,7 @@ app.whenReady().then(async () => {
   setOpenMainWindowHandler(openMainWindow);
   openMainWindow();
   appUpdateService.start();
+  punctuationService.start();
 
   // Resolve a remembered microphone before memo-stt starts. An unavailable
   // explicit selection remains selected and capture stays stopped.
@@ -698,6 +702,7 @@ const cleanupMemoStt = () => {
   cleanupComplete = true;
 
   appUpdateService.stop();
+  punctuationService.stop();
 
   deviceSyncService?.stop({ restoreDictation: false });
   deviceSyncService = null;

@@ -14,23 +14,23 @@ const TRANSCRIPTION_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub enum TranscriptionEngine {
     Whisper(SttEngine),
-    Nemotron(NemotronEngine),
+    Granite(GraniteEngine),
 }
 
 impl TranscriptionEngine {
     pub fn from_env(input_sample_rate: u32) -> Result<Self> {
         match env::var("MEMO_ASR_BACKEND")
-            .unwrap_or_else(|_| "nemotron".to_string())
+            .unwrap_or_else(|_| "granite".to_string())
             .to_lowercase()
             .as_str()
         {
-            "nemotron" => Ok(Self::Nemotron(NemotronEngine::new(input_sample_rate)?)),
+            "granite" => Ok(Self::Granite(GraniteEngine::new(input_sample_rate)?)),
             "whisper" => {
                 let model = required_path("MEMO_WHISPER_MODEL_PATH")?;
                 Ok(Self::Whisper(SttEngine::new(model, input_sample_rate)?))
             }
             backend => Err(Error(format!(
-                "Unknown ASR backend {backend:?}; expected nemotron or whisper"
+                "Unknown ASR backend {backend:?}; expected granite or whisper"
             ))),
         }
     }
@@ -38,18 +38,18 @@ impl TranscriptionEngine {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Whisper(_) => "Whisper GGML",
-            Self::Nemotron(_) => "Nemotron",
+            Self::Granite(_) => "Granite Core ML INT4",
         }
     }
 
-    pub fn is_nemotron(&self) -> bool {
-        matches!(self, Self::Nemotron(_))
+    pub fn is_worker_backend(&self) -> bool {
+        matches!(self, Self::Granite(_))
     }
 
     pub fn warmup(&self) -> Result<()> {
         match self {
             Self::Whisper(engine) => engine.warmup(),
-            Self::Nemotron(_) => Ok(()),
+            Self::Granite(_) => Ok(()),
         }
     }
 
@@ -57,26 +57,26 @@ impl TranscriptionEngine {
         if let Self::Whisper(engine) = self {
             engine.set_prompt(prompt);
         }
-        // Nemotron's streaming ONNX runtime has no prompt input. Memo still
+        // Granite's CTC runtime has no prompt input. Memo still
         // applies its normal command detection and phrase replacements.
     }
 
     pub fn begin_live_stream(&mut self) -> Result<()> {
-        if let Self::Nemotron(engine) = self {
+        if let Self::Granite(engine) = self {
             engine.begin_live_stream()?;
         }
         Ok(())
     }
 
     pub fn feed_live_audio(&mut self, samples: &[i16]) -> Result<()> {
-        if let Self::Nemotron(engine) = self {
+        if let Self::Granite(engine) = self {
             engine.feed_live_audio(samples)?;
         }
         Ok(())
     }
 
     pub fn abort_live_stream(&mut self) {
-        if let Self::Nemotron(engine) = self {
+        if let Self::Granite(engine) = self {
             engine.abort_live_stream();
         }
     }
@@ -84,12 +84,12 @@ impl TranscriptionEngine {
     pub fn transcribe(&mut self, samples: &[i16]) -> Result<String> {
         match self {
             Self::Whisper(engine) => engine.transcribe(samples),
-            Self::Nemotron(engine) => engine.finish_transcription(samples),
+            Self::Granite(engine) => engine.finish_transcription(samples),
         }
     }
 }
 
-pub struct NemotronEngine {
+pub struct GraniteEngine {
     child: Child,
     stdin: ChildStdin,
     responses: Receiver<String>,
@@ -98,50 +98,48 @@ pub struct NemotronEngine {
     streamed_input_samples: usize,
 }
 
-impl NemotronEngine {
+impl GraniteEngine {
     fn new(input_sample_rate: u32) -> Result<Self> {
-        let python = required_path("MEMO_ASR_PYTHON")?;
-        let script = required_path("MEMO_ASR_SCRIPT")?;
+        let worker = required_path("MEMO_ASR_WORKER")?;
         let model = required_path("MEMO_ASR_MODEL_PATH")?;
+        let tokenizer = required_path("MEMO_ASR_TOKENIZER_PATH")?;
 
-        if !python.is_file() {
+        if !worker.is_file() {
             return Err(Error(format!(
-                "Nemotron Python runtime not found: {}",
-                python.display()
-            )));
-        }
-        if !script.is_file() {
-            return Err(Error(format!(
-                "Nemotron worker script not found: {}",
-                script.display()
+                "Granite worker not found: {}",
+                worker.display()
             )));
         }
         if !model.is_dir() {
             return Err(Error(format!(
-                "Nemotron model not found: {}",
+                "Granite model not found: {}",
                 model.display()
             )));
         }
+        if !tokenizer.is_file() {
+            return Err(Error(format!("Granite tokenizer not found: {}", tokenizer.display())));
+        }
 
-        let mut child = Command::new(&python)
-            .arg(&script)
+        let mut child = Command::new(&worker)
             .arg("--model-path")
             .arg(&model)
+            .arg("--tokenizer-path")
+            .arg(&tokenizer)
             .arg("--worker")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
-            .map_err(|e| Error(format!("Failed to launch bundled Nemotron worker: {e}")))?;
+            .map_err(|e| Error(format!("Failed to launch bundled Granite worker: {e}")))?;
 
         let stdin = child
             .stdin
             .take()
-            .ok_or_else(|| Error("Failed to open Nemotron worker stdin".to_string()))?;
+            .ok_or_else(|| Error("Failed to open Granite worker stdin".to_string()))?;
         let stdout = child
             .stdout
             .take()
-            .ok_or_else(|| Error("Failed to open Nemotron worker stdout".to_string()))?;
+            .ok_or_else(|| Error("Failed to open Granite worker stdout".to_string()))?;
         let (response_tx, responses) = mpsc::channel();
         std::thread::spawn(move || {
             for line in BufReader::new(stdout)
@@ -159,20 +157,18 @@ impl NemotronEngine {
 
         let ready = responses
             .recv_timeout(WORKER_READY_TIMEOUT)
-            .map_err(|e| Error(format!("Failed waiting for Nemotron worker: {e}")))?;
+            .map_err(|e| Error(format!("Failed waiting for Granite worker: {e}")))?;
         if ready.trim() != "READY" {
             let status = child.try_wait().ok().flatten();
             return Err(Error(format!(
-                "Nemotron worker did not become ready (line={:?}, status={status:?})",
+                "Granite worker did not become ready (line={:?}, status={status:?})",
                 ready.trim()
             )));
         }
 
         eprintln!(
-            "Nemotron worker ready (python={}, script={}, model={})",
-            python.display(),
-            script.display(),
-            model.display()
+            "Granite worker ready (worker={}, model={})",
+            worker.display(), model.display()
         );
 
         Ok(Self {
@@ -233,17 +229,17 @@ impl NemotronEngine {
                 Err(error) => {
                     let status = self.child.try_wait().ok().flatten();
                     return Err(Error(format!(
-                        "Nemotron worker did not return a transcript ({error}; status={status:?})"
+                        "Granite worker did not return a transcript ({error}; status={status:?})"
                     )));
                 }
             };
             let line = line.trim();
             if let Some(message) = line.strip_prefix("ERROR:") {
-                return Err(Error(format!("Nemotron transcription failed: {message}")));
+                return Err(Error(format!("Granite transcription failed: {message}")));
             }
             if let Some(payload) = line.strip_prefix("FINAL:") {
                 let parsed: Value = serde_json::from_str(payload)
-                    .map_err(|e| Error(format!("Invalid Nemotron FINAL payload: {e}")))?;
+                    .map_err(|e| Error(format!("Invalid Granite FINAL payload: {e}")))?;
                 return Ok(parsed
                     .get("processedText")
                     .and_then(Value::as_str)
@@ -283,11 +279,11 @@ impl NemotronEngine {
             .write_all(line.as_bytes())
             .and_then(|_| self.stdin.write_all(b"\n"))
             .and_then(|_| self.stdin.flush())
-            .map_err(|e| Error(format!("Failed sending audio to Nemotron worker: {e}")))
+            .map_err(|e| Error(format!("Failed sending audio to Granite worker: {e}")))
     }
 }
 
-impl Drop for NemotronEngine {
+impl Drop for GraniteEngine {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();

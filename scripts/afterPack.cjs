@@ -50,39 +50,56 @@ module.exports = async function afterPack(context) {
   await sh('dot_clean', ['-m', appPath]);
   console.log('✓ Extended attributes cleaned');
 
-  // Verify the self-contained Nemotron resources before signing. A release
-  // must never silently depend on a developer's Python or model directory.
-  const nemotronPath = path.join(appPath, 'Contents', 'Resources', 'nemotron');
-  const nemotronRequired = [
-    path.join(nemotronPath, 'runtime', 'bin', 'python3.12'),
-    path.join(nemotronPath, 'memo_nemotron.py'),
-    path.join(nemotronPath, 'model', 'genai_config.json'),
-    path.join(nemotronPath, 'model', 'encoder.onnx'),
-    path.join(nemotronPath, 'model', 'encoder.onnx.data'),
-    path.join(nemotronPath, 'model', 'decoder.onnx'),
-    path.join(nemotronPath, 'model', 'decoder.onnx.data'),
-    path.join(nemotronPath, 'model', 'joint.onnx'),
-    path.join(nemotronPath, 'model', 'joint.onnx.data'),
-    path.join(nemotronPath, 'model', 'tokenizer.json'),
-    path.join(nemotronPath, 'model', 'model_config.json'),
-    path.join(nemotronPath, 'model', '.memo-model-revision'),
-    path.join(nemotronPath, 'VERSIONS'),
+  // Verify the self-contained Granite Core ML resources before signing.
+  const granitePath = path.join(appPath, 'Contents', 'Resources', 'granite');
+  const compiledModels = fs.readdirSync(path.join(granitePath, 'compiled'))
+    .filter((name) => name.endsWith('.mlmodelc'));
+  if (compiledModels.length !== 1) throw new Error('Granite bundle must contain exactly one compiled Core ML model');
+  const graniteWorker = path.join(granitePath, 'memo-granite-asr');
+  const devicePython = path.join(granitePath, 'device-runtime', 'bin', 'python3.12');
+  const graniteRequired = [
+    graniteWorker,
+    devicePython,
+    path.join(granitePath, 'compiled', compiledModels[0]),
+    path.join(granitePath, 'tokenizer.json'),
+    path.join(granitePath, 'manifest.json'),
+    path.join(granitePath, 'VERSIONS'),
   ];
-  const missingNemotronFiles = nemotronRequired.filter((required) => !fs.existsSync(required));
-  if (missingNemotronFiles.length > 0) {
-    throw new Error(`Nemotron bundle is incomplete:\n${missingNemotronFiles.join('\n')}`);
+  const missingGraniteFiles = graniteRequired.filter((required) => !fs.existsSync(required));
+  if (missingGraniteFiles.length > 0) throw new Error(`Granite bundle is incomplete:\n${missingGraniteFiles.join('\n')}`);
+  const manifest = JSON.parse(fs.readFileSync(path.join(granitePath, 'manifest.json'), 'utf8'));
+  if (manifest.quantization !== 'int4' || !(manifest.int4_operations > 0)) {
+    throw new Error('Packaged Granite model is not verified as INT4');
   }
-  fs.chmodSync(nemotronRequired[0], 0o755);
-  await sh(nemotronRequired[0], ['-B', '-c', 'import serial; print(serial.VERSION)'], {
+  fs.chmodSync(graniteWorker, 0o755);
+  fs.chmodSync(devicePython, 0o755);
+  await sh(devicePython, ['-B', '-c', 'import serial; print(serial.VERSION)'], {
     env: { ...process.env, PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' },
   });
-  console.log('✓ Bundled Nemotron runtime and model verified');
+  console.log('✓ Bundled Granite Core ML INT4 runtime and model verified');
 
-  // Python and ONNX Runtime contain nested Mach-O binaries. Sign them from
-  // the leaves inward before electron-builder signs the enclosing app.
+  const pncPath = path.join(appPath, 'Contents', 'Resources', 'pnc');
+  const pncCompiledModels = fs.readdirSync(path.join(pncPath, 'compiled'))
+    .filter((name) => name.endsWith('.mlmodelc'));
+  if (pncCompiledModels.length !== 1) throw new Error('PnC bundle must contain exactly one compiled Core ML model');
+  const pncWorker = path.join(pncPath, 'memo-pnc');
+  const pncRequired = [
+    pncWorker,
+    path.join(pncPath, 'compiled', pncCompiledModels[0]),
+    path.join(pncPath, 'tokenizer.vocab'),
+    path.join(pncPath, 'manifest.json'),
+    path.join(pncPath, 'VERSIONS'),
+    path.join(pncPath, 'NOTICE.md'),
+  ];
+  const missingPncFiles = pncRequired.filter((required) => !fs.existsSync(required));
+  if (missingPncFiles.length > 0) throw new Error(`PnC bundle is incomplete:\n${missingPncFiles.join('\n')}`);
+  fs.chmodSync(pncWorker, 0o755);
+  console.log('✓ Bundled DistilBERT punctuation and capitalization model verified');
+
+  // The device-sync Python runtime and Granite worker are nested native code.
   if (shouldSign) {
     const signer = process.env.CSC_NAME || process.env.CODE_SIGN_IDENTITY || 'Developer ID Application';
-    const nativeLibraries = walkFiles(path.join(nemotronPath, 'runtime'))
+    const nativeLibraries = walkFiles(path.join(granitePath, 'device-runtime'))
       .filter((filePath) => filePath.endsWith('.so') || filePath.endsWith('.dylib'));
     for (const nativeLibrary of nativeLibraries) {
       await sh('codesign', [
@@ -97,9 +114,19 @@ module.exports = async function afterPack(context) {
       '--options', 'runtime',
       '--entitlements', path.resolve('config/entitlements.mac.plist'),
       '--sign', signer,
-      nemotronRequired[0],
+      devicePython,
     ]);
-    console.log(`✓ Signed ${nativeLibraries.length} Nemotron native libraries and bundled Python`);
+    await sh('codesign', [
+      '--force', '--options', 'runtime',
+      '--entitlements', path.resolve('config/entitlements.mac.plist'),
+      '--sign', signer, graniteWorker,
+    ]);
+    await sh('codesign', [
+      '--force', '--options', 'runtime',
+      '--entitlements', path.resolve('config/entitlements.mac.plist'),
+      '--sign', signer, pncWorker,
+    ]);
+    console.log(`✓ Signed ${nativeLibraries.length} device runtime libraries, Python, Granite worker, and PnC worker`);
     await sh('codesign', [
       '--force',
       '--options', 'runtime',

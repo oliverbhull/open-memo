@@ -6,6 +6,13 @@ This project follows semantic versioning once public releases begin.
 
 ## Unreleased
 
+## 0.8.2 - 2026-09-01
+
+- Replace bundled Nemotron with IBM Granite Speech 5.0 470M TurboCTC as the default ASR model, converted to a native Core ML INT4 package.
+- Add a native Swift Granite worker, pinned reproducible conversion pipeline, legacy settings migration, and packaged INT4 verification while retaining optional Whisper.
+- Restore capitalization, commas, periods, and question marks with a fail-open, locally running DistilBERT Core ML postprocessor.
+- Add a direct latest-version macOS download and a more visual, consumer-friendly README.
+
 ## 0.6.0 - 2026-08-26
 
 - Add bounded, encrypted Bluetooth recorder sync through the existing crash-safe archive, CRC verification, transcription, and exact acknowledgement pipeline.

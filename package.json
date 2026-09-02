@@ -1,6 +1,6 @@
 {
   "name": "open-memo",
-  "version": "0.7.5",
+  "version": "0.8.2",
   "description": "Open-source push-to-talk dictation for macOS",
   "homepage": "https://github.com/oliverbhull/open-memo",
   "main": "dist/main.cjs",
@@ -17,9 +17,11 @@
     "build:overlay-preload": "esbuild electron/preload/overlay.ts --platform=node --bundle --external:electron --outfile=dist/overlay-preload.cjs --format=cjs",
     "build:renderer": "vite build --config vite.config.ts",
     "build:stt:release": "bash scripts/shell/build-stt.sh",
-    "build:nemotron": "bash scripts/shell/build-nemotron.sh",
-    "verify:nemotron": "bash scripts/shell/verify-nemotron-bundle.sh",
-    "build:backends": "npm run build:stt:release && npm run build:nemotron",
+    "build:granite": "bash scripts/shell/build-granite.sh",
+    "verify:granite": "bash scripts/shell/verify-granite-bundle.sh",
+    "build:pnc": "bash scripts/shell/build-pnc.sh",
+    "verify:pnc": "bash scripts/shell/verify-pnc-bundle.sh",
+    "build:backends": "npm run build:stt:release && npm run build:granite && npm run build:pnc",
     "build:ble": "bash scripts/shell/build-ble-bridge.sh",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.json",
     "check": "npm run typecheck",
@@ -32,7 +34,8 @@
     "export-memos": "npm run build:main && npm run build:renderer && MEMO_EXPORT=1 electron ."
   },
   "keywords": [
-    "nemotron",
+    "granite",
+    "coreml",
     "speech-to-text",
     "dictation",
     "push-to-talk",
@@ -79,6 +82,7 @@
     "nodeGypRebuild": false,
     "npmRebuild": true,
     "mac": {
+      "minimumSystemVersion": "15.0",
       "icon": "assets/app-icons/app-icon.icns",
       "category": "public.app-category.productivity",
       "hardenedRuntime": true,
@@ -152,8 +156,28 @@
         ]
       },
       {
-        "from": ".build/nemotron/",
-        "to": "nemotron"
+        "from": ".build/granite/",
+        "to": "granite",
+        "filter": [
+          "memo-granite-asr",
+          "compiled/**",
+          "tokenizer.json",
+          "manifest.json",
+          "VERSIONS",
+          "device-runtime/**"
+        ]
+      },
+      {
+        "from": ".build/pnc/",
+        "to": "pnc",
+        "filter": [
+          "memo-pnc",
+          "compiled/**",
+          "tokenizer.vocab",
+          "manifest.json",
+          "VERSIONS",
+          "NOTICE.md"
+        ]
       },
       {
         "from": "sidecars/device-sync/",
