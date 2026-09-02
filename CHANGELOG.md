@@ -6,6 +6,12 @@ This project follows semantic versioning once public releases begin.
 
 ## Unreleased
 
+## 0.8.4 - 2026-09-02
+
+- Hide the bundled speech implementation behind the Conomo runtime boundary.
+- Preserve the focused repository cleanup, reliable foreground app lifecycle, and supermicrophone sync hardening from the unpublished 0.8.3 work.
+- Restore the polished README, release badges, and approved transparent artwork.
+
 ## 0.8.3 - 2026-09-01
 
 - Simplify the public repository and present Open Memo as a focused macOS dictation app.
