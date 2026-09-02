@@ -6,7 +6,13 @@
 
 <p align="center">
   <strong>Talk instead of type.</strong><br>
-  Private voice dictation for your Mac.
+  Free, private voice dictation for your Mac.<br>
+  Works in every app—even offline.
+</p>
+
+<p align="center">
+  <strong>Free forever. Unlimited dictation. No account required.</strong><br>
+  No subscriptions, credits, or word limits.
 </p>
 
 <p align="center">
@@ -23,10 +29,12 @@
   <a href="https://github.com/oliverbhull/open-memo/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/oliverbhull/open-memo/ci.yml?style=flat-square&amp;label=build" alt="Build status"></a>
 </p>
 
-Open Memo lets you write with your voice anywhere on your Mac. Hold **Fn**,
-speak, and release. Your words appear at your cursor, ready to use.
+Open Memo lets you speak naturally and write anywhere on your Mac. Hold **Fn**,
+speak, and release. Your words appear wherever your cursor is.
 
-No account. No subscription. No cloud transcription.
+Dictation runs locally, works without an internet connection, and never consumes
+credits or hits a weekly word limit. Your voice is not sent to a cloud
+transcription service.
 
 ## How it works
 
