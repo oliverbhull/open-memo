@@ -30,7 +30,7 @@ No account. No subscription. No cloud transcription.
 
 ## How it works
 
-![Hold your hotkey, speak, release, and your words appear](assets/readme/how-it-works.svg)
+![Hold your hotkey, speak, release, and your words appear](assets/readme/how-open-memo-works.svg)
 
 ## Why Open Memo?
 
