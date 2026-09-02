@@ -138,8 +138,8 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
     const headerContent = (
       <div className="textContainer">
         {sourceIcon}
-        <div className="titleText">{subtitleText}</div>
-        <div className="timestamp" style={{ color: primary }}>
+        <div className="titleText" style={{ color: primary }}>{subtitleText}</div>
+        <div className="timestamp">
           {formatTimestamp(entryTimestamp)}
         </div>
         <button
