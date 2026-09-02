@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUTPUT_DIR="${MEMO_CONOMO_OUTPUT_DIR:-${ROOT_DIR}/.build/conomo}"
 SOURCE="${CONOMO_SOURCE:-}"
 URL="${CONOMO_URL:-}"
+TOKEN="${CONOMO_TOKEN:-}"
 EXPECTED_SHA256="${CONOMO_SHA256:-}"
 DEVICE_INSTALL="${ROOT_DIR}/.build/conomo-device-python-install"
 DEVICE_RUNTIME="${OUTPUT_DIR}/device-runtime"
@@ -16,15 +17,26 @@ if [[ -n "${SOURCE}" ]]; then
   cp "${SOURCE}" "${OUTPUT_DIR}/conomo"
 elif [[ -n "${URL}" ]]; then
   [[ "${URL}" == https://* ]] || { echo "CONOMO_URL must use HTTPS" >&2; exit 1; }
-  curl --fail --location --silent --show-error "${URL}" --output "${OUTPUT_DIR}/conomo"
+  ARCHIVE="${ROOT_DIR}/.build/conomo-download.tar.gz"
+  CURL_ARGS=(--fail --location --silent --show-error --header "Accept: application/octet-stream")
+  [[ -z "${TOKEN}" ]] || CURL_ARGS+=(--header "Authorization: Bearer ${TOKEN}")
+  curl "${CURL_ARGS[@]}" "${URL}" --output "${ARCHIVE}"
+  ACTUAL_SHA256="$(shasum -a 256 "${ARCHIVE}" | awk '{print $1}')"
+  [[ -n "${EXPECTED_SHA256}" ]] || { echo "CONOMO_SHA256 is required" >&2; exit 1; }
+  [[ "${ACTUAL_SHA256}" == "${EXPECTED_SHA256}" ]] || { echo "conomo archive checksum does not match CONOMO_SHA256" >&2; exit 1; }
+  rm -rf "${OUTPUT_DIR}"
+  mkdir -p "${OUTPUT_DIR}"
+  tar -xzf "${ARCHIVE}" -C "${OUTPUT_DIR}" --strip-components=1
 elif [[ ! -f "${OUTPUT_DIR}/conomo" ]]; then
   echo "Provide the compiled conomo executable with CONOMO_SOURCE or CONOMO_URL." >&2
   exit 1
 fi
 
 [[ -n "${EXPECTED_SHA256}" ]] || { echo "CONOMO_SHA256 is required" >&2; exit 1; }
-ACTUAL_SHA256="$(shasum -a 256 "${OUTPUT_DIR}/conomo" | awk '{print $1}')"
-[[ "${ACTUAL_SHA256}" == "${EXPECTED_SHA256}" ]] || { echo "conomo checksum does not match CONOMO_SHA256" >&2; exit 1; }
+if [[ -z "${URL}" ]]; then
+  ACTUAL_SHA256="$(shasum -a 256 "${OUTPUT_DIR}/conomo" | awk '{print $1}')"
+  [[ "${ACTUAL_SHA256}" == "${EXPECTED_SHA256}" ]] || { echo "conomo checksum does not match CONOMO_SHA256" >&2; exit 1; }
+fi
 chmod 755 "${OUTPUT_DIR}/conomo"
 
 command -v uv >/dev/null || { echo "uv is required to build the device runtime" >&2; exit 1; }
@@ -40,5 +52,5 @@ if [[ ! -f "${DEVICE_RUNTIME}/.memo-runtime-version" ]] || [[ "$(cat "${DEVICE_R
   printf '%s\n' "${DEVICE_HASH}" > "${DEVICE_RUNTIME}/.memo-runtime-version"
 fi
 
-printf '%s\n' "sha256=${ACTUAL_SHA256}" > "${OUTPUT_DIR}/VERSIONS"
+printf '%s\n' "artifact_sha256=${ACTUAL_SHA256}" > "${OUTPUT_DIR}/VERSIONS"
 bash "${ROOT_DIR}/scripts/shell/verify-conomo-bundle.sh" "${OUTPUT_DIR}"

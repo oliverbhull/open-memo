@@ -50,13 +50,18 @@ module.exports = async function afterPack(context) {
   await sh('dot_clean', ['-m', appPath]);
   console.log('✓ Extended attributes cleaned');
 
-  // Verify the self-contained conomo executable before signing.
+  // Verify the self-contained conomo runtime bundle before signing.
   const conomoPath = path.join(appPath, 'Contents', 'Resources', 'conomo');
   const conomoWorker = path.join(conomoPath, 'conomo');
   const devicePython = path.join(conomoPath, 'device-runtime', 'bin', 'python3.12');
   const conomoRequired = [
     conomoWorker,
     devicePython,
+    path.join(conomoPath, 'compiled'),
+    path.join(conomoPath, 'tokenizer.json'),
+    path.join(conomoPath, 'manifest.json'),
+    path.join(conomoPath, 'LICENSE-APACHE-2.0.txt'),
+    path.join(conomoPath, 'NOTICE.txt'),
     path.join(conomoPath, 'VERSIONS'),
   ];
   const missingFiles = conomoRequired.filter((required) => !fs.existsSync(required));
@@ -66,7 +71,14 @@ module.exports = async function afterPack(context) {
   await sh(devicePython, ['-B', '-c', 'import serial; print(serial.VERSION)'], {
     env: { ...process.env, PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' },
   });
-  console.log('✓ Bundled conomo executable verified');
+  const conomoModels = fs.readdirSync(path.join(conomoPath, 'compiled'))
+    .filter((name) => name.endsWith('.mlmodelc'));
+  if (conomoModels.length !== 1) throw new Error('Conomo bundle must contain exactly one compiled Core ML model');
+  const conomoManifest = JSON.parse(fs.readFileSync(path.join(conomoPath, 'manifest.json'), 'utf8'));
+  if (conomoManifest.quantization !== 'int4' || !(conomoManifest.int4_operations > 0)) {
+    throw new Error('Packaged Conomo model is not verified as INT4');
+  }
+  console.log('✓ Bundled Conomo Core ML INT4 runtime verified');
 
   const pncPath = path.join(appPath, 'Contents', 'Resources', 'pnc');
   const pncCompiledModels = fs.readdirSync(path.join(pncPath, 'compiled'))
