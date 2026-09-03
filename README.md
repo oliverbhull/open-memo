@@ -5,13 +5,13 @@
 <h1 align="center">Open Memo</h1>
 
 <p align="center">
-  Free, private voice dictation for your Mac.<br>
-</p>
-
-<p align="center">
   <a href="https://github.com/oliverbhull/open-memo/releases/latest/download/Open-Memo-latest-arm64.dmg">
     <img src="assets/readme/download-macos.svg" alt="Download Open Memo for macOS">
   </a>
+</p>
+
+<p align="center">
+  Free, private voice dictation for your Mac.<br>
 </p>
 
 <p align="center">
