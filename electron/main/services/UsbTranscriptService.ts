@@ -38,7 +38,7 @@ SELECT source_sha256, device_uid, device_recording_id, captured_at,
        ingested_at, duration_seconds, audio_path, transcript
 FROM ranked
 WHERE source_rank = 1
-ORDER BY COALESCE(captured_at, ingested_at), source_sha256;
+ORDER BY COALESCE(captured_at, ingested_at) DESC, source_sha256 DESC;
 `;
 
 export class UsbTranscriptService {

@@ -59,6 +59,7 @@ function App() {
   // Track if listeners are registered to prevent duplicates (especially in StrictMode)
   const listenersRegisteredRef = useRef(false);
   const importedUsbIdsRef = useRef(new Set<string>());
+  const usbImportPromiseRef = useRef<Promise<number> | null>(null);
   const lastDeviceSyncStateRef = useRef<DeviceSyncStatus['state']>('disconnected');
 
   const handleCopy = useCallback((text: string) => {
@@ -216,28 +217,38 @@ function App() {
     };
   }, [addEntry]);
 
-  useEffect(() => {
-    if (!window.electronAPI?.listUsbTranscripts) return;
-    let stopped = false;
-
-    const importUsbTranscripts = async () => {
-      try {
-        const transcriptions = await window.electronAPI.listUsbTranscripts();
-        for (const transcription of transcriptions) {
-          if (stopped || !transcription.id || importedUsbIdsRef.current.has(transcription.id)) continue;
-          importedUsbIdsRef.current.add(transcription.id);
-          await addEntry(transcription);
-        }
-      } catch (error) {
-        logger.error('[App] Failed to import USB transcripts:', error);
+  const importUsbTranscripts = useCallback(async (): Promise<number> => {
+    if (!window.electronAPI?.listUsbTranscripts) return 0;
+    if (usbImportPromiseRef.current) return usbImportPromiseRef.current;
+    const importPromise = (async () => {
+      const transcriptions = await window.electronAPI.listUsbTranscripts();
+      let imported = 0;
+      for (const transcription of transcriptions) {
+        if (!transcription.id || importedUsbIdsRef.current.has(transcription.id)) continue;
+        const entry = await addEntry(transcription);
+        if (!entry) throw new Error(`Memo recording ${transcription.id} could not be saved`);
+        importedUsbIdsRef.current.add(transcription.id);
+        imported++;
       }
-    };
+      return imported;
+    })();
+    usbImportPromiseRef.current = importPromise;
+    try {
+      return await importPromise;
+    } finally {
+      if (usbImportPromiseRef.current === importPromise) usbImportPromiseRef.current = null;
+    }
+  }, [addEntry]);
 
-    void importUsbTranscripts();
+  useEffect(() => {
+    let stopped = false;
+    void importUsbTranscripts().catch((error) => {
+      if (!stopped) logger.error('[App] Failed to import Memo recordings:', error);
+    });
     return () => {
       stopped = true;
     };
-  }, [addEntry]);
+  }, [importUsbTranscripts]);
 
   useEffect(() => {
     if (!window.electronAPI?.deviceSync) return;
@@ -251,7 +262,12 @@ function App() {
         const fallback = status.requestedModel === 'whisper' && status.actualModel === 'conomo'
           ? ' (transcribed with conomo fallback)'
           : '';
-        setToast({ message: `Memo sync complete${fallback}`, severity: 'success', duration: 3500 });
+        void importUsbTranscripts()
+          .then(() => setToast({ message: `Memo sync complete${fallback}`, severity: 'success', duration: 3500 }))
+          .catch((error) => {
+            logger.error('[App] Failed to show synced Memo recordings:', error);
+            setToast({ message: 'Recordings are safe, but Memo could not add them to the feed.', severity: 'error', duration: 7000 });
+          });
       } else if (status.state === 'updating-firmware') {
         setToast({ message: 'Updating Memo firmware… keep the device connected.', severity: 'info', duration: 8000 });
       } else if (status.state === 'firmware-updated') {
@@ -264,7 +280,7 @@ function App() {
     };
     void window.electronAPI.deviceSync.getStatus().then(applyStatus);
     return window.electronAPI.deviceSync.onStatus(applyStatus);
-  }, []);
+  }, [importUsbTranscripts]);
 
   // Combine storage errors with other errors
   const displayError = error || (storageError ? storageError.message : null);
