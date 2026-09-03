@@ -9,14 +9,13 @@
 </p>
 
 <p align="center">
-  <strong>Free forever. Unlimited dictation. No account required.</strong><br>
-  No subscriptions, credits, or word limits.
-</p>
-
-<p align="center">
   <a href="https://github.com/oliverbhull/open-memo/releases/latest/download/Open-Memo-latest-arm64.dmg">
     <img src="assets/readme/download-macos.svg" alt="Download Open Memo for macOS">
   </a>
+</p>
+
+<p align="center">
+  <strong>No subscriptions, credits, or usage limits.</strong><br>
 </p>
 
 <p align="center">
