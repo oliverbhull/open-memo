@@ -192,7 +192,7 @@ export class DeviceSyncService extends EventEmitter {
       python: path.join(conomo, 'device-runtime', 'bin', 'python3.12'),
       helper: dev ? path.join(process.cwd(), 'sidecars', 'device-sync', 'device_sync.py') : path.join(process.resourcesPath, 'device-sync', 'device_sync.py'),
       updater: dev ? path.join(process.cwd(), 'sidecars', 'device-sync', 'firmware_update.py') : path.join(process.resourcesPath, 'device-sync', 'firmware_update.py'),
-      stt: dev ? path.join(process.cwd(), '.build', 'stt', 'memo-stt') : path.join(process.resourcesPath, 'sttbin', 'memo-stt'),
+      stt: dev ? path.join(process.cwd(), '.build', 'dictation', 'memo-dictation') : path.join(process.resourcesPath, 'dictation', 'memo-dictation'),
       conomo,
       bleBridge: dev ? path.join(process.cwd(), '.build', 'ble', 'memo-ble-bridge') : path.join(process.resourcesPath, 'device-sync', 'memo-ble-bridge'),
     };

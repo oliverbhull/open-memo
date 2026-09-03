@@ -14,15 +14,11 @@ export type { PhraseReplacementRule };
 
 export interface Settings {
   asrModel: AsrModelId;
-  postEnter: boolean;
   sayEnterToPressEnter: boolean;
-  pushToTalkMode: boolean;
   handsFreeMode: boolean;
   saveAudio: boolean;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
-  inputSource: 'system' | 'ble' | 'radio';
-  autoConnectDeviceName: string | null;
 }
 
 export interface UserSettings {
@@ -54,17 +50,11 @@ export function settingsPath(): string {
 export function loadSettings(): Settings {
   return {
     asrModel: store.get('asrModel') === 'whisper' ? 'whisper' : 'conomo',
-    postEnter: store.get('postEnter', false),
     sayEnterToPressEnter: store.get('sayEnterToPressEnter', false),
-    pushToTalkMode: store.get('pushToTalkMode', false),
     handsFreeMode: store.get('handsFreeMode', false),
     saveAudio: store.get('saveAudio', false),
     vocabWords: stringArray(store.get('vocabWords')),
     phraseReplacements: clampPhraseReplacementRulesFromInput(store.get('phraseReplacements')),
-    inputSource: ['system', 'ble', 'radio'].includes(store.get('inputSource'))
-      ? store.get('inputSource')
-      : 'system',
-    autoConnectDeviceName: boundedString(store.get('autoConnectDeviceName'), 200),
   };
 }
 
@@ -73,27 +63,19 @@ export function saveSettings(next: Settings): void {
     ...loadSettings(),
     ...next,
     asrModel: next.asrModel === 'whisper' ? 'whisper' : 'conomo',
-    postEnter: next.postEnter === true,
     sayEnterToPressEnter: next.sayEnterToPressEnter === true,
-    pushToTalkMode: next.pushToTalkMode === true,
     handsFreeMode: next.handsFreeMode === true,
     saveAudio: next.saveAudio === true,
     vocabWords: stringArray(next.vocabWords),
     phraseReplacements: clampPhraseReplacementRulesFromInput(next.phraseReplacements),
-    inputSource: ['system', 'ble', 'radio'].includes(next.inputSource) ? next.inputSource : 'system',
-    autoConnectDeviceName: boundedString(next.autoConnectDeviceName, 200),
   };
 
   store.set('asrModel', settings.asrModel);
-  store.set('postEnter', settings.postEnter);
   store.set('sayEnterToPressEnter', settings.sayEnterToPressEnter);
-  store.set('pushToTalkMode', settings.pushToTalkMode);
   store.set('handsFreeMode', settings.handsFreeMode);
   store.set('saveAudio', settings.saveAudio);
   store.set('vocabWords', settings.vocabWords);
   store.set('phraseReplacements', settings.phraseReplacements);
-  store.set('inputSource', settings.inputSource);
-  store.set('autoConnectDeviceName', settings.autoConnectDeviceName);
 }
 
 export function loadUserSettings(): UserSettings {
@@ -118,30 +100,21 @@ function migrateSettingsJson(raw: Record<string, unknown>): void {
   saveSettings({
     ...current,
     asrModel: raw.asrModel === 'whisper' ? 'whisper' : 'conomo',
-    postEnter: typeof raw.postEnter === 'boolean' ? raw.postEnter : current.postEnter,
     sayEnterToPressEnter: typeof raw.sayEnterToPressEnter === 'boolean'
       ? raw.sayEnterToPressEnter
       : current.sayEnterToPressEnter,
-    pushToTalkMode: typeof raw.pushToTalkMode === 'boolean' ? raw.pushToTalkMode : current.pushToTalkMode,
     handsFreeMode: typeof raw.handsFreeMode === 'boolean' ? raw.handsFreeMode : current.handsFreeMode,
     saveAudio: typeof raw.saveAudio === 'boolean' ? raw.saveAudio : current.saveAudio,
     vocabWords: Array.isArray(raw.vocabWords) ? stringArray(raw.vocabWords) : current.vocabWords,
     phraseReplacements: Array.isArray(raw.phraseReplacements)
       ? clampPhraseReplacementRulesFromInput(raw.phraseReplacements)
       : current.phraseReplacements,
-    inputSource: raw.inputSource === 'ble' || raw.inputSource === 'radio' || raw.inputSource === 'system'
-      ? raw.inputSource
-      : current.inputSource,
-    autoConnectDeviceName: typeof raw.autoConnectDeviceName === 'string'
-      ? raw.autoConnectDeviceName
-      : current.autoConnectDeviceName,
   });
 
   if (typeof raw.autoConnectDeviceName === 'string') {
     const uid = raw.autoConnectDeviceName.match(/memo_([0-9A-Fa-f]{5})/)?.[1];
     if (uid) store.set('memoUid', uid.toUpperCase());
   }
-  if (raw.inputSource === 'ble') store.set('preferBleWhenAvailable', true);
 }
 
 function migrateJsonFile(filePath: string, migrate: (raw: Record<string, unknown>) => void): void {

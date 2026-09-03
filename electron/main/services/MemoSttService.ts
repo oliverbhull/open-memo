@@ -5,7 +5,6 @@ import fs from 'fs';
 import { app } from 'electron';
 import { logger } from '../utils/logger';
 import { loadSettings, store } from './SettingsService';
-import { AudioSourceManager } from './AudioSourceManager';
 import { isWhisperModelInstalled, whisperModelPath } from './AsrModelService';
 import { resolveTranscriptionText } from '../../shared/transcription';
 import { normalizeTranscriptionText } from './textProcessing';
@@ -50,31 +49,16 @@ export class MemoSttService extends EventEmitter {
   // dictations while still putting a hard ceiling on malformed output.
   private readonly MAX_BUFFER_SIZE = 64 * 1024 * 1024;
   private readonly instanceId: number;
-  private isBleConnected = false;
-  private audioSourceManager: AudioSourceManager | null = null;
   private pendingAudioData: { wavBuffer?: Buffer; duration?: number } | null = null;
   /** Timestamp (ms) when the current process was spawned — used to detect quick-exit device errors */
   private processStartedAt: number | null = null;
+  private hotkeyPermissionFailed = false;
   /** Quick-exit threshold: if process exits within this many ms with non-zero code, assume audio device error */
   private readonly QUICK_EXIT_THRESHOLD_MS = 4000;
-  constructor(audioSourceManager?: AudioSourceManager) {
+  constructor() {
     super();
     this.instanceId = ++nextInstanceId;
     logger.info(`[MemoSttService] Creating instance #${this.instanceId}`);
-
-    // Store references to state managers
-    this.audioSourceManager = audioSourceManager || null;
-
-    // Wire up AudioSourceManager commands
-    if (this.audioSourceManager) {
-      this.audioSourceManager.on('commandSetInputSource', (source: string) => {
-        if (source === 'ble') {
-          this.sendCommand('INPUT_SOURCE:ble');
-        } else {
-          this.sendCommand(`INPUT_SOURCE:system`);
-        }
-      });
-    }
 
     // Load initial vocabulary from settings
     this.updateVocabulary();
@@ -85,7 +69,7 @@ export class MemoSttService extends EventEmitter {
   }
 
   /**
-   * Send command to memo-stt process via stdin
+   * Send a command to the owned dictation process via stdin.
    * Used for settings like "Press Enter After Paste"
    */
   sendCommand(command: string): void {
@@ -130,21 +114,7 @@ export class MemoSttService extends EventEmitter {
       return;
     }
 
-    logger.error(`[MemoSttService #${this.instanceId}] memo-stt stdin error:`, error);
-  }
-
-  /**
-   * Set whether to press Enter after pasting
-   */
-  setPressEnterAfterPaste(enabled: boolean): void {
-    this.sendCommand(`ENTER:${enabled ? '1' : '0'}`);
-  }
-
-  /**
-   * Set Memo device button policy: hold-to-talk when enabled, tap-to-toggle when disabled.
-   */
-  setPushToTalkMode(enabled: boolean): void {
-    this.sendCommand(`PTT:${enabled ? '1' : '0'}`);
+    logger.error(`[MemoSttService #${this.instanceId}] dictation stdin error:`, error);
   }
 
   /** Update native speech-recognition vocabulary. */
@@ -165,7 +135,7 @@ export class MemoSttService extends EventEmitter {
     if (this.status === 'running') {
       this.sendCommand(`VOCAB:${JSON.stringify(vocab)}`);
     } else {
-      logger.debug(`[MemoSttService #${this.instanceId}] Vocabulary staged until memo-stt starts`);
+      logger.debug(`[MemoSttService #${this.instanceId}] Vocabulary staged until dictation starts`);
     }
   }
 
@@ -177,12 +147,13 @@ export class MemoSttService extends EventEmitter {
     }
     if (this.suspended) return;
     if (this.process && !this.process.killed) {
-      logger.info(`[MemoSttService #${this.instanceId}] memo-stt process already running`);
+      logger.info(`[MemoSttService #${this.instanceId}] dictation process already running`);
       await this.readyPromise;
       return;
     }
     
-    logger.info(`[MemoSttService #${this.instanceId}] Starting memo-stt service`);
+    logger.info(`[MemoSttService #${this.instanceId}] Starting dictation service`);
+    this.hotkeyPermissionFailed = false;
 
     // Clear any pending restart
     if (this.restartTimeout) {
@@ -190,11 +161,9 @@ export class MemoSttService extends EventEmitter {
       this.restartTimeout = null;
     }
 
-    this.isBleConnected = false;
 
     try {
-      // Spawn memo-stt process
-      // In dev mode, use cargo run. In production, use bundled binary.
+      // Spawn the same owned binary in development and production.
       const isDev = process.env.NODE_ENV === 'development' || 
                     (typeof process.env.npm_lifecycle_event !== 'undefined' && 
                      process.env.npm_lifecycle_event.includes('dev')) ||
@@ -205,33 +174,33 @@ export class MemoSttService extends EventEmitter {
       
       if (isDev) {
         // Development uses the same staged binary that release builds package.
-        command = path.join(process.cwd(), '.build', 'stt', 'memo-stt');
+        command = path.join(process.cwd(), '.build', 'dictation', 'memo-dictation');
         if (!fs.existsSync(command)) {
-          throw new Error(`memo-stt binary not found at ${command}. Run npm run build:stt:release first.`);
+          throw new Error(`Memo dictation binary not found at ${command}. Run npm run build:dictation first.`);
         }
-        args = ['--hotkey', this.hotkey, '--no-inject'];
+        args = ['--hotkey', this.hotkey];
       } else {
         // Production: use bundled binary
-        const prodPath = path.join(process.resourcesPath, 'sttbin', 'memo-stt');
+        const prodPath = path.join(process.resourcesPath, 'dictation', 'memo-dictation');
         
         // Fallback paths if binary not found in expected location
         const alternatives = [
           prodPath,
-          path.join(app.getAppPath(), '..', '..', 'Resources', 'sttbin', 'memo-stt'),
-          path.join(process.resourcesPath, 'memo-stt'),
+          path.join(app.getAppPath(), '..', '..', 'Resources', 'dictation', 'memo-dictation'),
+          path.join(process.resourcesPath, 'memo-dictation'),
         ];
         
         let binaryPath = prodPath;
         for (const altPath of alternatives) {
           if (fs.existsSync(altPath)) {
             binaryPath = altPath;
-            logger.info(`[MemoSttService #${this.instanceId}] Found memo-stt binary at: ${binaryPath}`);
+            logger.info(`[MemoSttService #${this.instanceId}] Found dictation binary at: ${binaryPath}`);
             break;
           }
         }
         
         if (!fs.existsSync(binaryPath)) {
-          const errorMsg = `memo-stt binary not found in any expected location. Tried: ${alternatives.join(', ')}. resourcesPath: ${process.resourcesPath}, appPath: ${app.getAppPath()}`;
+          const errorMsg = `Memo dictation binary not found in any expected location. Tried: ${alternatives.join(', ')}. resourcesPath: ${process.resourcesPath}, appPath: ${app.getAppPath()}`;
           logger.error(`[MemoSttService #${this.instanceId}] ${errorMsg}`);
           throw new Error(errorMsg);
         }
@@ -258,32 +227,23 @@ export class MemoSttService extends EventEmitter {
           if (result.status === 0) {
             logger.info(`[MemoSttService #${this.instanceId}] Code signing check: ${details}`);
           } else {
-            logger.warn(`[MemoSttService #${this.instanceId}] memo-stt is not signed: ${details || result.error?.message || 'unknown error'}`);
+            logger.warn(`[MemoSttService #${this.instanceId}] Memo dictation sidecar is not signed: ${details || result.error?.message || 'unknown error'}`);
           }
         }
         
         command = binaryPath;
-        args = ['--hotkey', this.hotkey, '--no-inject'];
+        args = ['--hotkey', this.hotkey];
       }
 
-      // Get input source from settings
       const settings = loadSettings();
-      const isDevAutoConnect = isDev && !!process.env.MEMO_DEV_AUTO_CONNECT_UID;
-      const inputSource = isDevAutoConnect
-        ? 'ble'
-        : (settings.inputSource || 'system');
       const handsFreeMode = settings.handsFreeMode ?? false;
 
-      logger.info(`[MemoSttService #${this.instanceId}] Starting memo-stt: ${command} ${args.join(' ')}`);
-      logger.info(`[MemoSttService #${this.instanceId}] Input source: ${inputSource}`);
+      logger.info(`[MemoSttService #${this.instanceId}] Starting dictation: ${command} ${args.join(' ')}`);
       logger.info(`[MemoSttService #${this.instanceId}] Hands-free VAD: ${handsFreeMode}`);
 
-      // Set environment variables
-      // NOTE: We do NOT set MEMO_DEVICE_NAME - Electron handles all connections via CONNECT_UID command
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         MEMO_EMIT_AUDIO: settings.saveAudio ? '1' : '0',
-        INPUT_SOURCE: inputSource,
         MEMO_HANDS_FREE: handsFreeMode ? '1' : '0',
       };
       const requestedAsrModel = settings.asrModel;
@@ -306,12 +266,18 @@ export class MemoSttService extends EventEmitter {
           ? path.join(process.cwd(), '.build', 'conomo')
           : path.join(process.resourcesPath, 'conomo');
         const bundledWorker = path.join(conomoRoot, 'conomo');
+        const contextualWorker = path.join(process.cwd(), 'scripts', 'shell', 'run-contextual-granite.sh');
 
         // Development can use an explicitly supplied worker. Packaged apps
         // always use the signed conomo executable in their resources.
         env.MEMO_ASR_WORKER = isDev && process.env.MEMO_ASR_WORKER
           ? process.env.MEMO_ASR_WORKER
-          : bundledWorker;
+          : isDev
+            ? contextualWorker
+            : bundledWorker;
+        if (isDev && env.MEMO_ASR_WORKER === contextualWorker) {
+          env.MEMO_CONTEXTUAL_VOCAB = '1';
+        }
 
         const requiredResources = [['worker', env.MEMO_ASR_WORKER]] as const;
         for (const [label, resourcePath] of requiredResources) {
@@ -323,22 +289,16 @@ export class MemoSttService extends EventEmitter {
           }
         }
         logger.info(
-          `[MemoSttService #${this.instanceId}] ASR model: conomo ` +
+          `[MemoSttService #${this.instanceId}] ASR model: ${env.MEMO_CONTEXTUAL_VOCAB === '1' ? 'Contextual Granite prototype' : 'conomo'} ` +
           `(worker=${env.MEMO_ASR_WORKER})`,
         );
       }
-      // Radio mode: use External Microphone (headphone jack) like memo-RF
-      if (inputSource === 'radio') {
-        env.MEMO_RADIO_INPUT_DEVICE = env.MEMO_RADIO_INPUT_DEVICE || 'External Microphone';
-      }
       // An explicit system microphone is strict. The native process must either
       // open this device or fail; it must never substitute the macOS default.
-      if (inputSource === 'system') {
-        const micLabel = store.get('selectedSystemMicName');
-        if (typeof micLabel === 'string' && micLabel.trim()) {
-          env.MEMO_SYSTEM_INPUT_DEVICE = micLabel.trim().slice(0, 200);
-          logger.info(`[MemoSttService] MEMO_SYSTEM_INPUT_DEVICE=${env.MEMO_SYSTEM_INPUT_DEVICE}`);
-        }
+      const micLabel = store.get('selectedSystemMicName');
+      if (typeof micLabel === 'string' && micLabel.trim()) {
+        env.MEMO_SYSTEM_INPUT_DEVICE = micLabel.trim().slice(0, 200);
+        logger.info(`[MemoSttService] MEMO_SYSTEM_INPUT_DEVICE=${env.MEMO_SYSTEM_INPUT_DEVICE}`);
       }
       
       const child = spawn(command, args, {
@@ -357,7 +317,7 @@ export class MemoSttService extends EventEmitter {
 
       child.stdin?.on('close', () => {
         this.stdinClosed = true;
-        logger.debug(`[MemoSttService #${this.instanceId}] memo-stt stdin closed`);
+        logger.debug(`[MemoSttService #${this.instanceId}] dictation stdin closed`);
       });
 
       child.stdout?.on('data', (data: Buffer) => {
@@ -367,13 +327,11 @@ export class MemoSttService extends EventEmitter {
       });
 
       child.stderr?.on('data', (data: Buffer) => {
-        // Log stderr but don't treat as errors (memo-stt uses stderr for status messages)
+        // Log stderr but do not treat it as an error channel; the sidecar uses it for status messages.
         const message = data.toString();
         // Log at info level so we can see what's happening in production
-        logger.info(`[memo-stt stderr] ${message.trim()}`);
+        logger.info(`[memo-dictation stderr] ${message.trim()}`);
         
-        // BLE connection/disconnection is handled via stdout CONNECTED:/DISCONNECTED: protocol messages
-        // Stderr is just for logging - no need to parse it for connection state
         
         // Check for error messages that indicate transcription failure
         // These should clear the processing state
@@ -414,9 +372,9 @@ export class MemoSttService extends EventEmitter {
         // Provide helpful error message for common issues
         let userFriendlyError = error.message;
         if (error.code === 'ENOENT') {
-          userFriendlyError = `memo-stt binary not found. The app may not have been built correctly. Path: ${command}`;
+          userFriendlyError = `Memo dictation binary not found. The app may not have been built correctly. Path: ${command}`;
         } else if (error.code === 'EACCES') {
-          userFriendlyError = `memo-stt binary is not executable. Please check file permissions. Path: ${command}`;
+          userFriendlyError = `Memo dictation binary is not executable. Please check file permissions. Path: ${command}`;
         }
         
         this.status = 'error';
@@ -430,29 +388,24 @@ export class MemoSttService extends EventEmitter {
         
         // Clean up process references
         const wasRunning = this.process !== null;
-        const wasBleConnected = this.isBleConnected;
         this.process = null;
         this.stdinClosed = true;
         this.status = 'stopped';
         this.emit('status', 'stopped');
         
-        // If we were on BLE, treat process exit as disconnect: update state and run same flow as DISCONNECTED:
-        // (BleManager + tray disconnected, restart). Main's bleDisconnectRestartRequested listener will restart.
-        if (wasBleConnected && this.audioSourceManager) {
-          this.isBleConnected = false;
-          this.emit('bleDisconnected');
-          this.audioSourceManager.handleBleDisconnect();
-          return; // Do not schedule generic restart - main will restart via bleDisconnectRestartRequested
-        }
-        
         // Attempt to restart if it wasn't manually stopped and we haven't exceeded max attempts
-        if (code !== 0 && code !== null && wasRunning && this.restartAttempts < this.MAX_RESTART_ATTEMPTS) {
+        if (
+          !this.hotkeyPermissionFailed &&
+          code !== 0 &&
+          code !== null &&
+          wasRunning &&
+          this.restartAttempts < this.MAX_RESTART_ATTEMPTS
+        ) {
           // Quick-exit heuristic: if the process died within QUICK_EXIT_THRESHOLD_MS of starting
-          // with a non-zero code (and we weren't on BLE), it almost certainly failed to open the
+          // with a non-zero code, it almost certainly failed to open the
           // audio device. Let main verify the selected input before scheduling a retry.
           const uptime = this.processStartedAt ? Date.now() - this.processStartedAt : Infinity;
-          const settings = loadSettings();
-          if (uptime < this.QUICK_EXIT_THRESHOLD_MS && settings.inputSource === 'system') {
+          if (uptime < this.QUICK_EXIT_THRESHOLD_MS) {
             logger.warn(`[MemoSttService] Process exited quickly (${uptime}ms) in system mode — treating as audio device error`);
             this.processStartedAt = null;
             this.emit('micDeviceError', `process exited after ${uptime}ms`);
@@ -484,9 +437,6 @@ export class MemoSttService extends EventEmitter {
       await ready;
       if (this.readyPromise === ready) this.readyPromise = null;
       if (this.process === child && !child.killed && child.stdin) {
-        const settings = loadSettings();
-        this.setPressEnterAfterPaste(settings.postEnter || false);
-        this.setPushToTalkMode(settings.pushToTalkMode || false);
         this.updateVocabulary();
       }
     } catch (error) {
@@ -505,7 +455,6 @@ export class MemoSttService extends EventEmitter {
       this.restartTimeout = null;
     }
 
-    this.isBleConnected = false;
 
     // Reset restart attempts on manual stop
     this.restartAttempts = 0;
@@ -602,6 +551,25 @@ export class MemoSttService extends EventEmitter {
   }
 
   private async processLine(line: string): Promise<void> {
+    if (line === 'HOTKEY_READY') {
+      logger.info('[MemoSttService] Hotkey listener authorized');
+      return;
+    }
+
+    if (line === 'HOTKEY_PERMISSION_REQUIRED' || line.startsWith('HOTKEY_ERROR:')) {
+      this.hotkeyPermissionFailed = true;
+      const error = new Error(
+        line === 'HOTKEY_PERMISSION_REQUIRED'
+          ? 'Input Monitoring permission is required. Enable Memo in System Settings → Privacy & Security → Input Monitoring, then restart Memo.'
+          : `The dictation hotkey listener failed: ${line.slice('HOTKEY_ERROR:'.length).trim()}`,
+      );
+      logger.error(`[MemoSttService] ${error.message}`);
+      this.status = 'error';
+      this.emit('status', 'error');
+      this.emit('error', error);
+      return;
+    }
+
     if (line.startsWith('MIC_INFO:')) {
       const rest = line.slice('MIC_INFO:'.length);
       const tabIdx = rest.indexOf('\t');
@@ -631,65 +599,6 @@ export class MemoSttService extends EventEmitter {
 
     if (line === 'MIC_READY') {
       logger.info('[MemoSttService] Selected microphone stream is ready');
-      return;
-    }
-
-    // Handle BLE protocol messages
-    if (line.startsWith('CONNECTED:')) {
-      // Format: CONNECTED:<device_name>
-      // Device name can be: "Zephyr [memo_C9AA6]" or "memo_C9AA6"
-      const fullDeviceName = line.slice('CONNECTED:'.length).trim();
-      
-      // Extract memo_XXXXX pattern if present (for UID extraction)
-      const memoMatch = fullDeviceName.match(/(memo_[a-zA-Z0-9_]+)/i);
-      const deviceName = memoMatch ? memoMatch[1] : fullDeviceName;
-      
-      logger.info(`[MemoSttService] BLE device connected: ${fullDeviceName} (extracted: ${deviceName})`);
-      
-      // Update state
-      this.isBleConnected = true;
-      
-      // Emit event for BleManager (use extracted memo_ name for consistency)
-      this.emit('bleConnected', deviceName);
-      
-      // Handle audio source switching
-      if (this.audioSourceManager) {
-        this.audioSourceManager.handleBleReconnect(fullDeviceName);
-      }
-      return;
-    }
-
-    if (line.startsWith('BLE_PRESS_ENTER')) {
-      this.emit('blePressEnter');
-      return;
-    }
-
-    if (line.startsWith('DISCONNECTED:')) {
-      // Format: DISCONNECTED:<reason>
-      const reason = line.slice('DISCONNECTED:'.length).trim();
-      logger.info(`[MemoSttService] BLE device disconnected: ${reason}`);
-
-      // Update state
-      this.isBleConnected = false;
-      
-      // Emit event for BleManager
-      this.emit('bleDisconnected');
-      
-      // Handle audio source switching
-      if (this.audioSourceManager) {
-        this.audioSourceManager.handleBleDisconnect();
-      }
-      return;
-    }
-
-    if (line.startsWith('BATTERY_LEVEL:')) {
-      const rawLevel = line.slice('BATTERY_LEVEL:'.length).trim();
-      const level = Number.parseInt(rawLevel, 10);
-      if (Number.isFinite(level)) {
-        const clamped = Math.max(0, Math.min(100, level));
-        logger.info(`[MemoSttService] Battery level: ${clamped}%`);
-        this.emit('batteryLevelChanged', clamped);
-      }
       return;
     }
 
@@ -766,7 +675,6 @@ export class MemoSttService extends EventEmitter {
       return;
     }
     
-    // BLE connection/disconnection is handled via CONNECTED:/DISCONNECTED: protocol messages above
     // No need for additional detection here
     
     // Detect error messages that indicate transcription failure

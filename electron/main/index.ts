@@ -2,7 +2,7 @@ import { app, autoUpdater, BrowserWindow, ipcMain, systemPreferences, shell, Men
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { MemoSttService, TranscriptionData } from './services/MemoSttService';
-import { createTray, getMicrophoneInputState, refreshAudioInputDevices, selectSystemInput, setAudioSourceManager, setMainWindow, setOpenMainWindowHandler, setLastTranscript, setRecordingState, setProcessingState, setBleConnectionState, updateMenuState, setBleManager, setMemoSttService } from './services/TrayService';
+import { createTray, getMicrophoneInputState, refreshAudioInputDevices, selectSystemInput, setMainWindow, setOpenMainWindowHandler, setLastTranscript, setRecordingState, setProcessingState, updateMenuState, setMemoSttService } from './services/TrayService';
 import {
   loadSettings,
   loadUserSettings,
@@ -12,8 +12,6 @@ import {
   store,
 } from './services/SettingsService';
 import { applyPhraseReplacements, clampPhraseReplacementRulesFromInput } from './services/phraseReplacement';
-import { BleManager } from './services/BleManager';
-import { AudioSourceManager } from './services/AudioSourceManager';
 import { updateOverlayVisibility, sendAudioLevels, sendStatusToOverlay } from './services/WindowService';
 import path from 'path';
 import os from 'os';
@@ -49,24 +47,7 @@ const __dirname = app.isPackaged
   ? path.join(app.getAppPath(), 'dist')
   : path.join(process.cwd(), 'dist');
 
-function isDevMode(): boolean {
-  return process.env.NODE_ENV === 'development' || !app.isPackaged;
-}
-
-function devAutoConnectUid(): string | null {
-  if (!isDevMode()) return null;
-  const directUid = process.env.MEMO_DEV_AUTO_CONNECT_UID?.trim();
-  if (directUid && /^[0-9A-Fa-f]{5}$/.test(directUid)) {
-    return directUid.toUpperCase();
-  }
-
-  const deviceName = process.env.MEMO_DEV_AUTO_CONNECT_DEVICE_NAME?.trim();
-  const match = deviceName?.match(/memo_([0-9A-Fa-f]{5})/i);
-  return match?.[1] ? match[1].toUpperCase() : null;
-}
-
 function selectedSystemMicIsAvailable(): boolean {
-  if (loadSettings().inputSource !== 'system') return true;
   const selectedName = store.get('selectedSystemMicName')?.trim();
   return !selectedName || audioInputService.getDevices().some(({ name }) => name === selectedName);
 }
@@ -85,13 +66,8 @@ if (!gotSingleInstanceLock) {
 let mainWindow: BrowserWindow | null = null;
 let memoSttService: MemoSttService | null = null;
 let deviceSyncService: DeviceSyncService | null = null;
-let bleManager: BleManager | null = null;
-let audioSourceManager: AudioSourceManager | null = null;
 const appUpdateService = new AppUpdateService(() => mainWindow);
 let isRecording = false;
-let pendingBlePostStopEnter = false;
-let lastTextPasteAtMs = 0;
-let awaitingTranscriptionAfterStop = false;
 let isQuitting = false;
 let micDeviceRecoveryTimer: NodeJS.Timeout | null = null;
 const asrModelService = new AsrModelService();
@@ -107,10 +83,6 @@ asrModelService.on('state-changed', (state: AsrState) => {
 app.on('second-instance', () => {
   openMainWindow();
 });
-
-function pressReturnForBlePostStopEnter(): void {
-  execFileSync('osascript', ['-e', 'tell application "System Events" to key code 36'], { stdio: 'ignore' });
-}
 
 function createWindow(): void {
   // Check for dev mode - either NODE_ENV or if dist-react doesn't exist
@@ -167,6 +139,10 @@ function createWindow(): void {
 
   // Set main window in tray service
   setMainWindow(mainWindow);
+}
+
+function pressReturn(): void {
+  execFileSync('osascript', ['-e', 'tell application "System Events" to key code 36'], { stdio: 'ignore' });
 }
 
 function openMainWindow(): void {
@@ -261,112 +237,20 @@ async function startLiveDictation(): Promise<void> {
   if (!memoSttService || !selectedSystemMicIsAvailable()) return;
   await memoSttService.start();
   if (memoSttService.getStatus() !== 'running') return;
-  const settings = loadSettings();
-  const uid = devAutoConnectUid() || (settings.inputSource === 'ble' ? store.get('memoUid') : null);
-  if (uid && bleManager) {
-    const result = await bleManager.connect(uid);
-    if (!result.success) logger.warn(`[Main] Could not restore Memo BLE capture: ${result.error}`);
-  }
 }
 
 async function setupMemoSttService(): Promise<void> {
-  // Initialize BLE manager if not exists
-  if (!bleManager) {
-    logger.info('Creating BleManager instance');
-    bleManager = new BleManager(store);
-
-    // Wire up state change events
-    bleManager.on('stateChanged', (state) => {
-      logger.info(`[BleManager] State changed: connected=${state.connected}, deviceUid=${state.deviceUid}, deviceName=${state.deviceName}, batteryLevel=${state.batteryLevel}`);
-      
-      // Update tray
-      setBleConnectionState(state.connected, state.deviceName || undefined);
-      
-      // Save UID to settings if connected
-      if (state.connected && state.deviceUid) {
-        store.set('memoUid', state.deviceUid);
-      }
-    });
-  }
-
-  // Initialize Audio Source Manager if not exists
-  if (!audioSourceManager) {
-    logger.info('Creating AudioSourceManager instance');
-    audioSourceManager = new AudioSourceManager(store);
-
-    // Wire up toast notifications
-    audioSourceManager.on('fallbackToast', (toastData) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('audio:showToast', toastData);
-      }
-    });
-
-    // Handle BLE disconnect: force BleManager + tray to disconnected, start reconnect loop, then restart
-    // (so tray is correct even when DISCONNECTED: was never received from Rust)
-    audioSourceManager.on('bleDisconnectRestartRequested', () => {
-      logger.info('[Main] BLE disconnect restart requested - updating state and tray, then restarting');
-      if (bleManager) {
-        bleManager.setDisconnectedAndMaybeScheduleReconnect();
-        setBleConnectionState(false);
-      }
-      if (memoSttService) {
-        memoSttService.restart();
-      }
-    });
-
-    // If we can't reconnect after repeated attempts, fall back to system mic.
-    // Note: once we switch to system mic, BLE auto-reconnect (CONNECT_UID) won't run until user switches back to BLE.
-    bleManager?.on('maxReconnectAttemptsReached', async () => {
-      logger.info('[Main] Max BLE reconnect attempts reached - falling back to system mic');
-      try {
-        await audioSourceManager?.switchToSystemMic('disconnect', true);
-      } catch (error) {
-        logger.error('[Main] Failed to switch to system mic after max reconnect attempts:', error);
-      }
-      memoSttService?.restart();
-    });
-
-    // Handle restart request for other sources (e.g. manual switch to system mic)
-    audioSourceManager.on('restartRequested', (source: 'system' | 'ble') => {
-      logger.info(`[Main] Restart requested for source: ${source}`);
-      if (memoSttService) {
-        memoSttService.restart();
-      }
-    });
-
-    // Handle settings updated event to refresh tray menu
-    audioSourceManager.on('settingsUpdated', () => {
-      logger.debug('[Main] Settings updated, refreshing tray menu');
-      updateMenuState();
-    });
-
-    setAudioSourceManager(audioSourceManager);
-  }
-
   logger.info('Creating new MemoSttService instance');
-  memoSttService = new MemoSttService(audioSourceManager);
-  
-  // Set MemoSttService in BleManager
-  if (bleManager) {
-    bleManager.setMemoSttService(memoSttService);
-  }
+  memoSttService = new MemoSttService();
   
   // Set service reference in TrayService for command sending
   setMemoSttServiceForTray(memoSttService);
-  
-  // Set BleManager reference in TrayService for connection operations
-  if (bleManager) {
-    setBleManager(bleManager);
-  }
   
   // Load hotkey from settings, default to 'function'
   const userSettings = loadUserSettings();
   const hotkey = userSettings.hotkey || 'function';
   memoSttService.setHotkey(hotkey);
   
-  // Note: postEnter setting is automatically sent by MemoSttService
-  // after the process starts (with a delay to ensure stdin is ready)
-
   memoSttService.on('transcription', async (data: TranscriptionData) => {
     // IMPORTANT: Transcriptions arrive AFTER recording has stopped
     // The flow is: recording starts → user speaks → recording stops → transcription happens
@@ -386,7 +270,6 @@ async function setupMemoSttService(): Promise<void> {
     const afterPhrases = applyPhraseReplacements(formatted, settings.phraseReplacements);
     const { textToPaste: textBeforeNormalization, pressEnter: pressEnterThisTime } = stripTrailingEnter(afterPhrases, settings.sayEnterToPressEnter ?? false);
     const textToPaste = normalizeTranscriptionText(textBeforeNormalization);
-    const pressEnter = pressEnterThisTime || pendingBlePostStopEnter;
 
     if (textToPaste) {
       setLastTranscript(textToPaste);
@@ -397,16 +280,12 @@ async function setupMemoSttService(): Promise<void> {
           ['-e', 'tell application "System Events" to keystroke "v" using command down'],
           { stdio: 'ignore' }
         );
-        if (pressEnter) {
-          pressReturnForBlePostStopEnter();
+        if (pressEnterThisTime) {
+          pressReturn();
         }
-        pendingBlePostStopEnter = false;
-        awaitingTranscriptionAfterStop = false;
-        lastTextPasteAtMs = Date.now();
         logger.debug(
           '[Main] Pasted transcription into focused app' +
-          (pressEnterThisTime ? ' (voice enter)' : '') +
-          (pressEnter && !pressEnterThisTime ? ' (BLE double-tap enter)' : '')
+          (pressEnterThisTime ? ' (voice enter)' : '')
         );
       } catch (pasteErr) {
         logger.warn('[Main] Paste failed (accessibility may be required):', pasteErr);
@@ -483,27 +362,6 @@ async function setupMemoSttService(): Promise<void> {
     sendAudioLevels(levels);
   });
 
-  // BLE device: second button tap shortly after stop → memo-stt prints BLE_PRESS_ENTER
-  memoSttService.on('blePressEnter', () => {
-    const settings = loadSettings();
-    if (!settings.postEnter) {
-      logger.debug('[Main] BLE post-stop enter ignored (BLE double-tap Enter is off)');
-      return;
-    }
-    if (!awaitingTranscriptionAfterStop && Date.now() - lastTextPasteAtMs < 5000) {
-      try {
-        pressReturnForBlePostStopEnter();
-        logger.debug('[Main] BLE post-stop enter: sent Return after already-completed paste');
-      } catch (err) {
-        logger.warn('[Main] BLE post-stop enter failed (accessibility may be required):', err);
-      }
-      return;
-    }
-
-    pendingBlePostStopEnter = true;
-    logger.debug('[Main] BLE post-stop enter queued until next paste');
-  });
-
   memoSttService.on('micInfoUpdated', () => {
     updateMenuState();
   });
@@ -512,8 +370,6 @@ async function setupMemoSttService(): Promise<void> {
   memoSttService.on('recordingStarted', () => {
     logger.debug('[Main] Recording started event received');
     if (!isRecording) {
-      pendingBlePostStopEnter = false;
-      awaitingTranscriptionAfterStop = false;
       isRecording = true;
       setRecordingState(true);
       updateOverlayVisibility(true, mainWindow);
@@ -528,7 +384,6 @@ async function setupMemoSttService(): Promise<void> {
     logger.debug('[Main] Recording stopped event received');
     if (isRecording) {
       isRecording = false;
-      awaitingTranscriptionAfterStop = true;
       setRecordingState(false);
       updateOverlayVisibility(false, mainWindow);
       sendStatusToOverlay(false, mainWindow);
@@ -548,16 +403,12 @@ async function setupMemoSttService(): Promise<void> {
     logger.debug('[Main] Processing completed event received');
     setProcessingState(false);
     // The no-speech path emits this without a transcription event.
-    pendingBlePostStopEnter = false;
-    awaitingTranscriptionAfterStop = false;
   });
 
   // Handle processing failed event - clear processing state when transcription fails
   memoSttService.on('processingFailed', () => {
     logger.debug('[Main] Processing failed event received');
     setProcessingState(false);
-    pendingBlePostStopEnter = false;
-    awaitingTranscriptionAfterStop = false;
     if (isRecording) {
       logger.warn('[Main] Recording state still set when processing failed, clearing it');
       isRecording = false;
@@ -666,7 +517,6 @@ app.whenReady().then(async () => {
     pauseDictation: async () => {
       if (!memoSttService) return false;
       logger.info('[Main] Pausing live dictation for Memo device transcription');
-      if (loadSettings().inputSource === 'ble') bleManager?.markDisconnectedForCapturePause();
       await memoSttService.suspend();
       return true;
     },
@@ -973,7 +823,6 @@ ipcMain.handle('user:mark-onboarded', async (_event, userName: unknown) => {
   }
 });
 
-// Audio Source Management IPC Handlers
 // Debounce timer for input-device-change restarts (avoids rapid-fire restarts when the OS
 // fires multiple devicechange events during a single plug/unplug event).
 let inputDeviceChangeTimer: NodeJS.Timeout | null = null;
@@ -983,9 +832,6 @@ let inputDeviceChangeTimer: NodeJS.Timeout | null = null;
  * Debounced so back-to-back OS events collapse into a single restart.
  */
 function scheduleSystemMicRestart(reason: string): void {
-  const settings = loadSettings();
-  if (settings.inputSource !== 'system') return; // Only applies to system mic mode
-
   if (inputDeviceChangeTimer) {
     clearTimeout(inputDeviceChangeTimer);
   }

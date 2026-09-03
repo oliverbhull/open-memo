@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use memo_stt::{Error, Result, SttEngine};
+use memo_dictation::{Error, Result, SttEngine};
 use serde_json::{json, Value};
 use std::env;
 use std::io::{BufRead, BufReader, Write};
@@ -54,11 +54,16 @@ impl TranscriptionEngine {
     }
 
     pub fn set_prompt(&mut self, prompt: Option<String>) {
-        if let Self::Whisper(engine) = self {
-            engine.set_prompt(prompt);
+        match self {
+            Self::Whisper(engine) => engine.set_prompt(prompt),
+            Self::Worker(engine) => {
+                if env::var("MEMO_CONTEXTUAL_VOCAB").as_deref() == Ok("1") {
+                    if let Err(error) = engine.set_context(prompt) {
+                        eprintln!("contextual vocabulary update failed: {error}");
+                    }
+                }
+            }
         }
-        // The worker protocol has no prompt input. Memo still applies its
-        // normal command detection and phrase replacements.
     }
 
     pub fn begin_live_stream(&mut self) -> Result<()> {
@@ -150,10 +155,7 @@ impl WorkerEngine {
             )));
         }
 
-        eprintln!(
-            "conomo worker ready (worker={})",
-            worker.display()
-        );
+        eprintln!("conomo worker ready (worker={})", worker.display());
 
         Ok(Self {
             child,
@@ -174,6 +176,13 @@ impl WorkerEngine {
         self.send_message(json!({ "type": "start" }))?;
         self.session_active = true;
         Ok(())
+    }
+
+    fn set_context(&mut self, prompt: Option<String>) -> Result<()> {
+        self.send_message(json!({
+            "type": "context",
+            "prompt": prompt,
+        }))
     }
 
     fn feed_live_audio(&mut self, samples: &[i16]) -> Result<()> {
@@ -335,9 +344,8 @@ impl StreamingResampler {
 }
 
 fn required_path(name: &str) -> Result<PathBuf> {
-    let value = env::var(name).map_err(|_| {
-        Error(format!("{name} is required for the selected ASR backend"))
-    })?;
+    let value = env::var(name)
+        .map_err(|_| Error(format!("{name} is required for the selected ASR backend")))?;
     if value.trim().is_empty() {
         return Err(Error(format!("{name} cannot be empty")));
     }

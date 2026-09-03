@@ -16,6 +16,11 @@ build/
 # Rust build artifacts
 rust/target/
 rust/Cargo.lock
+sidecars/*/target/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
 
 # Electron build outputs
 out/
@@ -100,6 +105,11 @@ private_keys/
 
 # Local development material not shipped with the app
 tests/
+!tests/
+tests/*
+!tests/contextual-dictation/
+!tests/contextual-dictation/fixtures.json
+!tests/contextual-dictation/replay.py
 docs/
 .env.example
 tsconfig.base.json

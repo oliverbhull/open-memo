@@ -1,13 +1,15 @@
 {
   "name": "open-memo",
-  "version": "0.8.6",
+  "version": "0.8.7",
   "description": "Open-source push-to-talk dictation for macOS",
   "homepage": "https://github.com/oliverbhull/open-memo",
   "main": "dist/main.cjs",
   "preload": "dist/preload.cjs",
   "type": "module",
   "scripts": {
-    "dev": "npm run build:backends && npm run build:ble && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
+    "dev": "npm run setup:contextual-ctc && npm run build:dictation && npm run build:pnc && npm run build:ble && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
+    "setup:contextual-ctc": "bash scripts/shell/setup-contextual-ctc.sh",
+    "test:contextual-dictation": "python3 tests/contextual-dictation/replay.py",
     "dev:renderer": "vite --config vite.config.ts",
     "dev:main": "esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs --watch",
     "dev:preload": "esbuild electron/preload/index.ts --platform=node --bundle --external:electron --outfile=dist/preload.cjs --format=cjs --watch",
@@ -16,12 +18,12 @@
     "build:preload": "esbuild electron/preload/index.ts --platform=node --bundle --external:electron --outfile=dist/preload.cjs --format=cjs",
     "build:overlay-preload": "esbuild electron/preload/overlay.ts --platform=node --bundle --external:electron --outfile=dist/overlay-preload.cjs --format=cjs",
     "build:renderer": "vite build --config vite.config.ts",
-    "build:stt:release": "bash scripts/shell/build-stt.sh",
     "build:conomo": "bash scripts/shell/build-conomo.sh",
+    "build:dictation": "bash scripts/shell/build-dictation.sh",
     "verify:conomo": "bash scripts/shell/verify-conomo-bundle.sh",
     "build:pnc": "bash scripts/shell/build-pnc.sh",
     "verify:pnc": "bash scripts/shell/verify-pnc-bundle.sh",
-    "build:backends": "npm run build:stt:release && npm run build:conomo && npm run build:pnc",
+    "build:backends": "npm run build:dictation && npm run build:conomo && npm run build:pnc",
     "build:ble": "bash scripts/shell/build-ble-bridge.sh",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.json",
     "check": "npm run typecheck",
@@ -65,7 +67,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "concurrently": "^9.2.4",
-    "electron": "^41.7.1",
+    "electron": "^41.10.7",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
     "react": "^19.2.7",
@@ -149,10 +151,10 @@
     ],
     "extraResources": [
       {
-        "from": ".build/stt/",
-        "to": "sttbin",
+        "from": ".build/dictation/",
+        "to": "dictation",
         "filter": [
-          "memo-stt"
+          "memo-dictation"
         ]
       },
       {

@@ -42,11 +42,10 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            .build/memo-stt-source
-            .build/memo-stt-target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('scripts/shell/build-stt.sh', 'patches/memo-stt-0.1.1-*.patch', 'sidecars/conomo-adapter/transcription_engine.rs') }}
+            .build/dictation-target
+          key: ${{ runner.os }}-dictation-${{ hashFiles('scripts/shell/build-dictation.sh', 'sidecars/dictation/Cargo.toml', 'sidecars/dictation/Cargo.lock', 'sidecars/dictation/src/**') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-dictation-
 
       - name: Cache conomo bundle
         uses: actions/cache@v4
@@ -57,11 +56,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Test owned dictation sidecar
+        run: cargo test --locked --manifest-path sidecars/dictation/Cargo.toml
+
+      - name: Validate contextual replay manifest
+        run: npm run test:contextual-dictation -- --validate-only
+
       - name: Build unsigned app
         run: |
-          export CONOMO_SOURCE="scripts/fixtures/conomo"
-          export CONOMO_SHA256="$(shasum -a 256 "${CONOMO_SOURCE}" | awk '{print $1}')"
+          export CONOMO_SOURCE="scripts/fixtures/conomo-bundle"
+          export CONOMO_SHA256="$(shasum -a 256 "${CONOMO_SOURCE}/conomo" | awk '{print $1}')"
           npm run build:dir
+
+      - name: Verify packaged dictation sidecar
+        run: test -x dist/mac-arm64/Memo.app/Contents/Resources/dictation/memo-dictation
 
       - name: Verify packaged conomo backend
         run: bash scripts/shell/verify-conomo-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/conomo

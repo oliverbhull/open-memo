@@ -338,13 +338,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const selectedMicrophoneIndex = microphoneState?.selectedDeviceName
     ? microphoneState.devices.findIndex((device) => device.name === microphoneState.selectedDeviceName)
     : -1;
-  const microphoneValue = microphoneState?.inputSource === 'ble'
-    ? 'ble'
-    : microphoneState?.inputSource === 'radio'
-      ? 'radio'
-      : microphoneState?.selectedDeviceName
-        ? selectedMicrophoneIndex >= 0 ? `device-${selectedMicrophoneIndex}` : 'unavailable'
-        : 'system-default';
+  const microphoneValue = microphoneState?.selectedDeviceName
+    ? selectedMicrophoneIndex >= 0 ? `device-${selectedMicrophoneIndex}` : 'unavailable'
+    : 'system-default';
 
   return (
     <>
@@ -406,12 +402,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     textOverflow: 'ellipsis',
                   }}
                 >
-                  {microphoneState?.inputSource === 'ble' && (
-                    <option value="ble" disabled>Memo Bluetooth Device</option>
-                  )}
-                  {microphoneState?.inputSource === 'radio' && (
-                    <option value="radio" disabled>Aux / Line In</option>
-                  )}
                   {microphoneState?.selectedDeviceName && selectedMicrophoneIndex < 0 && (
                     <option value="unavailable" disabled>
                       {microphoneState.selectedDeviceName} — Unavailable
