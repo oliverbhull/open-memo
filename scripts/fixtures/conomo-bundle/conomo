@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "--worker" ]]; then
+  printf 'READY\n'
+  while IFS= read -r _request; do
+    printf '{"text":"fixture transcript"}\n'
+  done
+  exit 0
+fi
+
+echo "Conomo CI fixture only supports --worker." >&2
+exit 2

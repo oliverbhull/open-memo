@@ -216,30 +216,6 @@ export function sendAudioLevels(levels: number[]) {
 }
 
 /**
- * Show a short submit/checkmark animation after BLE double-click Enter.
- */
-export function sendSubmitAcceptedToOverlay() {
-  destroyOverlay();
-  createOverlayWindow();
-
-  if (!overlayWindow || overlayWindow.isDestroyed()) {
-    return;
-  }
-
-  overlayWindow.showInactive();
-  overlayWindow.setFocusable(false);
-  overlayWindow.blur();
-
-  if (overlayWindow.webContents && !overlayWindow.webContents.isDestroyed()) {
-    try {
-      overlayWindow.webContents.send('memo:submitAccepted');
-    } catch (e) {
-      // Silently ignore errors
-    }
-  }
-}
-
-/**
  * Send status update to overlay window
  */
 export function sendStatusToOverlay(isRecording: boolean, mainWindow: BrowserWindow | null) {

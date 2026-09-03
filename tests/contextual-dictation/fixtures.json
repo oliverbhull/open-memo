@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "sampleRate": 16000,
+  "vocabulary": [
+    "JTECH",
+    "Rayaan",
+    "Nemotron",
+    "Qwen",
+    "Codex",
+    "ChatGPT",
+    "Claude",
+    "Suffolk",
+    "supermicrophone"
+  ],
+  "fixtures": [
+    {
+      "name": "rayaan-jtech-nemotron-supermicrophone",
+      "audioFile": "b101c76f-1972-4285-8310-dfc3b495b4c0.wav",
+      "sha256": "b20253fa19db7b73f54feae2c1a8120ef4a9e2b97b2206f8f855ec5dac8097ec",
+      "reviewedSpokenText": "All right, I am here with Rayaan. We are about to go check in and see if the supermicrophone is going to work. I am going to need to see if a JTECH team is available as well.",
+      "expectedGreedy": "all right i am here with rayon we are about to go check in and see if the super microphone is going to work i am going to need to see if a jch team is available as well",
+      "expectedContextual": "all right i am here with rayaan we are about to go check in and see if the supermicrophone is going to work i am going to need to see if a jtech team is available as well",
+      "expectedSelected": "all right i am here with rayaan we are about to go check in and see if the supermicrophone is going to work i am going to need to see if a jtech team is available as well"
+    },
+    {
+      "name": "ramsey-preservation-and-unsafe-boundary-rejection",
+      "audioFile": "5cf5a6ee-02c2-41c3-be5b-1bf47ff1cb07.wav",
+      "sha256": "0113fc2c0d0b655b2d7e11b385ded791b1c665781582c6cc01c13ef54a9b2edb",
+      "reviewedSpokenText": "Ramsey and I met with the team over at JTECH yesterday and we are going to put the supermicrophone for development. We are going to need to confirm with Rayaan.",
+      "expectedGreedy": "ramsey and i met with the team over at jch yesterday and we are going to put the super microphone for development we are going to need to confirm with rayon about thank",
+      "expectedContextual": "ramsey and i met with the team over at jtech yesterday and we are going to put the supermicrophone for development we are going to need to confirm with raya cl",
+      "expectedSelected": "ramsey and i met with the team over at jch yesterday and we are going to put the super microphone for development we are going to need to confirm with rayon about thank"
+    },
+    {
+      "name": "ordinary-speech-no-vocabulary",
+      "audioFile": "44c52970-003e-4026-9439-e8a94d315398.wav",
+      "sha256": "830c2918d3d1d0d1b5ecf970dc09a5b5bf9d89e68def1d23c733ce55d462ea05",
+      "reviewedSpokenText": "Does that make sense?",
+      "expectedGreedy": "does that make sense",
+      "expectedContextual": "does that make sense",
+      "expectedSelected": "does that make sense"
+    },
+    {
+      "name": "very-short-audio-rejects-unspoken-vocabulary",
+      "audioFile": "c3c9fba9-4505-4892-95d9-6fee05b01c76.wav",
+      "sha256": "73bd4763a4c0b057da92a89d8895f97df1c632f3404b827cfab55de188c4fe3b",
+      "reviewedSpokenText": "Thank.",
+      "expectedGreedy": "thank",
+      "expectedContextual": "cl",
+      "expectedSelected": "thank"
+    }
+  ]
+}

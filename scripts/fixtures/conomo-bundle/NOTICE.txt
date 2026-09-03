@@ -1,0 +1,1 @@
+This protocol-only fixture exists solely for unsigned CI packaging tests.

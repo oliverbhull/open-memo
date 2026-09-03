@@ -13,8 +13,16 @@ DEVICE_RUNTIME="${OUTPUT_DIR}/device-runtime"
 mkdir -p "${OUTPUT_DIR}"
 
 if [[ -n "${SOURCE}" ]]; then
-  [[ -f "${SOURCE}" ]] || { echo "CONOMO_SOURCE is not a file: ${SOURCE}" >&2; exit 1; }
-  cp "${SOURCE}" "${OUTPUT_DIR}/conomo"
+  if [[ -d "${SOURCE}" ]]; then
+    rm -rf "${OUTPUT_DIR}"
+    mkdir -p "${OUTPUT_DIR}"
+    cp -R "${SOURCE}/." "${OUTPUT_DIR}/"
+  elif [[ -f "${SOURCE}" ]]; then
+    cp "${SOURCE}" "${OUTPUT_DIR}/conomo"
+  else
+    echo "CONOMO_SOURCE does not exist: ${SOURCE}" >&2
+    exit 1
+  fi
 elif [[ -n "${URL}" ]]; then
   [[ "${URL}" == https://* ]] || { echo "CONOMO_URL must use HTTPS" >&2; exit 1; }
   ARCHIVE="${ROOT_DIR}/.build/conomo-download.tar.gz"

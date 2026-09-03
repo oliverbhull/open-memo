@@ -127,7 +127,6 @@ export interface MicrophoneInputDevice {
 }
 
 export interface MicrophoneInputState {
-  inputSource: 'system' | 'ble' | 'radio';
   selectedDeviceName: string | null;
   defaultDeviceName: string | null;
   devices: MicrophoneInputDevice[];

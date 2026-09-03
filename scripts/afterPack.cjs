@@ -25,12 +25,12 @@ module.exports = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return;
   const appPath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   const shouldSign = process.env.CSC_IDENTITY_AUTO_DISCOVERY !== 'false' && process.env.MANUAL_SIGN !== '1';
-  const sttBinPath = path.join(appPath, 'Contents', 'Resources', 'sttbin', 'memo-stt');
+  const sttBinPath = path.join(appPath, 'Contents', 'Resources', 'dictation', 'memo-dictation');
   if (!fs.existsSync(sttBinPath)) {
-    throw new Error('memo-stt was not copied from extraResources');
+    throw new Error('memo-dictation was not copied from extraResources');
   }
   fs.chmodSync(sttBinPath, 0o755);
-  console.log(`✓ memo-stt verified (${fs.statSync(sttBinPath).size} bytes)`);
+  console.log(`✓ memo-dictation verified (${fs.statSync(sttBinPath).size} bytes)`);
 
   const deviceSyncHelper = path.join(appPath, 'Contents', 'Resources', 'device-sync', 'device_sync.py');
   if (!fs.existsSync(deviceSyncHelper)) {
@@ -75,6 +75,9 @@ module.exports = async function afterPack(context) {
     .filter((name) => name.endsWith('.mlmodelc'));
   if (conomoModels.length !== 1) throw new Error('Conomo bundle must contain exactly one compiled Core ML model');
   const conomoManifest = JSON.parse(fs.readFileSync(path.join(conomoPath, 'manifest.json'), 'utf8'));
+  if (shouldSign && conomoManifest.fixture === true) {
+    throw new Error('Refusing to sign a release containing the protocol-only Conomo fixture');
+  }
   if (conomoManifest.quantization !== 'int4' || !(conomoManifest.int4_operations > 0)) {
     throw new Error('Packaged Conomo model is not verified as INT4');
   }
@@ -140,18 +143,19 @@ module.exports = async function afterPack(context) {
     console.log('✓ Memo BLE bridge signed');
   }
 
-  // Sign memo-stt before electron-builder signs the enclosing app.
+  // Sign the native dictation sidecar before electron-builder signs the enclosing app.
   if (shouldSign) {
     const signer = process.env.CSC_NAME || process.env.CODE_SIGN_IDENTITY || 'Developer ID Application';
     await sh('codesign', [
       '--force',
       '--options', 'runtime',
-      '--entitlements', path.resolve('config/entitlements.mac.plist'),
+      '--identifier', 'com.memo.desktop.dictation',
+      '--entitlements', path.resolve('config/entitlements.dictation.plist'),
       '--sign', signer,
       sttBinPath,
     ]);
     await sh('codesign', ['--verify', '--verbose', sttBinPath]);
-    console.log('✓ memo-stt signed with microphone entitlements');
+    console.log('✓ memo-dictation signed with microphone entitlements');
   } else {
     console.log('⚠ Skipping native signing for unsigned build');
   }

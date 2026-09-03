@@ -1,0 +1,5 @@
+{
+  "quantization": "int4",
+  "int4_operations": 1,
+  "fixture": true
+}

@@ -1,0 +1,1 @@
+CI fixture placeholder. This is not a Core ML model.

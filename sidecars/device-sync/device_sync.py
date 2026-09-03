@@ -456,10 +456,10 @@ def transcribe_batch(stt: Path, requests: list[dict], env: dict) -> dict[str, di
         if row.get("type") == "result" and isinstance(row.get("id"), str):
             rows[row["id"]] = row
     if result.returncode != 0:
-        raise RuntimeError(f"memo-stt batch exited {result.returncode}: {result.stderr.strip()[-1000:]}")
+        raise RuntimeError(f"memo-dictation batch exited {result.returncode}: {result.stderr.strip()[-1000:]}")
     missing = [item["id"] for item in requests if item["id"] not in rows]
     if missing:
-        raise RuntimeError(f"memo-stt returned no result for: {', '.join(missing)}")
+        raise RuntimeError(f"memo-dictation returned no result for: {', '.join(missing)}")
     return rows
 
 
@@ -698,7 +698,7 @@ def prepare_archives(args, connection, batch: dict, journal: dict) -> list[dict]
             (stage / "transcript.txt").write_text(text + ("\n" if text else ""), encoding="utf-8")
             (stage / "transcript.json").write_text(json.dumps({"result": {"text": text, "segments": []}}, indent=2) + "\n", encoding="utf-8")
             (stage / "transcript.srt").write_text("", encoding="utf-8")
-            manifest = {"status": "complete", "device_recording_id": item["id"], "source_bytes": item["size"], "source_crc32": item["crc32"], "source_sha256": sha256(source), "audio_sha256": sha256(wav), "duration_seconds": round(row["durationSeconds"], 3), "opus_frames": row["opusFrames"], "requested_model": args.requested_model, "actual_model": args.actual_model, "fallback_reason": args.fallback_reason, "transcription_model": args.actual_model, "transcription_tool": "memo-stt-batch", "transcript": text, "classification": classification, "ingested_at": ingested_at, "container": container}
+            manifest = {"status": "complete", "device_recording_id": item["id"], "source_bytes": item["size"], "source_crc32": item["crc32"], "source_sha256": sha256(source), "audio_sha256": sha256(wav), "duration_seconds": round(row["durationSeconds"], 3), "opus_frames": row["opusFrames"], "requested_model": args.requested_model, "actual_model": args.actual_model, "fallback_reason": args.fallback_reason, "transcription_model": args.actual_model, "transcription_tool": "memo-dictation-batch", "transcript": text, "classification": classification, "ingested_at": ingested_at, "container": container}
             atomic_json(stage / "manifest.json", manifest)
             for child in stage.iterdir():
                 if child.is_file():
