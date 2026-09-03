@@ -5,9 +5,7 @@
 <h1 align="center">Open Memo</h1>
 
 <p align="center">
-  <strong>Talk instead of type.</strong><br>
   Free, private voice dictation for your Mac.<br>
-  Works in every app—even offline.
 </p>
 
 <p align="center">
