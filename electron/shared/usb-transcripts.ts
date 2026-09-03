@@ -29,14 +29,15 @@ export function normalizeUsbTranscriptRows(value: unknown): TranscriptionData[] 
     const timestamp = Date.parse(observedAt);
     if (!Number.isFinite(timestamp) || timestamp <= 0) return [];
 
+    const id = `memo-device-${row.source_sha256.toLowerCase()}`;
     return [{
-      id: `memo-device-${row.source_sha256.toLowerCase()}`,
+      id,
       processedText: row.transcript.trim(),
       timestamp,
       ...(typeof row.audio_path === 'string' && row.audio_path.trim()
         ? {
             audio: {
-              fileName: 'audio.wav',
+              fileName: `${id}.wav`,
               mimeType: 'audio/wav' as const,
               ...(typeof row.duration_seconds === 'number' && Number.isFinite(row.duration_seconds)
                 ? { duration: row.duration_seconds }
