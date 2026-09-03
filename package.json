@@ -109,7 +109,8 @@
         "NSMicrophoneUsageDescription": "Memo needs microphone access to record audio for transcription.",
         "NSBluetoothAlwaysUsageDescription": "Memo uses Bluetooth to connect to supermicrophone."
       },
-      "notarize": true
+      "notarize": true,
+      "sign": "scripts/sign.cjs"
     },
     "dmg": {
       "icon": "assets/app-icons/app-icon.icns",
@@ -197,7 +198,6 @@
       }
     ],
     "afterPack": "scripts/afterPack.cjs",
-    "afterSign": "scripts/afterSign.cjs",
     "publish": [
       {
         "provider": "github",

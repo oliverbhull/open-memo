@@ -143,8 +143,8 @@ module.exports = async function afterPack(context) {
     console.log('✓ Memo BLE bridge signed');
   }
 
-  // Electron Builder signs nested code after this hook. The final fixed-identity
-  // signature is applied in afterSign, immediately before notarization.
+  // The custom signer applies the dictation helper's fixed identity and
+  // entitlements during Electron Builder's signing pass, before notarization.
   if (!shouldSign) {
     console.log('⚠ Skipping native signing for unsigned build');
   }
