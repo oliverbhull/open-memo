@@ -143,20 +143,9 @@ module.exports = async function afterPack(context) {
     console.log('✓ Memo BLE bridge signed');
   }
 
-  // Sign the native dictation sidecar before electron-builder signs the enclosing app.
-  if (shouldSign) {
-    const signer = process.env.CSC_NAME || process.env.CODE_SIGN_IDENTITY || 'Developer ID Application';
-    await sh('codesign', [
-      '--force',
-      '--options', 'runtime',
-      '--identifier', 'com.memo.desktop.dictation',
-      '--entitlements', path.resolve('config/entitlements.dictation.plist'),
-      '--sign', signer,
-      sttBinPath,
-    ]);
-    await sh('codesign', ['--verify', '--verbose', sttBinPath]);
-    console.log('✓ memo-dictation signed with microphone entitlements');
-  } else {
+  // Electron Builder signs nested code after this hook. The final fixed-identity
+  // signature is applied in afterSign, immediately before notarization.
+  if (!shouldSign) {
     console.log('⚠ Skipping native signing for unsigned build');
   }
 };
