@@ -248,7 +248,10 @@ def open_ble_sync_port(bridge: Path | None, trusted_device: Path | None = None):
             peripheral_id = bridge_line[1]
             info = parse_hello(read_line(port), "Bluetooth")
             if info["device_uid"] == trusted_uid:
-                port.timeout = 1.0
+                # BLE notifications can arrive later than serial reads under normal
+                # CoreBluetooth scheduling. Keep commands bounded without treating a
+                # brief scheduling delay as a failed recorder.
+                port.timeout = 3.0
                 return port, info, "Bluetooth"
             excluded.add(peripheral_id)
             port.close()

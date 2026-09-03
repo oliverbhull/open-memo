@@ -5,8 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { promisify } from 'node:util';
-import type { DeviceSyncStatus, TranscriptionData } from '../../shared/electron-api';
-import { normalizeUsbTranscriptRows } from '../../shared/usb-transcripts';
+import type { DeviceSyncStatus } from '../../shared/electron-api';
 import { isWhisperModelInstalled, whisperModelPath } from './AsrModelService';
 import {
   FirmwareReleaseService,
@@ -30,7 +29,6 @@ interface WorkerStatusMessage extends Partial<DeviceSyncStatus> {
 
 interface WorkerRecordingMessage {
   type: 'recording';
-  recording: unknown;
 }
 
 export class DeviceSyncService extends EventEmitter {
@@ -216,11 +214,7 @@ export class DeviceSyncService extends EventEmitter {
       logger.warn(`[DeviceSyncService] Ignored non-JSON worker output: ${line}`);
       return;
     }
-    if (message.type === 'recording') {
-      const [transcription] = normalizeUsbTranscriptRows([message.recording]);
-      if (transcription) this.emit('transcription', transcription satisfies TranscriptionData);
-      return;
-    }
+    if (message.type === 'recording') return;
     if (message.type !== 'status') return;
     const next: DeviceSyncStatus = {
       state: message.state,
