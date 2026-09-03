@@ -153,7 +153,8 @@ jobs:
           test -x "${dictation_bin}"
           codesign --verify --strict --verbose=2 "${dictation_bin}"
           codesign -d --entitlements :- "${dictation_bin}" > /tmp/memo-dictation-entitlements.plist
-          test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.device.audio-input' /tmp/memo-dictation-entitlements.plist)" = true
+          grep -F '<key>com.apple.security.device.audio-input</key>' /tmp/memo-dictation-entitlements.plist
+          grep -F '<key>com.apple.security.device.microphone</key>' /tmp/memo-dictation-entitlements.plist
           codesign -dv "${dictation_bin}" 2>&1 | grep -F 'Identifier=com.memo.desktop.dictation'
           codesign --verify --deep --strict --verbose=2 dist/mac-arm64/Memo.app
           spctl --assess --type execute --verbose dist/mac-arm64/Memo.app
