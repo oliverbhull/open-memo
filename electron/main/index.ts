@@ -533,11 +533,6 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('device-sync:status', status);
     }
   });
-  deviceSyncService.on('transcription', (transcription: TranscriptionData) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('transcription:new', transcription);
-    }
-  });
   void deviceSyncService.start();
   
   app.on('activate', () => {
