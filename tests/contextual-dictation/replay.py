@@ -24,7 +24,37 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--audio-dir", type=Path, default=DEFAULT_AUDIO_DIR)
     parser.add_argument("--native", type=Path)
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="validate the committed manifest without requiring private audio files",
+    )
     return parser.parse_args()
+
+
+def validate_manifest(manifest: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    vocabulary = manifest.get("vocabulary")
+    fixtures = manifest.get("fixtures")
+    if not isinstance(vocabulary, list) or not vocabulary or not all(isinstance(term, str) and term.strip() for term in vocabulary):
+        failures.append("vocabulary must be a non-empty list of terms")
+    if not isinstance(fixtures, list) or not fixtures:
+        return [*failures, "fixtures must be a non-empty list"]
+    required = {
+        "name", "audioFile", "sha256", "reviewedSpokenText",
+        "expectedGreedy", "expectedContextual", "expectedSelected",
+    }
+    for index, fixture in enumerate(fixtures):
+        if not isinstance(fixture, dict):
+            failures.append(f"fixture {index} must be an object")
+            continue
+        missing = sorted(required.difference(fixture))
+        if missing:
+            failures.append(f"fixture {index} is missing: {', '.join(missing)}")
+        digest = fixture.get("sha256")
+        if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            failures.append(f"fixture {index} has an invalid SHA-256")
+    return failures
 
 
 def worker_messages(audio_path: Path, vocabulary: list[str], native: Path | None) -> tuple[list[str], list[str]]:
@@ -95,7 +125,13 @@ def main() -> int:
     args = parse_args()
     manifest_path = Path(__file__).with_name("fixtures.json")
     manifest = json.loads(manifest_path.read_text())
-    failures: list[str] = []
+    failures = validate_manifest(manifest)
+    if args.validate_only:
+        if failures:
+            print("\n".join(failures), file=sys.stderr)
+            return 1
+        print(f"validated {len(manifest['fixtures'])} contextual replay fixtures")
+        return 0
     for fixture in manifest["fixtures"]:
         audio_path = args.audio_dir / fixture["audioFile"]
         if not audio_path.is_file():

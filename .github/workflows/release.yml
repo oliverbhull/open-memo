@@ -100,8 +100,8 @@ jobs:
       - name: Test owned dictation sidecar
         run: cargo test --locked --manifest-path sidecars/dictation/Cargo.toml
 
-      - name: Test contextual dictation replay
-        run: npm run test:contextual-dictation
+      - name: Validate contextual replay manifest
+        run: npm run test:contextual-dictation -- --validate-only
 
       - name: Import Developer ID certificate
         env:
