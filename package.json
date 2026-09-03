@@ -1,6 +1,6 @@
 {
   "name": "open-memo",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "description": "Open-source push-to-talk dictation for macOS",
   "homepage": "https://github.com/oliverbhull/open-memo",
   "main": "dist/main.cjs",
