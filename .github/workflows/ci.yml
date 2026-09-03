@@ -59,6 +59,9 @@ jobs:
       - name: Test owned dictation sidecar
         run: cargo test --locked --manifest-path sidecars/dictation/Cargo.toml
 
+      - name: Test macOS signing policy
+        run: node --test scripts/sign.test.cjs
+
       - name: Validate contextual replay manifest
         run: npm run test:contextual-dictation -- --validate-only
 
