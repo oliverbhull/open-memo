@@ -44,6 +44,9 @@ version = "1.0"
 version = "0.12"
 features = ["metal"]
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2"
+
 [profile.dev]
 opt-level = 0
 debug = 2

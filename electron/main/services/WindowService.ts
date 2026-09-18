@@ -141,7 +141,13 @@ export function createOverlayWindow() {
 
   // Explicitly prevent window from getting focus or becoming active
   newOverlayWindow.setFocusable(false);
-  newOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // Keep Memo's foreground app identity when recreating the recording overlay.
+  // Electron's default process transformation briefly removes the entire app
+  // from the Dock, even though only this non-activating window needs all Spaces.
+  newOverlayWindow.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: true,
+    skipTransformProcessType: true,
+  });
   
   newOverlayWindow.setIgnoreMouseEvents(true);
   

@@ -10,6 +10,12 @@ function sh(cmd, args, opts = {}) {
   });
 }
 
+function capture(cmd, args) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, { encoding: 'utf8' }, (err, stdout) => err ? reject(err) : resolve(stdout));
+  });
+}
+
 function walkFiles(root) {
   const files = [];
   if (!fs.existsSync(root)) return files;
@@ -101,6 +107,14 @@ module.exports = async function afterPack(context) {
   fs.chmodSync(pncWorker, 0o755);
   console.log('✓ Bundled DistilBERT punctuation and capitalization model verified');
 
+  const cleanupPath = path.join(appPath, 'Contents', 'Resources', 'cleanup');
+  await sh('bash', [path.resolve('scripts/shell/verify-cleanup-bundle.sh'), cleanupPath]);
+  const cleanupManifest = JSON.parse(fs.readFileSync(path.join(cleanupPath, 'manifest.json'), 'utf8'));
+  if (shouldSign && (cleanupManifest.fixture === true || cleanupManifest.status !== 'production_ready')) {
+    throw new Error('Refusing to sign a release containing a fixture or unpromoted cleanup model');
+  }
+  console.log('✓ Bundled 6-bit LFM cleanup runtime verified');
+
   // The device-sync Python runtime and conomo worker are nested native code.
   if (shouldSign) {
     const signer = process.env.CSC_NAME || process.env.CODE_SIGN_IDENTITY || 'Developer ID Application';
@@ -112,6 +126,18 @@ module.exports = async function afterPack(context) {
         '--options', 'runtime',
         '--sign', signer,
         nativeLibrary,
+      ]);
+    }
+    const cleanupNativeFiles = [];
+    for (const filePath of walkFiles(path.join(cleanupPath, 'runtime'))) {
+      const description = await capture('/usr/bin/file', ['-b', filePath]);
+      if (description.includes('Mach-O')) cleanupNativeFiles.push(filePath);
+    }
+    for (const nativeFile of cleanupNativeFiles) {
+      await sh('codesign', [
+        '--force', '--options', 'runtime',
+        '--entitlements', path.resolve('config/entitlements.cleanup.plist'),
+        '--sign', signer, nativeFile,
       ]);
     }
     await sh('codesign', [
@@ -131,7 +157,7 @@ module.exports = async function afterPack(context) {
       '--entitlements', path.resolve('config/entitlements.mac.plist'),
       '--sign', signer, pncWorker,
     ]);
-    console.log(`✓ Signed ${nativeLibraries.length} device runtime libraries, Python, conomo worker, and PnC worker`);
+    console.log(`✓ Signed ${nativeLibraries.length} device runtime libraries, ${cleanupNativeFiles.length} cleanup runtime binaries, Python, conomo worker, and PnC worker`);
     await sh('codesign', [
       '--force',
       '--options', 'runtime',

@@ -49,14 +49,13 @@ export class ApplicationIconService {
     const appName = bounded(context.appName, 200);
     if (!appName) return context;
 
-    const identity = this.resolveRunningApplication(appName);
-    if (identity.bundleId || identity.appPath) {
-      this.identities.set(identity.bundleId || appName.toLowerCase(), identity);
-    }
+    // Decoration must not block delivery or history on an AppleScript lookup.
+    // Resolve an icon lazily when the renderer requests one.
+    const bundleId = bounded(context.bundleId, 300);
     return {
       appName,
       windowTitle: bounded(context.windowTitle, 1_000) || '',
-      ...(identity.bundleId ? { bundleId: identity.bundleId } : {}),
+      ...(bundleId ? { bundleId } : {}),
     };
   }
 

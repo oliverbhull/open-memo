@@ -8,6 +8,7 @@ import { clampPhraseReplacementRulesFromInput } from './phraseReplacement';
 import type {
   PhraseReplacementRule,
   AsrModelId,
+  WritingMode,
 } from '../../shared/electron-api';
 
 export type { PhraseReplacementRule };
@@ -17,6 +18,7 @@ export interface Settings {
   sayEnterToPressEnter: boolean;
   handsFreeMode: boolean;
   saveAudio: boolean;
+  writingMode: WritingMode;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
 }
@@ -53,6 +55,7 @@ export function loadSettings(): Settings {
     sayEnterToPressEnter: store.get('sayEnterToPressEnter', false),
     handsFreeMode: store.get('handsFreeMode', false),
     saveAudio: store.get('saveAudio', false),
+    writingMode: store.get('writingMode') === 'clean' ? 'clean' : 'as-spoken',
     vocabWords: stringArray(store.get('vocabWords')),
     phraseReplacements: clampPhraseReplacementRulesFromInput(store.get('phraseReplacements')),
   };
@@ -66,6 +69,7 @@ export function saveSettings(next: Settings): void {
     sayEnterToPressEnter: next.sayEnterToPressEnter === true,
     handsFreeMode: next.handsFreeMode === true,
     saveAudio: next.saveAudio === true,
+    writingMode: next.writingMode === 'clean' ? 'clean' : 'as-spoken',
     vocabWords: stringArray(next.vocabWords),
     phraseReplacements: clampPhraseReplacementRulesFromInput(next.phraseReplacements),
   };
@@ -74,6 +78,7 @@ export function saveSettings(next: Settings): void {
   store.set('sayEnterToPressEnter', settings.sayEnterToPressEnter);
   store.set('handsFreeMode', settings.handsFreeMode);
   store.set('saveAudio', settings.saveAudio);
+  store.set('writingMode', settings.writingMode);
   store.set('vocabWords', settings.vocabWords);
   store.set('phraseReplacements', settings.phraseReplacements);
 }
@@ -105,6 +110,7 @@ function migrateSettingsJson(raw: Record<string, unknown>): void {
       : current.sayEnterToPressEnter,
     handsFreeMode: typeof raw.handsFreeMode === 'boolean' ? raw.handsFreeMode : current.handsFreeMode,
     saveAudio: typeof raw.saveAudio === 'boolean' ? raw.saveAudio : current.saveAudio,
+    writingMode: raw.writingMode === 'clean' ? 'clean' : current.writingMode,
     vocabWords: Array.isArray(raw.vocabWords) ? stringArray(raw.vocabWords) : current.vocabWords,
     phraseReplacements: Array.isArray(raw.phraseReplacements)
       ? clampPhraseReplacementRulesFromInput(raw.phraseReplacements)

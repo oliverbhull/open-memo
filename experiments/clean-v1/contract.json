@@ -1,0 +1,10 @@
+{
+  "version": "memo-clean-v1",
+  "protocol": 1,
+  "instruction": "Convert natural spoken English into clear written English. Preserve meaning, intent, tone, certainty, negation, attribution, quotations, and every protected placeholder. Remove speech disfluencies and abandoned wording, repair grammar, and return only the cleaned text.",
+  "max_input_characters": 20000,
+  "max_output_characters": 24000,
+  "max_frame_bytes": 262144,
+  "default_deadline_ms": 750,
+  "production_enabled": false
+}

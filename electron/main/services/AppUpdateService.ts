@@ -14,7 +14,7 @@ export class AppUpdateService {
   private checking = false;
   private updatePromptOpen = false;
 
-  constructor(getMainWindow: () => BrowserWindow | null) {
+  constructor(getMainWindow: () => BrowserWindow | null, private readonly beforeInstall: () => Promise<void> = async () => {}) {
     this.getMainWindow = getMainWindow;
     this.updater = electronUpdater.autoUpdater;
     this.updater.autoDownload = true;
@@ -58,16 +58,21 @@ export class AppUpdateService {
     if (this.checking) return;
     this.checking = true;
     this.manualCheck = manual;
+    let downloading = false;
     try {
       logger.info(`[AppUpdateService] Checking for updates (${manual ? 'manual' : 'automatic'})`);
-      await this.updater.checkForUpdates();
+      const result = await this.updater.checkForUpdates();
+      if (result?.downloadPromise) {
+        downloading = true;
+        await result.downloadPromise;
+      }
     } catch (error) {
       logger.warn('[AppUpdateService] Update check failed:', error);
       if (manual) {
         await this.showMessage({
           type: 'warning',
           title: 'Memo Updates',
-          message: 'Memo could not check for updates.',
+          message: downloading ? 'Memo could not download the update.' : 'Memo could not check for updates.',
           detail: 'Check your internet connection and try again.',
         });
       }
@@ -112,7 +117,18 @@ export class AppUpdateService {
         cancelId: 1,
         noLink: true,
       });
-      if (result.response === 0) this.updater.quitAndInstall();
+      if (result.response === 0) {
+        await this.beforeInstall();
+        this.updater.quitAndInstall();
+      }
+    } catch (error) {
+      logger.warn('[AppUpdateService] Could not restart for update:', error);
+      await this.showMessage({
+        type: 'warning',
+        title: 'Memo Updates',
+        message: 'Memo could not restart to install the update.',
+        detail: 'Quit and reopen Memo to try again.',
+      });
     } finally {
       this.updatePromptOpen = false;
     }

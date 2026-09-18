@@ -42,11 +42,15 @@ export class PunctuationService {
         '--worker',
       ], { stdio: ['pipe', 'pipe', 'pipe'] });
 
-      const lines = readline.createInterface({ input: this.process.stdout });
-      lines.on('line', (line) => this.handleLine(line));
+      const child = this.process;
+      const lines = readline.createInterface({ input: child.stdout });
+      lines.on('line', (line) => { if (this.process === child) this.handleLine(line); });
       this.process.stderr.on('data', (chunk) => logger.debug(`[PunctuationService] ${String(chunk).trim()}`));
-      this.process.once('error', (error) => this.handleExit(error));
-      this.process.once('exit', (code, signal) => this.handleExit(new Error(`worker exited (${code ?? signal})`)));
+      child.stdin.on('error', (error) => { if (this.process === child) this.handleExit(error); });
+      child.once('error', (error) => { if (this.process === child) this.handleExit(error); });
+      child.once('exit', (code, signal) => {
+        if (this.process === child) this.handleExit(new Error(`worker exited (${code ?? signal})`));
+      });
     } catch (error) {
       logger.warn('[PunctuationService] Unavailable; using raw conomo text:', error);
       this.process = null;
@@ -98,7 +102,8 @@ export class PunctuationService {
       clearTimeout(pending.timer);
       this.pending.delete(response.id);
       if (response.error) logger.warn(`[PunctuationService] Worker rejected transcript: ${response.error}`);
-      pending.resolve(response.error || !response.text ? pending.fallback : response.text);
+      pending.resolve(response.error || typeof response.text !== 'string' || !response.text.trim()
+        ? pending.fallback : response.text);
     } catch (error) {
       logger.warn('[PunctuationService] Invalid worker response:', error);
     }
@@ -107,7 +112,9 @@ export class PunctuationService {
   private handleExit(error: Error): void {
     if (this.process) logger.warn('[PunctuationService] Worker stopped; using raw text:', error);
     this.ready = false;
+    const child = this.process;
     this.process = null;
+    child?.kill();
     this.resolvePending();
   }
 

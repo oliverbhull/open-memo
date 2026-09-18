@@ -1,5 +1,4 @@
 import { app, autoUpdater, BrowserWindow, ipcMain, systemPreferences, shell, Menu, clipboard } from 'electron';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { MemoSttService, TranscriptionData } from './services/MemoSttService';
 import { createTray, getMicrophoneInputState, refreshAudioInputDevices, selectSystemInput, setMainWindow, setOpenMainWindowHandler, setLastTranscript, setRecordingState, setProcessingState, updateMenuState, setMemoSttService } from './services/TrayService';
@@ -25,14 +24,17 @@ import { applicationIconService } from './services/ApplicationIconService';
 import { saveJsonExport } from './services/JsonExportService';
 import { audioInputService } from './services/AudioInputService';
 import { AsrModelService } from './services/AsrModelService';
-import type { AsrModelId, AsrState } from '../shared/electron-api';
-import { resolveTranscriptionText } from '../shared/transcription';
+import type { AppContext, AsrModelId, AsrState } from '../shared/electron-api';
+import { resolveTranscriptionText, resolveCleanInput } from '../shared/transcription';
 import { UsbTranscriptService } from './services/UsbTranscriptService';
 import { DeviceSyncService } from './services/DeviceSyncService';
 import { MemoDatabaseService } from './services/MemoDatabaseService';
 import { resolveApplicationContext } from './services/applicationContext';
 import { AppUpdateService } from './services/AppUpdateService';
 import { PunctuationService } from './services/PunctuationService';
+import { CleanupService } from './services/CleanupService';
+import { pasteIntoFocusedTarget } from './services/checkedPaste';
+import { createDictationEntry } from '../shared/dictationEntry';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
 
@@ -66,13 +68,24 @@ if (!gotSingleInstanceLock) {
 let mainWindow: BrowserWindow | null = null;
 let memoSttService: MemoSttService | null = null;
 let deviceSyncService: DeviceSyncService | null = null;
-const appUpdateService = new AppUpdateService(() => mainWindow);
+const appUpdateService = new AppUpdateService(() => mainWindow, async () => {
+  isQuitting = true;
+  await cleanupMemoStt();
+});
 let isRecording = false;
 let isQuitting = false;
+let deliveryQueue: Promise<void> = Promise.resolve();
 let micDeviceRecoveryTimer: NodeJS.Timeout | null = null;
 const asrModelService = new AsrModelService();
 const usbTranscriptService = new UsbTranscriptService();
 const punctuationService = new PunctuationService();
+const cleanupService = new CleanupService();
+
+cleanupService.on('state-changed', (state) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('writing:cleanup-state-changed', state);
+  }
+});
 
 asrModelService.on('state-changed', (state: AsrState) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -139,10 +152,6 @@ function createWindow(): void {
 
   // Set main window in tray service
   setMainWindow(mainWindow);
-}
-
-function pressReturn(): void {
-  execFileSync('osascript', ['-e', 'tell application "System Events" to key code 36'], { stdio: 'ignore' });
 }
 
 function openMainWindow(): void {
@@ -234,6 +243,7 @@ function setMemoSttServiceForTray(service: MemoSttService | null) {
 }
 
 async function startLiveDictation(): Promise<void> {
+  if (isQuitting) return;
   if (!memoSttService || !selectedSystemMicIsAvailable()) return;
   await memoSttService.start();
   if (memoSttService.getStatus() !== 'running') return;
@@ -251,90 +261,172 @@ async function setupMemoSttService(): Promise<void> {
   const hotkey = userSettings.hotkey || 'function';
   memoSttService.setHotkey(hotkey);
   
-  memoSttService.on('transcription', async (data: TranscriptionData) => {
-    // IMPORTANT: Transcriptions arrive AFTER recording has stopped
-    // The flow is: recording starts → user speaks → recording stops → transcription happens
-    // So we should NEVER set isRecording = true here. If we get a transcription,
-    // recording has already stopped. The recording state should already be false.
-    // If it's not false, that's a bug we should log, not fix by setting it to true.
-    if (isRecording) {
-      logger.warn('[Main] Transcription received while still recording - this should not happen');
-      // Don't change state, just log the issue
-    }
-    
-    // Update last transcript and paste: support "say enter" to press Enter after paste
-    const rawText = resolveTranscriptionText(data);
-    const normalized = normalizeTranscriptionText(stripLeadingDashSpace(rawText));
-    const formatted = await punctuationService.format(normalized);
+  let pendingDeliveries = 0;
+  let pendingRecognition = 0;
+  const updateProcessingState = () => setProcessingState(pendingRecognition > 0 || pendingDeliveries > 0);
+  memoSttService.on('transcription', (data: TranscriptionData) => {
+    pendingRecognition = Math.max(0, pendingRecognition - 1);
+    pendingDeliveries += 1;
+    updateProcessingState();
+    const timestamp = Date.now();
     const settings = loadSettings();
-    const afterPhrases = applyPhraseReplacements(formatted, settings.phraseReplacements);
-    const { textToPaste: textBeforeNormalization, pressEnter: pressEnterThisTime } = stripTrailingEnter(afterPhrases, settings.sayEnterToPressEnter ?? false);
-    const textToPaste = normalizeTranscriptionText(textBeforeNormalization);
-
-    if (textToPaste) {
-      setLastTranscript(textToPaste);
+    deliveryQueue = deliveryQueue.then(async () => {
+      let deliveryFinished = false;
+      const finishDelivery = () => {
+        if (deliveryFinished) return;
+        deliveryFinished = true;
+        pendingDeliveries -= 1;
+        updateProcessingState();
+      };
       try {
-        clipboard.writeText(textToPaste);
-        execFileSync(
-          'osascript',
-          ['-e', 'tell application "System Events" to keystroke "v" using command down'],
-          { stdio: 'ignore' }
-        );
-        if (pressEnterThisTime) {
-          pressReturn();
+        // IMPORTANT: Transcriptions arrive AFTER recording has stopped
+        // The flow is: recording starts → user speaks → recording stops → transcription happens
+        // So we should NEVER set isRecording = true here. If we get a transcription,
+        // recording has already stopped. The recording state should already be false.
+        // If it's not false, that's a bug we should log, not fix by setting it to true.
+        if (isRecording) {
+          logger.warn('[Main] Transcription received while still recording - this should not happen');
+          // Don't change state, just log the issue
         }
-        logger.debug(
-          '[Main] Pasted transcription into focused app' +
-          (pressEnterThisTime ? ' (voice enter)' : '')
+
+        // Update last transcript and paste: support "say enter" to press Enter after paste
+        const entryId = randomUUID();
+        const cleanMode = !isQuitting && settings.writingMode === 'clean' && cleanupService.isEnabled();
+        const rawText = resolveTranscriptionText(data);
+        const normalized = normalizeTranscriptionText(stripLeadingDashSpace(rawText));
+        const asSpoken = resolveCleanInput(data);
+        let formatted: string;
+        let cleanProvenance: Record<string, unknown> | undefined;
+        if (cleanMode) {
+          const cleanup = await cleanupService.format(asSpoken, settings.vocabWords);
+          formatted = cleanup.text;
+          cleanProvenance = { asSpoken, candidate: cleanup.candidateText, selected: cleanup.text,
+            status: cleanup.status, reason: cleanup.reason, model: cleanup.model,
+            contract: cleanup.contract, latencyMs: cleanup.latencyMs };
+          logger.info(`[Main] Clean ${cleanup.status}${cleanup.reason ? ` (${cleanup.reason})` : ''}` +
+            `${cleanup.latencyMs === undefined ? '' : ` in ${cleanup.latencyMs.toFixed(0)} ms`}`);
+        } else {
+          formatted = app.isPackaged && !isQuitting ? await punctuationService.format(normalized) : asSpoken;
+        }
+        const afterPhrases = applyPhraseReplacements(formatted, settings.phraseReplacements);
+        const { textToPaste: textBeforeNormalization, pressEnter: pressEnterThisTime } = stripTrailingEnter(afterPhrases, settings.sayEnterToPressEnter ?? false);
+        const textToPaste = normalizeTranscriptionText(textBeforeNormalization);
+        let delivery = isQuitting ? 'shutdown' : 'empty';
+        let deliveryAppContext: AppContext | undefined;
+
+        if (textToPaste && !isQuitting) {
+          setLastTranscript(textToPaste);
+          try {
+            const pasteStarted = performance.now();
+            clipboard.writeText(textToPaste);
+            delivery = 'clipboard_only';
+            const clipboardMs = performance.now() - pasteStarted;
+            const pasteEventStarted = performance.now();
+            const outcome = pasteIntoFocusedTarget(pressEnterThisTime);
+            delivery = outcome.status;
+            deliveryAppContext = outcome.appContext;
+            const pasted = outcome.status === 'pasted';
+            if (!pasted) {
+              logger.info(`[Main] Automatic paste skipped (${outcome.status}); transcript copied and retained`);
+              mainWindow?.webContents.send('audio:showToast', {
+                message: 'Automatic paste was skipped. Your dictation is on the clipboard.',
+                severity: 'warning', duration: 4000,
+              });
+            }
+            const pasteEventMs = performance.now() - pasteEventStarted;
+            if (pasted) delivery = 'pasted';
+            logger.debug(
+              (pasted ? '[Main] Pasted transcription into focused app' : '[Main] Kept transcription on clipboard') +
+              (pressEnterThisTime ? ' (voice enter)' : '') +
+              ` clipboard=${clipboardMs.toFixed(1)} ms paste_event=${pasteEventMs.toFixed(1)} ms`
+            );
+          } catch (pasteErr) {
+            delivery = 'paste_failed';
+            logger.warn('[Main] Paste failed (accessibility may be required):', pasteErr);
+          }
+        }
+
+        finishDelivery();
+
+        // Explicitly requested development diagnostics. JSON escaping keeps dictated
+        // newlines/control characters from impersonating other log entries.
+        if (!app.isPackaged) {
+          logger.info('[Dictation comparison] ' + JSON.stringify({
+            id: entryId,
+            rawGranite: asSpoken,
+            lfmOutput: cleanProvenance?.status === 'accepted' ? formatted : null,
+            cleanupStatus: cleanProvenance?.status ?? 'not_requested',
+            cleanupReason: cleanProvenance?.reason ?? null,
+            ...(cleanProvenance?.status === 'fallback' ? { modelCandidate: cleanProvenance.candidate ?? null } : {}),
+            finalText: textToPaste,
+            delivery,
+            pressEnterRequested: pressEnterThisTime,
+            cleanupMs: cleanProvenance?.latencyMs ?? null,
+          }));
+        }
+
+        // Reuse the comparison ID for the memo and its optional WAV file.
+        const { audioCapture, ...transcription } = data;
+        const appContext = resolveApplicationContext(
+          applicationIconService.enrichContext(deliveryAppContext ?? data.appContext),
+          !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused(),
         );
-      } catch (pasteErr) {
-        logger.warn('[Main] Paste failed (accessibility may be required):', pasteErr);
-      }
-    }
+        let audio: Awaited<ReturnType<typeof audioStorageService.save>> | undefined;
+        if (settings.saveAudio && audioCapture?.wavBuffer) {
+          try {
+            audio = await audioStorageService.save(entryId, audioCapture.wavBuffer, audioCapture.duration);
+          } catch (error) {
+            logger.error(`[AudioStorage] Failed to retain audio for memo ${entryId}:`, error);
+            mainWindow?.webContents.send('audio:showToast', {
+              message: 'The audio for this dictation could not be saved',
+              severity: 'warning',
+              duration: 4000,
+            });
+          }
+        }
 
-    // Transcription completes processing, so clear processing state
-    setProcessingState(false);
-
-    // Generate one canonical ID for both the memo and its optional WAV file.
-    const entryId = randomUUID();
-    const { audioCapture, ...transcription } = data;
-    const appContext = resolveApplicationContext(
-      applicationIconService.enrichContext(data.appContext),
-      !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused(),
-    );
-    let audio: Awaited<ReturnType<typeof audioStorageService.save>> | undefined;
-    const rendererAvailable = !!mainWindow && !mainWindow.isDestroyed();
-    if (rendererAvailable && settings.saveAudio && audioCapture?.wavBuffer) {
-      try {
-        audio = await audioStorageService.save(entryId, audioCapture.wavBuffer, audioCapture.duration);
+        const completed = {
+          ...transcription,
+          processedText: textToPaste,
+          rawTranscript: data.rawTranscript ?? '',
+          wasProcessedByLLM: cleanMode ? cleanProvenance?.status === 'accepted' : data.wasProcessedByLLM,
+          context: { ...data.context, ...(cleanProvenance ? { cleanup: cleanProvenance } : {}), delivery },
+          id: entryId,
+          timestamp,
+          ...(appContext ? { appContext } : {}),
+          ...(audio ? { audio } : {}),
+        };
+        // History belongs to the main process, including while its window is closed.
+        if (textToPaste) {
+          let deviceId = store.get('desktopDeviceId');
+          if (!deviceId) {
+            deviceId = `desktop-${randomUUID()}`;
+            store.set('desktopDeviceId', deviceId);
+          }
+          await memoDatabaseService.saveEntry(createDictationEntry(completed, deviceId));
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('transcription:new', { ...completed, persisted: true });
+          }
+        }
       } catch (error) {
-        logger.error(`[AudioStorage] Failed to retain audio for memo ${entryId}:`, error);
-        mainWindow?.webContents.send('audio:showToast', {
-          message: 'Transcript saved, but its audio could not be saved',
-          severity: 'warning',
-          duration: 4000,
-        });
+        logger.error('[Main] Could not finish transcription delivery:', error);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('audio:showToast', {
+            message: 'Memo could not save this dictation. Check the clipboard before continuing.',
+            severity: 'error', duration: 6000,
+          });
+        }
+      } finally {
+        finishDelivery();
       }
-    }
-
-    // Send transcription to renderer (use stripped text so feed does not show "enter")
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('transcription:new', {
-        ...transcription,
-        processedText: textToPaste,
-        rawTranscript: pressEnterThisTime ? textToPaste : (data.rawTranscript ?? ''),
-        id: entryId,
-        timestamp: Date.now(),
-        ...(appContext ? { appContext } : {}),
-        ...(audio ? { audio } : {}),
-      });
-    }
-    
+    });
   });
 
   memoSttService.on('status', (status: string) => {
     // Update recording state based on service status
     if (status === 'stopped' || status === 'error') {
+      pendingRecognition = 0;
+      updateProcessingState();
       if (isRecording) {
         isRecording = false;
         setRecordingState(false);
@@ -395,20 +487,23 @@ async function setupMemoSttService(): Promise<void> {
   // Handle processing started event
   memoSttService.on('processingStarted', () => {
     logger.debug('[Main] Processing started event received');
-    setProcessingState(true);
+    pendingRecognition += 1;
+    updateProcessingState();
   });
 
   // Handle processing completed event.
   memoSttService.on('processingCompleted', () => {
     logger.debug('[Main] Processing completed event received');
-    setProcessingState(false);
+    pendingRecognition = Math.max(0, pendingRecognition - 1);
+    updateProcessingState();
     // The no-speech path emits this without a transcription event.
   });
 
   // Handle processing failed event - clear processing state when transcription fails
   memoSttService.on('processingFailed', () => {
     logger.debug('[Main] Processing failed event received');
-    setProcessingState(false);
+    pendingRecognition = Math.max(0, pendingRecognition - 1);
+    updateProcessingState();
     if (isRecording) {
       logger.warn('[Main] Recording state still set when processing failed, clearing it');
       isRecording = false;
@@ -491,7 +586,8 @@ app.whenReady().then(async () => {
   setOpenMainWindowHandler(openMainWindow);
   openMainWindow();
   appUpdateService.start();
-  punctuationService.start();
+  if (loadSettings().writingMode === 'clean') cleanupService.start();
+  else if (app.isPackaged) punctuationService.start();
 
   // Resolve a remembered microphone before memo-stt starts. An unavailable
   // explicit selection remains selected and capture stays stopped.
@@ -521,6 +617,7 @@ app.whenReady().then(async () => {
       return true;
     },
     resumeDictation: async () => {
+      if (isQuitting) return;
       memoSttService?.resume();
       if (!isQuitting && memoSttService && selectedSystemMicIsAvailable()) {
         logger.info('[Main] Restoring live dictation after Memo device transcription');
@@ -533,11 +630,6 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('device-sync:status', status);
     }
   });
-  deviceSyncService.on('transcription', (transcription: TranscriptionData) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('transcription:new', transcription);
-    }
-  });
   void deviceSyncService.start();
   
   app.on('activate', () => {
@@ -545,67 +637,59 @@ app.whenReady().then(async () => {
   });
 });
 
-// Cleanup function to ensure the local ASR process is closed
+// Stop workers and flush accepted dictations before macOS quit or updater restart.
 let cleanupComplete = false;
-const cleanupMemoStt = () => {
-  if (cleanupComplete) return;
-  cleanupComplete = true;
-
-  appUpdateService.stop();
-  punctuationService.stop();
-
-  deviceSyncService?.stop({ restoreDictation: false });
-  deviceSyncService = null;
-
-  if (memoSttService) {
-    logger.info('Cleaning up memo-stt service...');
-    memoSttService.stop();
+let cleanupPromise: Promise<void> | null = null;
+const cleanupMemoStt = (): Promise<void> => {
+  if (cleanupPromise) return cleanupPromise;
+  cleanupPromise = (async () => {
+    if (micDeviceRecoveryTimer) clearTimeout(micDeviceRecoveryTimer);
+    appUpdateService.stop();
+    punctuationService.stop();
+    cleanupService.stop();
+    await Promise.all([
+      deviceSyncService?.stop({ restoreDictation: false }),
+      memoSttService?.suspend(),
+    ]);
+    await deliveryQueue;
+    deviceSyncService = null;
     memoSttService = null;
-  }
-
+    cleanupComplete = true;
+  })();
+  return cleanupPromise;
 };
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
   isQuitting = true;
-  cleanupMemoStt();
+  if (cleanupComplete) return;
+  event.preventDefault();
+  void cleanupMemoStt().then(() => app.quit()).catch((error) => {
+    logger.error('Shutdown failed:', error);
+    app.exit(1);
+  });
 });
 
 autoUpdater.on('before-quit-for-update', () => {
   isQuitting = true;
-  cleanupMemoStt();
+  void cleanupMemoStt();
 });
 
-// Handle process signals for graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('Received SIGTERM, cleaning up...');
-  cleanupMemoStt();
-  app.quit();
-});
+process.on('SIGTERM', () => app.quit());
+process.on('SIGINT', () => app.quit());
 
-process.on('SIGINT', () => {
-  logger.info('Received SIGINT, cleaning up...');
-  cleanupMemoStt();
-  app.quit();
-});
-
-// Handle uncaught exceptions and unhandled rejections
-process.on('uncaughtException', (error) => {
-  logger.error('Uncaught exception:', error);
-  cleanupMemoStt();
-  app.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled rejection at:', promise, 'reason:', reason);
-  cleanupMemoStt();
-  app.exit(1);
-});
+const exitAfterFailure = (error: unknown) => {
+  // An error may contain dictated content; detailed diagnostics stay in development.
+  logger.error('Memo encountered an unexpected failure and will close.');
+  logger.debug('Unexpected failure details:', error);
+  isQuitting = true;
+  void cleanupMemoStt().finally(() => app.exit(1));
+};
+process.on('uncaughtException', exitAfterFailure);
+process.on('unhandledRejection', exitAfterFailure);
 
 // IPC handlers
 ipcMain.handle('memo-stt:get-status', () => {
@@ -892,6 +976,8 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
     sayEnterToPressEnter: settings.sayEnterToPressEnter ?? false,
     handsFreeMode: settings.handsFreeMode ?? false,
     saveAudio: settings.saveAudio ?? false,
+    writingMode: settings.writingMode,
+    cleanupState: cleanupService.getState(),
     vocabWords: Array.isArray(settings.vocabWords) ? settings.vocabWords : [],
     phraseReplacements: Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : [],
     startAtLogin: loginItemSettings.openAtLogin || false,
@@ -947,6 +1033,23 @@ ipcMain.handle('settings:setSaveAudio', async (_event, enabled: boolean) => {
   saveSettings(settings);
   if (changed) memoSttService?.restart();
   updateMenuState();
+  return true;
+});
+
+ipcMain.handle('settings:setWritingMode', async (_event, mode: unknown) => {
+  if (mode !== 'as-spoken' && mode !== 'clean') {
+    throw new Error('Writing mode must be As spoken or Clean.');
+  }
+  const settings = loadSettings();
+  settings.writingMode = mode;
+  saveSettings(settings);
+  if (mode === 'clean') {
+    punctuationService.stop();
+    cleanupService.start();
+  } else {
+    cleanupService.stop();
+    if (app.isPackaged) punctuationService.start();
+  }
   return true;
 });
 

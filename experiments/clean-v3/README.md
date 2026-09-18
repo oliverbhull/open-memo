@@ -1,0 +1,9 @@
+# Clean formatting through immutable-word annotations
+
+This experiment reuses the existing local DistilBERT punctuation model. A small native helper emits per-word punctuation probabilities and capitalization labels. A deterministic renderer applies eligible annotations to the original source offsets, preserving words, existing whitespace, quoted text, literals and existing punctuation. It does not regenerate words or silently repair a rejected free-text candidate. Final invariant checks still reject a complete rendered candidate if needed.
+
+No grammar repair, filler removal, repetition removal or ASR spelling repair. The UI must state this scope. Thresholds selected on spent development data: punctuation 0.65, question 0.8. These classifier confidences are decision thresholds, not probabilities of semantic correctness. New punctuation adjacent to tested polarity spans is disallowed before rendering. Existing punctuation is never removed; new sentence capitalization follows actual inserted stops.
+
+Fresh synthetic holdout promotion criteria, declared before reading: >=95% accepted; zero word/literal/quotation changes; no identified critical meaning changes introduced by formatting; >=80% outputs judged usable for this narrower formatting task by an independent agent, explicitly not a human/audio preference study; measurable improvement over raw on at least 70% of unformatted cases; p95 <=250ms on this host. Exact authored-target match is reported, not treated as unique correct punctuation. Failure keeps live candidate disabled. Shipping and universal reliability are not implied by these internal criteria.
+
+The original 40-case v2 holdout is now spent development material. A separate 30-case set is authored independently and withheld until source/model/threshold hashes freeze. The native model is unchanged; no new weights or cloud resources are needed. `annotations.swift` is development-only and does not modify packaged PnC.

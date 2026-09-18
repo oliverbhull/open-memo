@@ -59,8 +59,8 @@ jobs:
       - name: Test owned dictation sidecar
         run: cargo test --locked --manifest-path sidecars/dictation/Cargo.toml
 
-      - name: Test macOS signing policy
-        run: node --test scripts/sign.test.cjs
+      - name: Test application services and release contracts
+        run: npm test
 
       - name: Validate contextual replay manifest
         run: npm run test:contextual-dictation -- --validate-only
@@ -69,6 +69,8 @@ jobs:
         run: |
           export CONOMO_SOURCE="scripts/fixtures/conomo-bundle"
           export CONOMO_SHA256="$(shasum -a 256 "${CONOMO_SOURCE}/conomo" | awk '{print $1}')"
+          bash scripts/shell/build-cleanup-fixture.sh
+          export CLEANUP_SOURCE=".build/cleanup-fixture"
           npm run build:dir
 
       - name: Verify packaged dictation sidecar
@@ -76,6 +78,9 @@ jobs:
 
       - name: Verify packaged conomo backend
         run: bash scripts/shell/verify-conomo-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/conomo
+
+      - name: Verify packaged cleanup backend
+        run: bash scripts/shell/verify-cleanup-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/cleanup
 
       - name: Upload app smoke-build artifact
         uses: actions/upload-artifact@v4

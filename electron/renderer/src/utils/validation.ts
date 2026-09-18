@@ -40,6 +40,9 @@ export function validateTranscriptionData(data: unknown): data is ValidTranscrip
     return false;
   }
 
+  if ((data.rawTranscript !== undefined && typeof data.rawTranscript !== 'string') ||
+      (data.processedText !== undefined && typeof data.processedText !== 'string')) return false;
+
   // Must have at least one text field
   if (!data.processedText && !data.rawTranscript) {
     return false;
@@ -90,7 +93,7 @@ export function createValidEntry(
   id: string
 ): FeedEntryData | null {
   if (!validateTranscriptionData(data)) {
-    logger.warn('Invalid transcription data:', data);
+    logger.warn('Invalid transcription data');
     return null;
   }
 

@@ -5,8 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { promisify } from 'node:util';
-import type { DeviceSyncStatus, TranscriptionData } from '../../shared/electron-api';
-import { normalizeUsbTranscriptRows } from '../../shared/usb-transcripts';
+import type { DeviceSyncStatus } from '../../shared/electron-api';
 import { isWhisperModelInstalled, whisperModelPath } from './AsrModelService';
 import {
   FirmwareReleaseService,
@@ -30,7 +29,6 @@ interface WorkerStatusMessage extends Partial<DeviceSyncStatus> {
 
 interface WorkerRecordingMessage {
   type: 'recording';
-  recording: unknown;
 }
 
 export class DeviceSyncService extends EventEmitter {
@@ -78,7 +76,7 @@ export class DeviceSyncService extends EventEmitter {
       });
       return;
     }
-    if (generation !== this.generation) return;
+    if (generation !== this.generation || this.child) return;
 
     const resources = this.resolveResources();
     for (const [label, resource] of Object.entries(resources)) {
@@ -96,6 +94,7 @@ export class DeviceSyncService extends EventEmitter {
     const userData = app.getPath('userData');
     const args = [
       '-B', resources.helper,
+      '--parent-pid', String(process.pid),
       '--database', path.join(userData, 'memo.sqlite3'),
       '--library', path.join(userData, 'device-recordings'),
       '--batch-directory', path.join(userData, 'batches'),
@@ -118,31 +117,34 @@ export class DeviceSyncService extends EventEmitter {
       detached: process.platform !== 'win32',
     });
     this.child = child;
-    readline.createInterface({ input: child.stdout! }).on('line', (line) => this.handleLine(line));
+    readline.createInterface({ input: child.stdout! }).on('line', (line) => {
+      if (this.child === child) this.handleLine(line);
+    });
     child.stderr!.on('data', (data: Buffer) => logger.info(`[device-sync] ${data.toString().trim()}`));
-    child.on('error', (error) => this.publishStatus({ state: 'error', completed: 0, total: 0, code: 'worker-start', error: error.message }));
-    child.on('exit', (code, signal) => {
+    child.on('error', (error) => {
+      if (this.child === child) this.publishStatus({ state: 'error', completed: 0, total: 0, code: 'worker-start', error: error.message });
+    });
+    const onWorkerExit = (code: number | null, signal: NodeJS.Signals | null) => {
       if (this.child !== child) return;
       this.child = null;
       this.restoreDictation();
-      if (code === 2) {
-        this.stopped = true;
-        return;
-      }
       if (!this.stopped) {
         logger.warn(`[DeviceSyncService] Worker exited (${code ?? signal}); restarting`);
         this.restartTimer = setTimeout(() => void this.start(), 2_000);
       }
-    });
+    };
+    child.once('exit', onWorkerExit);
+    child.once('close', onWorkerExit);
   }
 
   async stop(options: { restoreDictation?: boolean } = {}): Promise<void> {
     if (this.stopPromise) return this.stopPromise;
     this.generation++;
     this.stopped = true;
+    this.status = { state: 'disconnected', completed: 0, total: 0 };
+    this.emit('status', this.status);
     if (this.restartTimer) clearTimeout(this.restartTimer);
     this.restartTimer = null;
-    this.transcriptionGrant = null;
     this.grantedBatchId = null;
     const child = this.child;
     const updateChild = this.updateChild;
@@ -216,11 +218,7 @@ export class DeviceSyncService extends EventEmitter {
       logger.warn(`[DeviceSyncService] Ignored non-JSON worker output: ${line}`);
       return;
     }
-    if (message.type === 'recording') {
-      const [transcription] = normalizeUsbTranscriptRows([message.recording]);
-      if (transcription) this.emit('transcription', transcription satisfies TranscriptionData);
-      return;
-    }
+    if (message.type === 'recording') return;
     if (message.type !== 'status') return;
     const next: DeviceSyncStatus = {
       state: message.state,
@@ -264,22 +262,36 @@ export class DeviceSyncService extends EventEmitter {
 
   private async grantTranscriptionSlot(batchId: string): Promise<void> {
     if (this.transcriptionGrant) return this.transcriptionGrant;
-    this.transcriptionGrant = (async () => {
+    const generation = this.generation;
+    const child = this.child;
+    const grant = (async () => {
       if (!this.dictationPaused) this.dictationPaused = await this.options.pauseDictation();
-      const stdin = this.child?.stdin;
+      if (generation !== this.generation || this.child !== child) {
+        this.restoreDictation();
+        return;
+      }
+      const stdin = child?.stdin;
       if (!stdin || stdin.destroyed || !stdin.writable) {
         throw new Error('device sync worker closed before batch transcription was granted');
       }
       stdin.write('CONTINUE\n');
       this.grantedBatchId = batchId;
     })().catch(async (error) => {
+      if (generation !== this.generation || this.child !== child) return;
       const message = error instanceof Error ? error.message : String(error);
       await this.stop({ restoreDictation: false });
       this.publishStatus({ state: 'error', completed: 0, total: 0, code: 'stt-owner', error: message });
     }).finally(() => {
-      this.transcriptionGrant = null;
+      if (this.transcriptionGrant === grant) {
+        this.transcriptionGrant = null;
+        if (!this.stopped && this.child && this.status.state === 'transcribing'
+          && this.grantedBatchId !== (this.status.batchId ?? 'unknown')) {
+          void this.grantTranscriptionSlot(this.status.batchId ?? 'unknown');
+        }
+      }
     });
-    return this.transcriptionGrant;
+    this.transcriptionGrant = grant;
+    return grant;
   }
 
   private scheduleFirmwareCheck(status: DeviceSyncStatus): void {
@@ -369,6 +381,8 @@ export class DeviceSyncService extends EventEmitter {
     const resources = this.resolveResources();
     const child = spawn(resources.python, [
       '-B', resources.updater,
+      '--lock', path.join(app.getPath('userData'), 'device-sync.lock'),
+      '--parent-pid', String(process.pid),
       '--uf2', artifact.path,
       '--expected-sha256', artifact.sha256,
       '--expected-version', artifact.firmwareVersion,
@@ -382,8 +396,16 @@ export class DeviceSyncService extends EventEmitter {
     await new Promise<void>((resolve, reject) => {
       let diagnostics = '';
       let spawnError: Error | null = null;
-      child.stdout!.on('data', (data: Buffer) => {
-        logger.info(`[firmware-update] ${data.toString().trim()}`);
+      readline.createInterface({ input: child.stdout! }).on('line', (line) => {
+        logger.info(`[firmware-update] ${line}`);
+        try {
+          const message = JSON.parse(line);
+          if (message.state === 'update-error' && typeof message.error === 'string') {
+            diagnostics = message.error.slice(-4_096);
+          }
+        } catch {
+          // A diagnostic line need not be JSON; process exit remains authoritative.
+        }
       });
       child.stderr!.on('data', (data: Buffer) => {
         diagnostics = `${diagnostics}${data.toString()}`.slice(-4_096);
@@ -410,10 +432,13 @@ export class DeviceSyncService extends EventEmitter {
         if (settled) return;
         settled = true;
         clearTimeout(forceKill);
+        child.removeListener('exit', finish);
+        child.removeListener('close', finish);
         resolve();
       };
       const forceKill = setTimeout(() => this.signalProcessGroup(child, 'SIGKILL'), 2_000);
       child.once('exit', finish);
+      child.once('close', finish);
       if (child.exitCode !== null || child.signalCode !== null) {
         finish();
         return;

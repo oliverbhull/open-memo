@@ -36,7 +36,7 @@ export function normalizeUsbTranscriptRows(value: unknown): TranscriptionData[] 
       ...(typeof row.audio_path === 'string' && row.audio_path.trim()
         ? {
             audio: {
-              fileName: 'audio.wav',
+              fileName: `memo-device-${row.source_sha256.toLowerCase()}.wav`,
               mimeType: 'audio/wav' as const,
               ...(typeof row.duration_seconds === 'number' && Number.isFinite(row.duration_seconds)
                 ? { duration: row.duration_seconds }
