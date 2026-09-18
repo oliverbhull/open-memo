@@ -3,6 +3,7 @@ import type { Display } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { overlayBounds } from './overlayPosition';
 
 let overlayWindow: BrowserWindow | null = null;
 let overlayRecordingState = false; // Track last recording state to prevent unnecessary updates
@@ -21,10 +22,7 @@ function getActiveDisplay(): Display {
 }
 
 function getOverlayBounds(width: number, height: number, display = getActiveDisplay()) {
-  const x = display.bounds.x + Math.floor((display.bounds.width - width) / 2);
-  const y = display.bounds.y + display.bounds.height - height - OVERLAY_MARGIN;
-
-  return { width, height, x, y };
+  return overlayBounds(width, height, display.bounds, display.workArea, OVERLAY_MARGIN);
 }
 
 function destroyOverlay() {
@@ -63,7 +61,8 @@ export function createOverlayWindow() {
 
   console.log('[Overlay] Display info:', {
     displayId: activeDisplay.id,
-    screenWidth: activeDisplay.bounds.width
+    screenWidth: activeDisplay.bounds.width,
+    workArea: activeDisplay.workArea,
   });
 
   const overlayWidth = OVERLAY_WINDOW_WIDTH;

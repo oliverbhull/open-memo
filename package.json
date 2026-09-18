@@ -1,6 +1,6 @@
 {
   "name": "open-memo",
-  "version": "0.8.13",
+  "version": "0.8.14",
   "description": "Open-source push-to-talk dictation for macOS",
   "homepage": "https://github.com/oliverbhull/open-memo",
   "main": "dist/main.cjs",
@@ -38,7 +38,7 @@
     "check": "npm run typecheck && npm test",
     "build:app": "npm run check && npm run build:backends && npm run build:ble && npm run build:ts && npm run build:renderer",
     "build:dir": "npm run build:app && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
-    "dist:mac": "npm run build:app && electron-builder --mac --publish=never",
+    "dist:mac": "npm run build:app && bash scripts/shell/build-mac-artifacts.sh",
     "release:mac": "npm run dist:mac",
     "build": "npm run dist:mac",
     "start": "npm run build:backends && npm run build:ble && npm run build:ts && electron .",
@@ -221,6 +221,7 @@
         "to": "device-sync/memo-ble-bridge"
       }
     ],
+    "beforePack": "scripts/beforePack.cjs",
     "afterPack": "scripts/afterPack.cjs",
     "publish": [
       {
