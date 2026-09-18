@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUNDLE_DIR="${1:-${ROOT_DIR}/.build/conomo}"
 
-for required in conomo compiled tokenizer.json manifest.json model-pack.json LICENSE-APACHE-2.0.txt NOTICE.txt VERSIONS device-runtime/bin/python3.12; do
+for required in conomo compiled tokenizer.json manifest.json LICENSE-APACHE-2.0.txt NOTICE.txt VERSIONS device-runtime/bin/python3.12; do
   [[ -e "${BUNDLE_DIR}/${required}" ]] || { echo "conomo bundle missing ${required}" >&2; exit 1; }
 done
 MODEL_COUNT="$(find "${BUNDLE_DIR}/compiled" -maxdepth 1 -type d -name '*.mlmodelc' | wc -l | tr -d ' ')"

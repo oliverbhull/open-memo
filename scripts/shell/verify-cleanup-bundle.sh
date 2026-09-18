@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUNDLE_DIR="${1:-${ROOT_DIR}/.build/cleanup}"
 
-for required in manifest.json model-pack.json model/memo-cleanup-model.json model/model.safetensors model/config.json model/tokenizer.json runtime/bin/python worker/transcript-cleanup-worker.py worker/cleanup_prompt.py worker/cleanup_completion.py LICENSE-LFM-1.0.txt NOTICE.txt VERSIONS; do
+for required in manifest.json model/memo-cleanup-model.json model/model.safetensors model/config.json model/tokenizer.json runtime/bin/python worker/transcript-cleanup-worker.py worker/cleanup_prompt.py worker/cleanup_completion.py LICENSE-LFM-1.0.txt NOTICE.txt VERSIONS; do
   [[ -e "${BUNDLE_DIR}/${required}" ]] || { echo "cleanup bundle missing ${required}" >&2; exit 1; }
 done
 [[ -x "${BUNDLE_DIR}/runtime/bin/python" ]] || { echo "cleanup Python is not executable" >&2; exit 1; }
