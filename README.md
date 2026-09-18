@@ -35,6 +35,8 @@ transcription service.
 
 ## How it works
 
+![Open Memo waveform listening beneath a text field, then inserting the dictated words](assets/readme/open-memo-demo.gif)
+
 ![Hold your hotkey, speak, release, and your words appear](assets/readme/how-open-memo-works.svg)
 
 ## Why Open Memo?
