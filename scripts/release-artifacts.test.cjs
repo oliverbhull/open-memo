@@ -14,12 +14,12 @@ function fixture(t) {
     fs.writeFileSync(path.join(dir, url), data);
     return { url, size: data.length, sha512: crypto.createHash('sha512').update(data).digest('base64') };
   });
-  const manifest = { version: '1.2.3', files, path: files[0].url, sha512: files[0].sha512 };
+  const manifest = { version: '1.2.3', files: [files[0]], path: files[0].url, sha512: files[0].sha512 };
   const save = () => fs.writeFileSync(path.join(dir, 'latest-mac.yml'), JSON.stringify(manifest));
   save();
   return { dir, manifest, save };
 }
-test('verifies release ZIP, DMG and both manifest checksum references', async t => {
+test('verifies full installer artifacts and the thin ZIP update manifest', async t => {
   const { dir } = fixture(t);
   assert.equal((await verifyReleaseArtifacts(dir, '1.2.3')).length, 3);
 });

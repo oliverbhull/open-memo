@@ -9,6 +9,17 @@ const INCLUDED_TOP_LEVEL = {
   cleanup: null,
 };
 
+function isStablePackFile(name, relative) {
+  // Nested executables and shared libraries are finalized by macOS signing
+  // after build-time manifests are created. Their code signatures provide the
+  // executable integrity boundary; the content manifest covers immutable
+  // weights, tokenizers, configuration, notices, and worker source.
+  if (name === 'conomo' && (relative === 'conomo' || relative.startsWith('device-runtime/'))) return false;
+  if (name === 'pnc' && relative === 'memo-pnc') return false;
+  if (name === 'cleanup' && relative.startsWith('runtime/')) return false;
+  return true;
+}
+
 function filesUnder(root, current = root) {
   return fs.readdirSync(current, { withFileTypes: true }).flatMap(entry => {
     // electron-builder excludes dotfiles from these resource filters. They are
@@ -26,7 +37,8 @@ function createManifest(name, root) {
   const files = {};
   const aggregate = crypto.createHash('sha256');
   const included = INCLUDED_TOP_LEVEL[name];
-  const runtimeFiles = filesUnder(root).filter(relative => !included || included.has(relative.split('/')[0]));
+  const runtimeFiles = filesUnder(root).filter(relative =>
+    (!included || included.has(relative.split('/')[0])) && isStablePackFile(name, relative));
   for (const relative of runtimeFiles.sort()) {
     const contents = fs.readFileSync(path.join(root, relative));
     const sha256 = crypto.createHash('sha256').update(contents).digest('hex');

@@ -1,6 +1,7 @@
 const { execFile } = require('node:child_process');
 const path = require('node:path');
 const fs = require('fs');
+const { createManifest } = require('./model-pack-manifest.cjs');
 
 function sh(cmd, args, opts = {}) {
   return new Promise((resolve, reject) => {
@@ -31,6 +32,7 @@ module.exports = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return;
   const appPath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   const shouldSign = process.env.CSC_IDENTITY_AUTO_DISCOVERY !== 'false' && process.env.MANUAL_SIGN !== '1';
+  const thinUpdate = process.env.MEMO_THIN_UPDATE === '1';
   const sttBinPath = path.join(appPath, 'Contents', 'Resources', 'dictation', 'memo-dictation');
   if (!fs.existsSync(sttBinPath)) {
     throw new Error('memo-dictation was not copied from extraResources');
@@ -55,6 +57,24 @@ module.exports = async function afterPack(context) {
   await sh('xattr', ['-cr', appPath]);
   await sh('dot_clean', ['-m', appPath]);
   console.log('✓ Extended attributes cleaned');
+
+  if (thinUpdate) {
+    if (shouldSign) {
+      const signer = process.env.CSC_NAME || process.env.CODE_SIGN_IDENTITY || 'Developer ID Application';
+      await sh('codesign', [
+        '--force', '--options', 'runtime',
+        '--entitlements', path.resolve('config/entitlements.mac.plist'),
+        '--sign', signer,
+        bleBridge,
+      ]);
+      await sh('codesign', ['--verify', '--verbose', bleBridge]);
+      console.log('✓ Memo BLE bridge signed');
+    } else {
+      console.log('⚠ Skipping native signing for unsigned thin update');
+    }
+    console.log('✓ Thin update contains app code and helpers only');
+    return;
+  }
 
   // Verify the self-contained conomo runtime bundle before signing.
   const conomoPath = path.join(appPath, 'Contents', 'Resources', 'conomo');
@@ -169,6 +189,14 @@ module.exports = async function afterPack(context) {
     ]);
     await sh('codesign', ['--verify', '--verbose', bleBridge]);
     console.log('✓ Memo BLE bridge signed');
+  }
+
+  // Nested code signatures change executable bytes. Generate the persistent
+  // pack contract only after every nested binary has reached its final form.
+  for (const [name, bundlePath] of [['conomo', conomoPath], ['pnc', pncPath], ['cleanup', cleanupPath]]) {
+    const manifest = createManifest(name, bundlePath);
+    fs.writeFileSync(path.join(bundlePath, 'model-pack.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    console.log(`✓ Finalized ${name} model pack ${manifest.version}`);
   }
 
   // The custom signer applies the dictation helper's fixed identity and

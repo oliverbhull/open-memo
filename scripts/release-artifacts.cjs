@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { load } = require('js-yaml');
+const fullModelUpdateVersions = require('../config/full-model-update-versions.json');
 
 async function verifyReleaseArtifacts(directory, version) {
   const names = fs.readdirSync(directory);
@@ -12,11 +13,17 @@ async function verifyReleaseArtifacts(directory, version) {
       throw new Error(`Expected exactly one versioned ARM64 ${extension}: ${version}`);
     }
   }
+  const dmgPath = path.join(directory, expected[1]);
+  if (!fs.lstatSync(dmgPath).isFile() || fs.statSync(dmgPath).size === 0) {
+    throw new Error('Full installer DMG is empty');
+  }
   const manifest = load(fs.readFileSync(path.join(directory, 'latest-mac.yml'), 'utf8'));
-  if (!manifest || manifest.version !== version || !Array.isArray(manifest.files) || manifest.files.length !== 2) {
+  const expectedManifestFiles = fullModelUpdateVersions.includes(version) ? 2 : 1;
+  if (!manifest || manifest.version !== version || !Array.isArray(manifest.files) || manifest.files.length !== expectedManifestFiles) {
     throw new Error('Update manifest version or file list is invalid');
   }
-  for (const name of expected) {
+  const updateArtifacts = expectedManifestFiles === 2 ? expected : [expected[0]];
+  for (const name of updateArtifacts) {
     const entries = manifest.files.filter(file => file.url === name);
     if (entries.length !== 1) throw new Error(`Update manifest must reference ${name} exactly once`);
     const filePath = path.join(directory, name);
@@ -25,6 +32,9 @@ async function verifyReleaseArtifacts(directory, version) {
     const hash = crypto.createHash('sha512');
     for await (const chunk of fs.createReadStream(filePath)) hash.update(chunk);
     if (entries[0].sha512 !== hash.digest('base64')) throw new Error(`Checksum mismatch for ${name}`);
+  }
+  if (expectedManifestFiles === 1 && manifest.files.some(file => file.url.endsWith('.dmg'))) {
+    throw new Error('Update manifest must not serve the full installer DMG');
   }
   const zip = manifest.files.find(file => file.url === expected[0]);
   if (manifest.path !== zip.url || manifest.sha512 !== zip.sha512) throw new Error('Legacy update manifest ZIP reference is invalid');
