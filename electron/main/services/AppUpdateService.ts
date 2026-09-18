@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import electronUpdater, { type AppUpdater } from 'electron-updater';
 import { logger } from '../utils/logger';
+import { MacUpdateInstaller, type MacUpdateInstallerLike } from './MacUpdateInstaller';
 
 const FIRST_CHECK_DELAY_MS = 15_000;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
@@ -13,12 +14,20 @@ export class AppUpdateService {
   private manualCheck = false;
   private checking = false;
   private updatePromptOpen = false;
+  private downloadedUpdate: { version: string; file: string } | null = null;
 
-  constructor(getMainWindow: () => BrowserWindow | null, private readonly beforeInstall: () => Promise<void> = async () => {}) {
+  constructor(
+    getMainWindow: () => BrowserWindow | null,
+    private readonly beforeInstall: () => Promise<void> = async () => {},
+    private readonly installer: MacUpdateInstallerLike = new MacUpdateInstaller(),
+  ) {
     this.getMainWindow = getMainWindow;
     this.updater = electronUpdater.autoUpdater;
     this.updater.autoDownload = true;
-    this.updater.autoInstallOnAppQuit = true;
+    // Squirrel.Mac buffers the locally proxied ZIP through CFURLConnection. Memo's
+    // model-bearing ZIP is large enough to crash that native path, so installation
+    // uses the streamed, signature-verified helper instead.
+    this.updater.autoInstallOnAppQuit = false;
     this.registerEvents();
   }
 
@@ -99,7 +108,10 @@ export class AppUpdateService {
       }
     });
 
-    this.updater.on('update-downloaded', (info) => void this.promptToRestart(info.version));
+    this.updater.on('update-downloaded', (info) => {
+      this.downloadedUpdate = { version: info.version, file: info.downloadedFile };
+      void this.promptToRestart(info.version);
+    });
     this.updater.on('error', (error) => logger.warn('[AppUpdateService] Updater error:', error));
   }
 
@@ -118,8 +130,11 @@ export class AppUpdateService {
         noLink: true,
       });
       if (result.response === 0) {
+        const update = this.downloadedUpdate;
+        if (!update || update.version !== version) throw new Error('The downloaded update is no longer available.');
+        const prepared = await this.installer.prepare(update.file, version);
         await this.beforeInstall();
-        this.updater.quitAndInstall();
+        prepared.install();
       }
     } catch (error) {
       logger.warn('[AppUpdateService] Could not restart for update:', error);
