@@ -1,7 +1,8 @@
-import type { AsrModelId, PhraseReplacementRule, ToastData } from '../../shared/electron-api';
+import type { AsrModelId, PhraseReplacementRule, ToastData, WritingMode } from '../../shared/electron-api';
 
 export interface StoreSchema {
   memoUid: string | null;
+  desktopDeviceId: string | null;
   selectedSystemMicName: string | null;
   asrModel: AsrModelId;
   lastSystemMicDevice: string | null;
@@ -9,6 +10,7 @@ export interface StoreSchema {
   sayEnterToPressEnter: boolean;
   handsFreeMode: boolean;
   saveAudio: boolean;
+  writingMode: WritingMode;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
   userName: string | null;
@@ -19,6 +21,7 @@ export interface StoreSchema {
 
 export const storeDefaults: StoreSchema = {
   memoUid: null,
+  desktopDeviceId: null,
   selectedSystemMicName: null,
   asrModel: 'conomo',
   lastSystemMicDevice: null,
@@ -26,6 +29,7 @@ export const storeDefaults: StoreSchema = {
   sayEnterToPressEnter: false,
   handsFreeMode: false,
   saveAudio: false,
+  writingMode: 'as-spoken',
   vocabWords: [],
   phraseReplacements: [],
   userName: null,

@@ -1,0 +1,65 @@
+{
+  "status": "development_only_not_shipping",
+  "base_commit": "060526a7514a06a89d7f2bb581d6abe3232864b3",
+  "adapter": null,
+  "model_path": "/Users/oliverhull/models/llm/LFM2.5-1.2B-Instruct-MLX-8bit",
+  "code_sha256": {
+    "experiments/clean-v1/client.py": "08ae76a340e8a94953116c8ae084eb7329a54506fd05bd81a20d8742b2404541",
+    "experiments/clean-v1/contract.json": "7eabb01a0d6f7ec1583f2a92dc7b3e11d9003ac2ea6a08ae10b54b3b6054d57b",
+    "experiments/clean-v1/core.py": "6051b437e96d50b87018cb5b294bbe60965d2c25422c779df3b518c2a1a57781",
+    "experiments/clean-v1/dataset.py": "b948d1011ce81063f69692380fcefff9fbb3764478ac65a7f14ea9d5110f6a53",
+    "experiments/clean-v1/insertion.py": "85dc88cc48758e17f5d63996ce944a9ebec56ec18a153eefa5bcb5ee5550990b",
+    "experiments/clean-v1/smoke.py": "bc76be687017ee514192825eb38efc4a647eeb59ae8c678bfa1ba70a836ea40f",
+    "experiments/clean-v1/test_clean.py": "e3cdeebc2ba7bdf167af4beb0bf880ddbbfcc0609f3947af53916d109f90f40c",
+    "experiments/clean-v1/test_dataset.py": "a647183eb5ad0fd604c0fd379cf145855d161dbd3a7ac20a052ab861e7802116",
+    "experiments/clean-v1/test_insertion.py": "bf6ce8e4783d692b7be1472e152c8470fd0564d3282204a6558e989d0c515d34",
+    "experiments/clean-v1/worker.py": "9d8cf108824d852c704375924208866a7e069e67c5ddff188bb54ce0a19a06a8"
+  },
+  "model_files": {
+    ".gitattributes": {
+      "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+      "bytes": 1519
+    },
+    "LICENSE": {
+      "sha256": "8452bb1959f63e62f0205241f16fde8cc0b4c49c224ace2483bfba6903af4aca",
+      "bytes": 151190
+    },
+    "README.md": {
+      "sha256": "e121410071d946a17d3481d16ddf5548a335433be9a30eafe1532265ddf84fbd",
+      "bytes": 2286
+    },
+    "chat_template.jinja": {
+      "sha256": "3acb41f339d069a43037e6b9a9715cbeece8874eb25a7cabf1a33903d7724d6d",
+      "bytes": 1836
+    },
+    "config.json": {
+      "sha256": "07f8d0fa634323c35c91978f38fa7ffe9bc50439a92a57dadcd81e0e69aaa501",
+      "bytes": 1572
+    },
+    "generation_config.json": {
+      "sha256": "5ffd97da1dec4308543894569662d96e923ed01f7a9d8c7ff5aea7f800738cbd",
+      "bytes": 132
+    },
+    "model.safetensors": {
+      "sha256": "74e6e29f0215107a4aa9d4bd0a1ac8c1adbd0096f898bfbf49d3edc6cc7e4130",
+      "bytes": 1243645809
+    },
+    "model.safetensors.index.json": {
+      "sha256": "fcfe171be23642632ad0e997d641bb2a92c137635660e28f07efa4eb3dbe659b",
+      "bytes": 23415
+    },
+    "special_tokens_map.json": {
+      "sha256": "742aefe2b7dec496e8caffdba03a75d0c1a9925d53bd3f3e0d388c96b591b6f4",
+      "bytes": 434
+    },
+    "tokenizer.json": {
+      "sha256": "df1d8d5ec5d091b460562ffd545e4a5e91d17d4a0db7ebe733be34ed374377bd",
+      "bytes": 4733389
+    },
+    "tokenizer_config.json": {
+      "sha256": "2a52ec012d3df831ba434b081bef3726a6ee22501f062ad8353c557a0cfa0d01",
+      "bytes": 92225
+    }
+  },
+  "result_sha256": "73dc68bbfd6baa5690e032e1304bd1d10d870af6064f45a499e712d1a68a2c53"
+}

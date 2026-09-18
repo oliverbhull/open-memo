@@ -181,7 +181,7 @@ function App() {
         if (!entry) throw new Error('Transcription did not contain a valid memo');
         setError(null); // Clear any previous errors
       } catch (err) {
-        if (data.id && data.audio) {
+        if (data.id && data.audio && !data.persisted) {
           void window.electronAPI.audio.delete(data.id);
         }
         logger.error('Failed to add entry:', err);

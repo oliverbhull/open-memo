@@ -18,7 +18,9 @@ rust/target/
 rust/Cargo.lock
 sidecars/*/target/
 
-# Python bytecode
+# Python bytecode and tool caches
+.ruff_cache/
+.pytest_cache/
 __pycache__/
 *.py[cod]
 
@@ -31,6 +33,8 @@ release/
 sign.log
 
 # Runtime data
+.state/
+.claude/
 pids
 *.pid
 *.seed
@@ -110,7 +114,12 @@ tests/*
 !tests/contextual-dictation/
 !tests/contextual-dictation/fixtures.json
 !tests/contextual-dictation/replay.py
-docs/
+docs/*
+!docs/README.md
+!docs/development.md
+!docs/production-audit.md
+!docs/cleanup-production-candidate.md
+!docs/clean-v1/
 .env.example
 tsconfig.base.json
 CONTRIBUTING.md

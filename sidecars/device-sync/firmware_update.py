@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import fcntl
 import hashlib
 import json
 import os
@@ -331,6 +332,20 @@ def verify_updated_device(
 
 
 def run_update(args) -> None:
+    # Share the sync worker's inode, including across app instances. Never unlink
+    # this file: closing the descriptor releases ownership after success/failure.
+    args.lock.parent.mkdir(parents=True, exist_ok=True)
+    with args.lock.open("a+") as owner:
+        try:
+            fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise FirmwareUpdateError(
+                "Another Memo app is syncing or updating this device. Quit it and retry."
+            ) from error
+        _run_update_owned(args)
+
+
+def _run_update_owned(args) -> None:
     validate_uf2(args.uf2, args.expected_sha256)
     preexisting_volumes = matching_uf2_volumes(args.mount_root)
     port, port_path, current_version = open_expected_device(args.device_uid)
@@ -346,6 +361,10 @@ def run_update(args) -> None:
             fromVersion=current_version,
             toVersion=args.expected_version,
         )
+        if args.parent_pid is not None and os.getppid() != args.parent_pid:
+            raise FirmwareUpdateError("Memo closed before the firmware update started")
+        # Once reboot starts, retain the lock through the bounded update instead
+        # of killing an in-progress UF2 copy merely because Electron crashed.
         response = command(port, "FW REBOOT UF2", timeout=2)
         if response != "FW READY UF2":
             raise FirmwareUpdateError(f"unexpected firmware handoff response: {response}")
@@ -370,6 +389,8 @@ def run_update(args) -> None:
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
+    result.add_argument("--lock", type=Path, required=True)
+    result.add_argument("--parent-pid", type=int)
     result.add_argument("--uf2", type=Path, required=True)
     result.add_argument("--expected-sha256", required=True)
     result.add_argument("--expected-version", required=True)

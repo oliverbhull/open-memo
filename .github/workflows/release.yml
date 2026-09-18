@@ -65,7 +65,7 @@ jobs:
             exit 1
           }
           conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${release_sha}&status=completed" \
-            --jq '[.workflow_runs[] | select(.event == "push")] | sort_by(.created_at) | last | .conclusion // ""')"
+            --jq '[.workflow_runs[] | select(.event == "push" and .head_branch == "main")] | sort_by(.created_at) | last | .conclusion // ""')"
           if [[ "${conclusion}" != "success" ]]; then
             echo "Release commit ${release_sha} does not have a successful main push CI run." >&2
             exit 1
@@ -105,6 +105,12 @@ jobs:
           path: .build/pnc
           key: ${{ runner.os }}-${{ runner.arch }}-pnc-${{ hashFiles('scripts/shell/build-pnc.sh', 'scripts/python/convert-distilbert-pnc-coreml.py', 'sidecars/pnc/**') }}
 
+      - name: Cache cleanup bundle
+        uses: actions/cache@v4
+        with:
+          path: .build/cleanup
+          key: ${{ runner.os }}-${{ runner.arch }}-cleanup-${{ secrets.CLEANUP_SHA256 }}
+
       - name: Install dependencies
         run: npm ci
 
@@ -112,7 +118,7 @@ jobs:
         run: cargo test --locked --manifest-path sidecars/dictation/Cargo.toml
 
       - name: Test macOS signing policy
-        run: node --test scripts/sign.test.cjs
+        run: node --test scripts/sign.test.cjs scripts/release-artifacts.test.cjs scripts/app-update.test.cjs
 
       - name: Validate contextual replay manifest
         run: npm run test:contextual-dictation -- --validate-only
@@ -141,14 +147,17 @@ jobs:
           CONOMO_URL: ${{ secrets.CONOMO_URL }}
           CONOMO_SHA256: ${{ secrets.CONOMO_SHA256 }}
           CONOMO_TOKEN: ${{ secrets.CONOMO_TOKEN }}
+          CLEANUP_URL: ${{ secrets.CLEANUP_URL }}
+          CLEANUP_SHA256: ${{ secrets.CLEANUP_SHA256 }}
+          CLEANUP_TOKEN: ${{ github.token }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           CSC_NAME: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
-          if [[ -z "${CONOMO_URL}" || -z "${CONOMO_SHA256}" || -z "${CONOMO_TOKEN}" || -z "${APPLE_TEAM_ID}" || -z "${APPLE_API_KEY_BASE64}" || -z "${APPLE_API_KEY_ID}" || -z "${APPLE_API_ISSUER}" ]]; then
-            echo "Missing conomo or Apple release secrets." >&2
+          if [[ -z "${CONOMO_URL}" || -z "${CONOMO_SHA256}" || -z "${CONOMO_TOKEN}" || -z "${CLEANUP_URL}" || -z "${CLEANUP_SHA256}" || -z "${APPLE_TEAM_ID}" || -z "${APPLE_API_KEY_BASE64}" || -z "${APPLE_API_KEY_ID}" || -z "${APPLE_API_ISSUER}" ]]; then
+            echo "Missing model bundle or Apple release secrets." >&2
             exit 1
           fi
 
@@ -163,6 +172,9 @@ jobs:
         run: |
           bash scripts/shell/verify-conomo-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/conomo
           bash scripts/shell/verify-pnc-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/pnc
+          bash scripts/shell/verify-cleanup-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/cleanup
+          test "$(jq -r .fixture dist/mac-arm64/Memo.app/Contents/Resources/cleanup/manifest.json)" = false
+          test "$(jq -r .status dist/mac-arm64/Memo.app/Contents/Resources/cleanup/manifest.json)" = production_ready
           dictation_bin="dist/mac-arm64/Memo.app/Contents/Resources/dictation/memo-dictation"
           test -x "${dictation_bin}"
           codesign --verify --strict --verbose=2 "${dictation_bin}"
@@ -177,17 +189,10 @@ jobs:
       - name: Collect release artifacts
         run: |
           mkdir -p release-artifacts
+          node scripts/release-artifacts.cjs dist
           shopt -s nullglob
           dmg_artifacts=(dist/Open-Memo-*.dmg)
-          if (( ${#dmg_artifacts[@]} != 1 )); then
-            echo "Expected exactly one DMG, found ${#dmg_artifacts[@]}." >&2
-            exit 1
-          fi
           artifacts=(dist/Open-Memo-*.dmg dist/Open-Memo-*.zip dist/latest-mac.yml)
-          if (( ${#artifacts[@]} == 0 )); then
-            echo "No release artifacts were produced." >&2
-            exit 1
-          fi
           cp "${artifacts[@]}" release-artifacts/
           cp "${dmg_artifacts[0]}" release-artifacts/Open-Memo-latest-arm64.dmg
           ls -lh release-artifacts

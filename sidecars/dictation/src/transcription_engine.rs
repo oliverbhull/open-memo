@@ -100,6 +100,7 @@ pub struct WorkerEngine {
     responses: Receiver<String>,
     resampler: StreamingResampler,
     session_active: bool,
+    unavailable: bool,
     streamed_input_samples: usize,
 }
 
@@ -144,11 +145,18 @@ impl WorkerEngine {
             }
         });
 
-        let ready = responses
-            .recv_timeout(WORKER_READY_TIMEOUT)
-            .map_err(|e| Error(format!("Failed waiting for conomo worker: {e}")))?;
+        let ready = match responses.recv_timeout(WORKER_READY_TIMEOUT) {
+            Ok(line) => line,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Error(format!("Failed waiting for conomo worker: {error}")));
+            }
+        };
         if ready.trim() != "READY" {
             let status = child.try_wait().ok().flatten();
+            let _ = child.kill();
+            let _ = child.wait();
             return Err(Error(format!(
                 "conomo worker did not become ready (line={:?}, status={status:?})",
                 ready.trim()
@@ -163,6 +171,7 @@ impl WorkerEngine {
             responses,
             resampler: StreamingResampler::new(input_sample_rate, TARGET_SAMPLE_RATE),
             session_active: false,
+            unavailable: false,
             streamed_input_samples: 0,
         })
     }
@@ -221,6 +230,7 @@ impl WorkerEngine {
                 Ok(line) => line,
                 Err(error) => {
                     let status = self.child.try_wait().ok().flatten();
+                    self.invalidate();
                     return Err(Error(format!(
                         "conomo worker did not return a transcript ({error}; status={status:?})"
                     )));
@@ -266,7 +276,19 @@ impl WorkerEngine {
         }))
     }
 
+    fn invalidate(&mut self) {
+        self.unavailable = true;
+        self.session_active = false;
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+
     fn send_message(&mut self, message: Value) -> Result<()> {
+        if self.unavailable {
+            return Err(Error(
+                "conomo worker expired; restart dictation to recover".to_string(),
+            ));
+        }
         let line = message.to_string();
         self.stdin
             .write_all(line.as_bytes())
@@ -355,6 +377,33 @@ fn required_path(name: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn invalidated_worker_cannot_consume_a_delayed_final() {
+        let mut child = Command::new("/bin/cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let stdin = child.stdin.take().unwrap();
+        let (tx, responses) = mpsc::channel();
+        tx.send("FINAL: {\"processedText\":\"old utterance\"}".to_string())
+            .unwrap();
+        let mut engine = WorkerEngine {
+            child,
+            stdin,
+            responses,
+            resampler: StreamingResampler::new(16_000, 16_000),
+            session_active: true,
+            unavailable: false,
+            streamed_input_samples: 0,
+        };
+        engine.invalidate();
+        assert!(engine.child.try_wait().unwrap().is_some());
+        assert!(engine.finish_transcription(&[1, 2]).is_err());
+        assert!(engine.begin_live_stream().is_err());
+    }
 
     #[test]
     fn streaming_resampler_preserves_length_across_uneven_chunks() {

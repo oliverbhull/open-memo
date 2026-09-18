@@ -1,0 +1,7 @@
+{
+  "version": "memo-clean-v3.1-annotations",
+  "scope": "word_preserving_formatting",
+  "punctuation_confidence": 0.65,
+  "question_confidence": 0.8,
+  "production_enabled": false
+}

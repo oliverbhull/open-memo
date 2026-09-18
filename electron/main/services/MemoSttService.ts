@@ -6,8 +6,9 @@ import { app } from 'electron';
 import { logger } from '../utils/logger';
 import { loadSettings, store } from './SettingsService';
 import { isWhisperModelInstalled, whisperModelPath } from './AsrModelService';
-import { resolveTranscriptionText } from '../../shared/transcription';
+import { resolveTranscriptionText, resolveCleanInput } from '../../shared/transcription';
 import { normalizeTranscriptionText } from './textProcessing';
+import type { TranscriptionData as SharedTranscriptionData } from '../../shared/electron-api';
 
 export interface AppContext {
   appName: string;
@@ -20,7 +21,7 @@ export interface CapturedAudio {
   duration?: number;
 }
 
-export interface TranscriptionData {
+export interface TranscriptionData extends SharedTranscriptionData {
   rawTranscript: string;
   processedText: string;
   wasProcessedByLLM: boolean;
@@ -40,6 +41,7 @@ export class MemoSttService extends EventEmitter {
   private hotkey: string = 'function';
   private restartAttempts: number = 0;
   private restartTimeout: NodeJS.Timeout | null = null;
+  private readonly closedChildren = new WeakSet<ChildProcess>();
   private stopPromise: Promise<void> | null = null;
   private readyPromise: Promise<void> | null = null;
   private suspended = false;
@@ -301,6 +303,7 @@ export class MemoSttService extends EventEmitter {
         logger.info(`[MemoSttService] MEMO_SYSTEM_INPUT_DEVICE=${env.MEMO_SYSTEM_INPUT_DEVICE}`);
       }
       
+      if (process.platform !== 'win32') env.MEMO_PARENT_PID = String(process.pid);
       const child = spawn(command, args, {
         cwd: isDev ? process.cwd() : undefined,
         stdio: ['pipe', 'pipe', 'pipe'], // Changed to 'pipe' for stdin to send commands
@@ -312,21 +315,25 @@ export class MemoSttService extends EventEmitter {
       this.processStartedAt = Date.now();
 
       child.stdin?.on('error', (error: NodeJS.ErrnoException) => {
+        if (this.process !== child) return;
         this.handleStdinError(error);
       });
 
       child.stdin?.on('close', () => {
+        if (this.process !== child) return;
         this.stdinClosed = true;
         logger.debug(`[MemoSttService #${this.instanceId}] dictation stdin closed`);
       });
 
       child.stdout?.on('data', (data: Buffer) => {
+        if (this.process !== child) return;
         this.handleStdout(data);
         // Connection state is managed entirely by Rust's CONNECTED:/DISCONNECTED: messages
         // No need for activity timeouts - Rust handles connection monitoring
       });
 
       child.stderr?.on('data', (data: Buffer) => {
+        if (this.process !== child) return;
         // Log stderr but do not treat it as an error channel; the sidecar uses it for status messages.
         const message = data.toString();
         // Log at info level so we can see what's happening in production
@@ -357,6 +364,7 @@ export class MemoSttService extends EventEmitter {
       });
 
       child.on('error', (error: NodeJS.ErrnoException) => {
+        if (this.process !== child) return;
         const errorDetails = {
           message: error.message,
           name: error.name,
@@ -382,12 +390,15 @@ export class MemoSttService extends EventEmitter {
         this.emit('error', new Error(userFriendlyError));
       });
 
-      child.on('exit', (code: number | null, signal: string | null) => {
+      child.on('close', (code: number | null, signal: string | null) => {
+        this.closedChildren.add(child);
         logger.info(`[MemoSttService #${this.instanceId}] memo-stt process exited with code ${code}, signal ${signal}`);
         if (this.process !== child) return;
         
         // Clean up process references
-        const wasRunning = this.process !== null;
+        const wasRunning = this.status === 'running';
+        this.buffer = '';
+        this.pendingAudioData = null;
         this.process = null;
         this.stdinClosed = true;
         this.status = 'stopped';
@@ -460,11 +471,10 @@ export class MemoSttService extends EventEmitter {
     this.restartAttempts = 0;
 
     const processToKill = this.process;
-    this.process = null;
     this.status = 'stopped';
     this.emit('status', 'stopped');
 
-    if (processToKill && processToKill.exitCode === null && processToKill.signalCode === null) {
+    if (processToKill && !this.closedChildren.has(processToKill)) {
       logger.info(`[MemoSttService #${this.instanceId}] Stopping memo-stt process...`);
       this.stdinClosed = true;
       this.stopPromise = new Promise<void>((resolve) => {
@@ -474,21 +484,22 @@ export class MemoSttService extends EventEmitter {
           resolve();
         };
         const forceKillTimeout = setTimeout(() => {
-          if (processToKill.exitCode === null && processToKill.signalCode === null) {
-            logger.warn('Process did not exit gracefully, forcing its process group to stop');
+          if (!this.closedChildren.has(processToKill)) {
+            logger.warn('Process streams did not close gracefully, forcing its process group to stop');
             this.signalProcessGroup(processToKill, 'SIGKILL');
           }
         }, 2_000);
-        processToKill.once('exit', finish);
+        processToKill.once('close', finish);
         this.signalProcessGroup(processToKill, 'SIGTERM');
       }).finally(() => {
         this.stopPromise = null;
       });
     }
 
-    // Clear buffer on stop
-    this.buffer = '';
+    // Drain complete output lines before discarding the final partial line.
     await this.stopPromise;
+    this.buffer = '';
+    this.pendingAudioData = null;
   }
 
   async suspend(): Promise<void> {
@@ -696,14 +707,16 @@ export class MemoSttService extends EventEmitter {
 
       // Validate transcription data
       if (!transcription.rawTranscript && !transcription.processedText) {
+        this.pendingAudioData = null;
         logger.warn('Received empty transcription, skipping');
         this.emit('processingCompleted');
         return;
       }
 
-      // An explicitly empty processed value means native cleanup intentionally
-      // suppressed an all-artifact transcript. Do not revive its raw text.
-      const text = normalizeTranscriptionText(resolveTranscriptionText(transcription));
+      // Legacy mode respects native artifact suppression; Clean retains recognition text.
+      const cleanMode = !app.isPackaged && loadSettings().writingMode === 'clean';
+      const text = normalizeTranscriptionText(cleanMode
+        ? resolveCleanInput(transcription) : resolveTranscriptionText(transcription));
       
       if (!text) {
         logger.warn('Received empty or punctuation-only transcription text, skipping');
@@ -720,10 +733,11 @@ export class MemoSttService extends EventEmitter {
         ...(audioCapture ? { audioCapture } : {}),
       });
       
-      this.emit('processingCompleted');
+      // The async transcription listener owns completion after cleanup and delivery.
     } catch (error) {
-      logger.error('Failed to parse FINAL: JSON:', error);
-      logger.error('Line was:', line);
+      logger.error('Failed to parse dictation response');
+      logger.debug('Dictation response error:', error);
+      this.pendingAudioData = null;
       this.emit('processingFailed');
     }
   }

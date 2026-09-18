@@ -15,6 +15,7 @@ use std::time::Instant;
 mod app_detection;
 mod mrec_batch;
 mod opus_decoder;
+mod parent_watchdog;
 mod transcription_engine;
 use transcription_engine::TranscriptionEngine;
 
@@ -548,6 +549,7 @@ fn calculate_rate_of_increase(history: &[(f32, f32)]) -> Option<f32> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    parent_watchdog::start();
     if std::env::args().any(|argument| argument == "--batch-transcribe") {
         return mrec_batch::run();
     }
@@ -1412,7 +1414,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let mut eng = engine_for_thread.lock().unwrap();
 
                             // Capture application context and vocabulary before transcribing
+                            let context_started = Instant::now();
                             let (app_name, window_title) = app_detection::get_application_context();
+                            eprintln!(
+                                "TIMING:context_lookup_ms={:.1}",
+                                context_started.elapsed().as_secs_f64() * 1000.0
+                            );
                             let vocab = vocabulary_for_thread.lock().unwrap();
                             let mut prompt =
                                 build_prompt(app_name.clone(), window_title.clone(), &vocab);
@@ -1859,8 +1866,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let mut eng = engine_for_thread.lock().unwrap();
 
                                     // Capture application context and vocabulary before transcribing
+                                    let context_started = Instant::now();
                                     let (app_name, window_title) =
                                         app_detection::get_application_context();
+                                    eprintln!(
+                                        "TIMING:context_lookup_ms={:.1}",
+                                        context_started.elapsed().as_secs_f64() * 1000.0
+                                    );
                                     let vocab = vocabulary_for_thread.lock().unwrap();
                                     let mut prompt = build_prompt(
                                         app_name.clone(),

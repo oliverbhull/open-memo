@@ -1,0 +1,13 @@
+{
+  "tests_passed": 26,
+  "tests_failed": 0,
+  "typecheck": "passed",
+  "diff_check": "passed",
+  "remote_ci": "not_run",
+  "native_insertion": "not_run",
+  "new_model_artifacts": 0,
+  "worktree_disk_bytes": 1720320,
+  "new_experiment_and_docs_bytes": 68702,
+  "production_processes_added": 0,
+  "original_worktree": "not_modified_by_this_task"
+}

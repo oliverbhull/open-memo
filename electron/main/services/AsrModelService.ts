@@ -67,6 +67,7 @@ function downloadResponse(url: URL, redirectsRemaining = 5): Promise<IncomingMes
 }
 
 export class AsrModelService extends EventEmitter {
+  private selectionGeneration = 0;
   private downloadedBytes = 0;
   private totalBytes = WHISPER_MODEL_BYTES;
   private downloadError: string | null = null;
@@ -110,13 +111,16 @@ export class AsrModelService extends EventEmitter {
       return { success: false, state: this.getState(), error: `Unsupported speech model: ${String(model)}` };
     }
 
-    const previous = loadSettings().asrModel;
+    const generation = ++this.selectionGeneration;
     try {
       if (model === 'whisper' && !isWhisperModelInstalled()) {
         await this.downloadWhisper();
       }
 
-      if (previous !== model) {
+      if (generation !== this.selectionGeneration) {
+        return { success: false, state: this.getState(), error: 'Speech model selection was superseded.' };
+      }
+      if (loadSettings().asrModel !== model) {
         const settings = loadSettings();
         settings.asrModel = model;
         saveSettings(settings);
@@ -162,6 +166,10 @@ export class AsrModelService extends EventEmitter {
       const hash = createHash('sha256');
       const meter = new Transform({
         transform: (chunk: Buffer, _encoding, callback) => {
+          if (this.downloadedBytes + chunk.length > WHISPER_MODEL_BYTES) {
+            callback(new Error('Whisper download exceeded its expected size.'));
+            return;
+          }
           hash.update(chunk);
           this.downloadedBytes += chunk.length;
           const now = Date.now();

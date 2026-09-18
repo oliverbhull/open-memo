@@ -32,6 +32,8 @@ export interface TranscriptionExportDocument {
 }
 
 export interface TranscriptionData {
+  /** Main has already saved this entry; renderer errors must not delete its audio. */
+  persisted?: boolean;
   id?: string;
   rawTranscript?: string;
   processedText?: string;
@@ -93,6 +95,14 @@ export interface ToastData {
 }
 
 export type AsrModelId = 'conomo' | 'whisper';
+
+export type WritingMode = 'as-spoken' | 'clean';
+
+export interface CleanupState {
+  available: boolean;
+  status: 'disabled' | 'loading' | 'ready' | 'unavailable';
+  detail?: string;
+}
 
 export type AsrModelInstallState =
   | 'included'
@@ -173,6 +183,8 @@ export interface ElectronAPI {
       sayEnterToPressEnter: boolean;
       handsFreeMode: boolean;
       saveAudio: boolean;
+      writingMode: WritingMode;
+      cleanupState: CleanupState;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
       startAtLogin: boolean;
@@ -182,7 +194,9 @@ export interface ElectronAPI {
     setSayEnterToPressEnter(enabled: boolean): Promise<boolean>;
     setHandsFreeMode(enabled: boolean): Promise<boolean>;
     setSaveAudio(enabled: boolean): Promise<boolean>;
+    setWritingMode(mode: WritingMode): Promise<boolean>;
     setStartAtLogin(enabled: boolean): Promise<boolean>;
+    onCleanupStateChanged(callback: (state: CleanupState) => void): () => void;
   };
   asr: {
     getState(): Promise<AsrState>;

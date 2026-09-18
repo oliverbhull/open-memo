@@ -1,0 +1,30 @@
+{
+  "status": "development_smoke_only",
+  "model": "/Users/oliverhull/models/llm/LFM2.5-1.2B-Instruct-MLX-8bit",
+  "contract": "memo-clean-v1",
+  "memory": {
+    "mlx_peak_bytes": 1384101920,
+    "mlx_active_bytes": 1243608584,
+    "peak_rss_native_units": 1364983808
+  },
+  "memory_note": "MLX allocator + macOS peak RSS bytes; not full concurrent application memory",
+  "rows": 15,
+  "statuses": {
+    "fallback": 11,
+    "accepted": 4
+  },
+  "reasons": {
+    "literal_symbol_changed": 3,
+    "content_sequence_changed": 3,
+    "invariants_passed": 4,
+    "sensitive_clause_changed": 2,
+    "placeholder_identity_count_order": 3
+  },
+  "unchanged": 15,
+  "warm_p50_ms": 63.72758401266765,
+  "warm_p95_ms": 339.8406249907566,
+  "startup_to_ready_ms": 1424.8646250052843,
+  "quality": "Not human reviewed; no shipping or semantic-equivalence claim",
+  "deadline_note": "10s diagnostic budget, NOT the 750ms experiment/250ms shipping gate",
+  "corpus_sha256": "6b64fdf09fd5ea3a632fe6a70d0cd435535211a95ccdd0106da40d9a1f31994a"
+}

@@ -17,11 +17,13 @@ from pathlib import Path
 import re
 import select
 import shutil
+import signal
 import sqlite3
 import struct
 import subprocess
 import sys
 import time
+import threading
 import uuid
 import wave
 import zlib
@@ -40,6 +42,24 @@ MREC_V2 = struct.Struct("<IHHIQQHHHHIIHHIQqhBBI")
 CAPTURE_TIME_VALID = 0x01
 CLOCK_SOURCES = {0: "unknown", 1: "usb", 2: "ble"}
 CODECS = {0x5355504F: "opus"}
+
+
+def watch_desktop_parent(parent_pid: int) -> None:
+    """Stop our isolated worker group if Electron exits, including after a crash.
+
+    The lock inode is never removed: process exit releases flock ownership.
+    Only signal a group led by this worker; standalone invocations must not
+    accidentally terminate their shell's process group.
+    """
+    def watch() -> None:
+        while os.getppid() == parent_pid:
+            time.sleep(0.25)
+        if os.getpgrp() == os.getpid():
+            os.killpg(os.getpgrp(), signal.SIGTERM)
+        else:
+            os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=watch, name="desktop-parent-watch", daemon=True).start()
 
 
 def utc_now() -> str:
@@ -561,18 +581,19 @@ def commit_local_batch(connection, database: Path, batch: dict, archives: list[d
 
 
 def complete_batch(connection, database: Path, batch: dict, journal: dict, batch_dir: Path) -> None:
-    current = connection.execute("SELECT status FROM sync_batches WHERE id=?", (batch["batch_id"],)).fetchone()
+    current = connection.execute("SELECT status,completed_at FROM sync_batches WHERE id=?", (batch["batch_id"],)).fetchone()
     if not current:
         raise RuntimeError("refusing to complete a batch that is not durably indexed")
-    if current and current["status"] == "complete":
-        durable_checkpoint(connection, database)
-        return
     rows = connection.execute("SELECT r.classification,COUNT(*) count FROM recordings r JOIN batch_recordings br ON br.recording_id=r.id WHERE br.batch_id=? GROUP BY r.classification", (batch["batch_id"],)).fetchall()
     counts = {row["classification"]: row["count"] for row in rows}
     total = sum(counts.values())
     meaningful_count = counts.get("audio", 0)
-    completed = utc_now()
+    completed = current["completed_at"] or utc_now()
     manifest_path = batch_dir / f"{batch['batch_id']}.json"
+    atomic_json(manifest_path, {"schema_version": 1, "batch_id": batch["batch_id"], "device": {"uid": batch["device_uid"], "firmware_version": batch.get("firmware_version"), "protocol_version": batch["protocol_version"]}, "status": "complete", "started_at": batch["started_at"], "completed_at": completed, "counts": {"total": total, "meaningful": meaningful_count, "diagnostic": total - meaningful_count}, "recordings": journal["recordings"]})
+    if current["status"] == "complete":
+        durable_checkpoint(connection, database)
+        return
     connection.execute("BEGIN IMMEDIATE")
     try:
         connection.execute("UPDATE sync_batches SET completed_at=?,status='complete',total_count=?,meaningful_count=?,diagnostic_count=?,manifest_path=?,router_state=?,error=NULL WHERE id=?",
@@ -583,7 +604,6 @@ def complete_batch(connection, database: Path, batch: dict, journal: dict, batch
     except Exception:
         connection.rollback()
         raise
-    atomic_json(manifest_path, {"schema_version": 1, "batch_id": batch["batch_id"], "device": {"uid": batch["device_uid"], "firmware_version": batch.get("firmware_version"), "protocol_version": batch["protocol_version"]}, "status": "complete", "started_at": batch["started_at"], "completed_at": completed, "counts": {"total": total, "meaningful": meaningful_count, "diagnostic": total - meaningful_count}, "recordings": journal["recordings"]})
     durable_checkpoint(connection, database)
 
 
@@ -845,6 +865,7 @@ def process_device(port, info: dict, endpoint: str, args, connection, transport:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--parent-pid", type=int)
     parser.add_argument("--database", type=Path, required=True)
     parser.add_argument("--library", type=Path, required=True)
     parser.add_argument("--batch-directory", type=Path, required=True)
@@ -860,6 +881,8 @@ def main() -> int:
     parser.add_argument("--poll-seconds", type=float, default=2.0)
     parser.add_argument("--ble-bridge", type=Path)
     args = parser.parse_args()
+    if args.parent_pid is not None:
+        watch_desktop_parent(args.parent_pid)
     args.library.mkdir(parents=True, exist_ok=True)
     args.batch_directory.mkdir(parents=True, exist_ok=True)
     args.lock.parent.mkdir(parents=True, exist_ok=True)
@@ -867,7 +890,7 @@ def main() -> int:
     try:
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        emit("error", error="Another Memo desktop sync owner is already running.", code="owner-conflict")
+        emit("error", error="Another Memo app is syncing this device. Quit the other Memo app; sync will retry automatically.", code="owner-conflict")
         return 2
     connection = connect_database(args.database)
     last_state = None

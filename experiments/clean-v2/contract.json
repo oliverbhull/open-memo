@@ -1,0 +1,6 @@
+{
+  "version": "memo-clean-v2-format-only",
+  "instruction": "Add punctuation, capitalization, and sentence breaks to this transcript. Keep every word exactly as spoken and in the same order. Do not correct, rewrite, remove, or add words. Return only the formatted transcript.",
+  "scope": "formatting_only",
+  "production_enabled": false
+}

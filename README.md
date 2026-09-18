@@ -73,7 +73,15 @@ Open Memo is open source under the [MIT License](LICENSE).
 ```bash
 git clone https://github.com/oliverbhull/open-memo.git
 cd open-memo
-npm install
+npm ci
 npm run check
-npm run dev
 ```
+
+
+See the [development guide](docs/development.md) for prerequisites, local runtime
+setup, validation commands, and packaging boundaries. Clean mode uses the local
+6-bit LFM candidate in development and the same verified offline bundle in
+production packages; As spoken mode uses the punctuation pipeline.
+
+See the [repository map](docs/README.md) for maintained source and historical
+experiments, and the [production audit](docs/production-audit.md) for release gaps.

@@ -3,6 +3,7 @@ import type {
   AsrModelId,
   AsrSelectionResult,
   AsrState,
+  CleanupState,
   DeviceSyncStatus,
   ElectronAPI,
   MemoSttError,
@@ -11,6 +12,7 @@ import type {
   ToastData,
   TranscriptionData,
   TranscriptionExportDocument,
+  WritingMode,
 } from '../shared/electron-api';
 import type { MemoEntry } from '../shared/memo-entry';
 
@@ -173,6 +175,8 @@ const electronAPI = {
       sayEnterToPressEnter: boolean;
       handsFreeMode: boolean;
       saveAudio: boolean;
+      writingMode: WritingMode;
+      cleanupState: CleanupState;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
       startAtLogin: boolean;
@@ -194,8 +198,16 @@ const electronAPI = {
     setSaveAudio: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setSaveAudio', enabled);
     },
+    setWritingMode: (mode: WritingMode): Promise<boolean> => {
+      return ipcRenderer.invoke('settings:setWritingMode', mode);
+    },
     setStartAtLogin: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setStartAtLogin', enabled);
+    },
+    onCleanupStateChanged: (callback: (state: CleanupState) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: CleanupState) => callback(state);
+      ipcRenderer.on('writing:cleanup-state-changed', handler);
+      return () => ipcRenderer.removeListener('writing:cleanup-state-changed', handler);
     },
   },
   asr: {

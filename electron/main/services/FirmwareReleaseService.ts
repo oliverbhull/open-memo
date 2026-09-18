@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const RELEASES_URL = 'https://api.github.com/repos/oliverbhull/open-memo/releases?per_page=30';
+const RELEASES_PER_PAGE = 30;
+const MAX_RELEASE_PAGES = 10;
 const MANIFEST_NAME = 'memo-firmware-release.json';
 const SIGNATURE_NAME = `${MANIFEST_NAME}.sig`;
 const EXPECTED_BOARD = 'xiao_ble/nrf52840/sense';
@@ -257,22 +259,7 @@ export class FirmwareReleaseService {
   }
 
   async findUpdate(currentFirmwareVersion: string): Promise<FirmwareUpdateArtifact | null> {
-    const releases = await this.fetchBytes(
-      this.releasesUrl,
-      MAX_RELEASE_LIST_BYTES,
-      'firmware release list',
-      'application/vnd.github+json',
-    );
-    const values = parseJson(releases, 'firmware release list');
-    if (!Array.isArray(values)) throw new FirmwareReleaseError('firmware release list is not an array');
-    const release = values
-      .map(parseRelease)
-      .find((candidate): candidate is GitHubRelease => Boolean(
-        candidate
-        && !candidate.draft
-        && candidate.prerelease
-        && candidate.tag_name.startsWith('firmware-v'),
-      ));
+    const release = await this.findLatestFirmwareRelease();
     if (!release) return null;
 
     const manifestAsset = this.requireUniqueAsset(release, MANIFEST_NAME, MAX_MANIFEST_BYTES);
@@ -329,6 +316,25 @@ export class FirmwareReleaseService {
       firmwareVersion: manifest.firmware_version,
       sha256: manifest.uf2_sha256,
     };
+  }
+
+  private async findLatestFirmwareRelease(): Promise<GitHubRelease | null> {
+    for (let page = 1; page <= MAX_RELEASE_PAGES; page++) {
+      const url = new URL(this.releasesUrl);
+      url.searchParams.set('per_page', String(RELEASES_PER_PAGE));
+      url.searchParams.set('page', String(page));
+      const bytes = await this.fetchBytes(
+        url.toString(), MAX_RELEASE_LIST_BYTES, 'firmware release list', 'application/vnd.github+json',
+      );
+      const values = parseJson(bytes, 'firmware release list');
+      if (!Array.isArray(values)) throw new FirmwareReleaseError('firmware release list is not an array');
+      const release = values.map(parseRelease).find((candidate): candidate is GitHubRelease => Boolean(
+        candidate && !candidate.draft && candidate.prerelease && candidate.tag_name.startsWith('firmware-v'),
+      ));
+      if (release) return release;
+      if (values.length < RELEASES_PER_PAGE) return null;
+    }
+    throw new FirmwareReleaseError('firmware discovery reached the release history limit');
   }
 
   private requireUniqueAsset(

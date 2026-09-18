@@ -3,7 +3,14 @@ import { useTheme } from '../context/ThemeContext';
 import { hexToHsl, hslToHex } from '../utils/colorUtils';
 import { storageService } from '../services/StorageService';
 import { buildTranscriptionExport } from '../services/transcriptionExport';
-import type { AsrModelId, AsrState, MicrophoneInputState, PhraseReplacementRule } from '../../../shared/electron-api';
+import type {
+  AsrModelId,
+  AsrState,
+  CleanupState,
+  MicrophoneInputState,
+  PhraseReplacementRule,
+  WritingMode,
+} from '../../../shared/electron-api';
 import '../styles/glass.css';
 import '../styles/color-picker.css';
 
@@ -45,6 +52,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [microphoneSelecting, setMicrophoneSelecting] = useState(false);
   const [microphoneError, setMicrophoneError] = useState<string | null>(null);
   const [saveAudio, setSaveAudio] = useState(false);
+  const [writingMode, setWritingMode] = useState<WritingMode>('as-spoken');
+  const [cleanupState, setCleanupState] = useState<CleanupState>({
+    available: false,
+    status: 'disabled',
+  });
   const [vocabWords, setVocabWords] = useState<string[]>([]);
   const [isAddingVocabWord, setIsAddingVocabWord] = useState(false);
   const [vocabWordDraft, setVocabWordDraft] = useState('');
@@ -69,12 +81,16 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       setHandsFreeMode(settings.handsFreeMode ?? false);
       setStartAtLogin(settings.startAtLogin);
       setSaveAudio(settings.saveAudio ?? false);
+      setWritingMode(settings.writingMode ?? 'as-spoken');
+      setCleanupState(settings.cleanupState);
       setVocabWords(Array.isArray(settings.vocabWords) ? settings.vocabWords : []);
       setPhraseReplacementRules(
         Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : []
       );
     });
   }, []);
+
+  useEffect(() => window.electronAPI.interface.onCleanupStateChanged(setCleanupState), []);
 
   useEffect(() => {
     let mounted = true;
@@ -478,7 +494,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       textOverflow: 'ellipsis',
                     }}
                   >
-                    <option value="conomo">conomo — Included</option>
+                    <option value="conomo">Conomo — Included</option>
                     <option value="whisper">
                       {whisperStatus?.installState === 'downloaded'
                         ? 'Whisper — Downloaded'
@@ -527,6 +543,82 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               {!whisperDownloading && asrActionError && (
                 <span style={{ fontSize: '10px', color: '#ff8b8b' }}>
                   {asrActionError}
+                </span>
+              )}
+            </div>
+
+            {/* Development-only transcript cleanup experiment */}
+            <div style={{
+              width: '92%',
+              margin: '0 auto 10px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '5px',
+            }}>
+              <label
+                htmlFor="writing-mode"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                }}
+              >
+                <span style={{ fontSize: '12px', userSelect: 'none' }}>Writing</span>
+                <span style={{ position: 'relative', display: 'inline-flex', minWidth: 0 }}>
+                  <select
+                    id="writing-mode"
+                    value={writingMode}
+                    onChange={async (event) => {
+                      const mode = event.target.value as WritingMode;
+                      const accepted = await window.electronAPI.interface.setWritingMode(mode);
+                      if (accepted) setWritingMode(mode);
+                    }}
+                    style={{
+                      width: '238px',
+                      maxWidth: '100%',
+                      padding: '6px 28px 6px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(255, 255, 255, 0.14)',
+                      background: 'rgba(18, 18, 24, 0.86)',
+                      color: 'rgba(255, 255, 255, 0.92)',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      outline: 'none',
+                      appearance: 'none',
+                    }}
+                  >
+                    <option value="as-spoken">As spoken</option>
+                    <option
+                      value="clean"
+                      disabled={cleanupState.status === 'disabled'}
+                    >
+                      Cleaned
+                    </option>
+                  </select>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      right: '9px',
+                      top: '50%',
+                      transform: 'translateY(-52%)',
+                      pointerEvents: 'none',
+                      fontSize: '10px',
+                      opacity: 0.72,
+                    }}
+                  >
+                    ▾
+                  </span>
+                </span>
+              </label>
+              {writingMode === 'clean' && (
+                <span style={{ fontSize: '10px', opacity: 0.7, paddingLeft: '4px' }}>
+                  {cleanupState.status === 'ready'
+                    ? 'Cleans up your dictation locally while preserving your message.'
+                    : cleanupState.status === 'loading'
+                      ? 'Loading LFM locally…'
+                      : cleanupState.detail || 'Clean is available only in the local development app.'}
                 </span>
               )}
             </div>
