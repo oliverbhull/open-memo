@@ -22,6 +22,20 @@ function loadService({ packaged = false, spawn } = {}) {
   return loaded.exports.CleanupService;
 }
 
+function loadStoreDefaults() {
+  const entry = path.resolve('electron/main/services/StoreSchema.ts');
+  const compiled = buildSync({
+    entryPoints: [entry],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    write: false,
+  }).outputFiles[0].text;
+  const loaded = new Module(entry, module);
+  loaded._compile(compiled, entry);
+  return loaded.exports.storeDefaults;
+}
+
 function fakeWorker(handle) {
   const worker = new EventEmitter();
   worker.stdout = new PassThrough();
@@ -45,6 +59,10 @@ function ready(service) {
     service.on('state-changed', listener); service.start();
   });
 }
+
+test('fresh installs default to Cleaned so the bundled LFM starts', () => {
+  assert.equal(loadStoreDefaults().writingMode, 'clean');
+});
 
 test('packaged builds start the bundled LFM', async t => {
   const originalResourcesPath = process.resourcesPath;

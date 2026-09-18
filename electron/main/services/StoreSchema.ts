@@ -29,7 +29,7 @@ export const storeDefaults: StoreSchema = {
   sayEnterToPressEnter: false,
   handsFreeMode: false,
   saveAudio: false,
-  writingMode: 'as-spoken',
+  writingMode: 'clean',
   vocabWords: [],
   phraseReplacements: [],
   userName: null,
