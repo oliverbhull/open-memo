@@ -6,6 +6,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { CleanupState } from '../../shared/electron-api';
 import { logger } from '../utils/logger';
+import { resolveModelPackPath } from './ModelPackService';
 
 /** A deadline, not a delay: completed text is delivered immediately. */
 export function cleanupTimeoutMs(text: string): number {
@@ -54,7 +55,7 @@ interface CleanupPaths {
 
 function cleanupPaths(): CleanupPaths {
   if (app.isPackaged) {
-    const bundle = path.join(process.resourcesPath, 'cleanup');
+    const bundle = resolveModelPackPath('cleanup');
     return {
       python: path.join(bundle, 'runtime', 'bin', 'python'),
       worker: path.join(bundle, 'worker', 'transcript-cleanup-worker.py'),

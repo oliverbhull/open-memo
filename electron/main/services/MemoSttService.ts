@@ -6,6 +6,7 @@ import { app } from 'electron';
 import { logger } from '../utils/logger';
 import { loadSettings, store } from './SettingsService';
 import { isWhisperModelInstalled, whisperModelPath } from './AsrModelService';
+import { resolveModelPackPath } from './ModelPackService';
 import { resolveTranscriptionText, resolveCleanInput } from '../../shared/transcription';
 import { normalizeTranscriptionText } from './textProcessing';
 import type { TranscriptionData as SharedTranscriptionData } from '../../shared/electron-api';
@@ -264,9 +265,7 @@ export class MemoSttService extends EventEmitter {
           `(model=${env.MEMO_WHISPER_MODEL_PATH})`,
         );
       } else {
-        const conomoRoot = isDev
-          ? path.join(process.cwd(), '.build', 'conomo')
-          : path.join(process.resourcesPath, 'conomo');
+        const conomoRoot = resolveModelPackPath('conomo');
         const bundledWorker = path.join(conomoRoot, 'conomo');
         const contextualWorker = path.join(process.cwd(), 'scripts', 'shell', 'run-contextual-granite.sh');
 

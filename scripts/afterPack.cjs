@@ -66,6 +66,7 @@ module.exports = async function afterPack(context) {
     path.join(conomoPath, 'compiled'),
     path.join(conomoPath, 'tokenizer.json'),
     path.join(conomoPath, 'manifest.json'),
+    path.join(conomoPath, 'model-pack.json'),
     path.join(conomoPath, 'LICENSE-APACHE-2.0.txt'),
     path.join(conomoPath, 'NOTICE.txt'),
     path.join(conomoPath, 'VERSIONS'),
@@ -99,6 +100,7 @@ module.exports = async function afterPack(context) {
     path.join(pncPath, 'compiled', pncCompiledModels[0]),
     path.join(pncPath, 'tokenizer.vocab'),
     path.join(pncPath, 'manifest.json'),
+    path.join(pncPath, 'model-pack.json'),
     path.join(pncPath, 'VERSIONS'),
     path.join(pncPath, 'NOTICE.md'),
   ];

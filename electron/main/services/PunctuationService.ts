@@ -1,10 +1,10 @@
-import { app } from 'electron';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger';
+import { resolveModelPackPath } from './ModelPackService';
 
 const FORMAT_TIMEOUT_MS = 150;
 
@@ -28,9 +28,7 @@ export class PunctuationService {
   start(): void {
     if (this.process) return;
     try {
-      const bundle = app.isPackaged
-        ? path.join(process.resourcesPath, 'pnc')
-        : path.join(process.cwd(), '.build', 'pnc');
+      const bundle = resolveModelPackPath('pnc');
       const compiled = path.join(bundle, 'compiled');
       const modelName = fs.readdirSync(compiled).find((name) => name.endsWith('.mlmodelc'));
       if (!modelName) throw new Error('compiled PnC model is missing');
