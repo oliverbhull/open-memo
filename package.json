@@ -31,7 +31,8 @@
     "verify:conomo": "bash scripts/shell/verify-conomo-bundle.sh",
     "build:pnc": "bash scripts/shell/build-pnc.sh",
     "verify:pnc": "bash scripts/shell/verify-pnc-bundle.sh",
-    "build:backends": "npm run build:dictation && npm run build:conomo && npm run build:pnc && npm run build:cleanup",
+    "build:model-manifests": "node scripts/model-pack-manifest.cjs",
+    "build:backends": "npm run build:dictation && npm run build:conomo && npm run build:pnc && npm run build:cleanup && npm run build:model-manifests",
     "build:ble": "bash scripts/shell/build-ble-bridge.sh",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.json",
     "check": "npm run typecheck && npm test",
@@ -180,6 +181,7 @@
           "compiled/**",
           "tokenizer.json",
           "manifest.json",
+          "model-pack.json",
           "LICENSE-APACHE-2.0.txt",
           "NOTICE.txt",
           "VERSIONS",
@@ -194,6 +196,7 @@
           "compiled/**",
           "tokenizer.vocab",
           "manifest.json",
+          "model-pack.json",
           "VERSIONS",
           "NOTICE.md"
         ]

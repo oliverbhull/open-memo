@@ -7,6 +7,7 @@ import readline from 'node:readline';
 import { promisify } from 'node:util';
 import type { DeviceSyncStatus } from '../../shared/electron-api';
 import { isWhisperModelInstalled, whisperModelPath } from './AsrModelService';
+import { resolveModelPackPath } from './ModelPackService';
 import {
   FirmwareReleaseService,
   type FirmwareUpdateArtifact,
@@ -189,7 +190,7 @@ export class DeviceSyncService extends EventEmitter {
     bleBridge: string;
   } {
     const dev = !app.isPackaged;
-    const conomo = dev ? path.join(process.cwd(), '.build', 'conomo') : path.join(process.resourcesPath, 'conomo');
+    const conomo = resolveModelPackPath('conomo');
     return {
       python: path.join(conomo, 'device-runtime', 'bin', 'python3.12'),
       helper: dev ? path.join(process.cwd(), 'sidecars', 'device-sync', 'device_sync.py') : path.join(process.resourcesPath, 'device-sync', 'device_sync.py'),

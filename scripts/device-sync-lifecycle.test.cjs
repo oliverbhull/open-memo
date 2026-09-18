@@ -17,6 +17,7 @@ function setup(options = {}) {
     if (request === 'electron') return { app: { isPackaged: false, getPath: () => '/test-memo' } };
     if (request === 'node:fs') return { ...fs, existsSync: () => true };
     if (request === './AsrModelService') return { isWhisperModelInstalled: () => false, whisperModelPath: () => '/model' };
+    if (request === './ModelPackService') return { resolveModelPackPath: () => '/test-conomo' };
     if (request === './FirmwareReleaseService') return { FirmwareReleaseService: class {} };
     if (request === './SettingsService') return { loadSettings: () => ({ asrModel: 'conomo' }) };
     if (request === '../utils/logger') return { logger: { info() {}, warn() {}, error() {} } };

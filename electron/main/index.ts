@@ -35,6 +35,7 @@ import { PunctuationService } from './services/PunctuationService';
 import { CleanupService } from './services/CleanupService';
 import { pasteIntoFocusedTarget } from './services/checkedPaste';
 import { createDictationEntry } from '../shared/dictationEntry';
+import { ensurePersistentModelPacks } from './services/ModelPackService';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
 
@@ -70,6 +71,7 @@ let memoSttService: MemoSttService | null = null;
 let deviceSyncService: DeviceSyncService | null = null;
 const appUpdateService = new AppUpdateService(() => mainWindow, async () => {
   isQuitting = true;
+  await ensurePersistentModelPacks();
   await cleanupMemoStt();
 });
 let isRecording = false;
@@ -573,6 +575,14 @@ app.whenReady().then(async () => {
 
   // Run migration from file-based settings to electron-store
   migrateToElectronStore();
+
+  // Seed persistent, content-addressed model packs before workers start. App
+  // updates can become lightweight after one migration release has shipped.
+  try {
+    await ensurePersistentModelPacks();
+  } catch (error) {
+    logger.warn('[Main] Could not persist bundled model packs; using bundled assets for this launch:', error);
+  }
 
   // Memo owns a normal app window, so keep one foreground app identity on macOS.
   if (process.platform === 'darwin') app.setActivationPolicy('regular');
