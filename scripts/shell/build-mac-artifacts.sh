@@ -7,13 +7,13 @@ cd "${ROOT_DIR}"
 VERSION="$(node -p "require('./package.json').version")"
 FULL_UPDATE="$(node -e "const versions=require('./config/full-model-update-versions.json'); process.stdout.write(versions.includes(process.argv[1]) ? '1' : '0')" "${VERSION}")"
 
-# The DMG is always a complete clean installer.
-npx electron-builder --mac dmg --publish=never
-
 if [[ "${FULL_UPDATE}" == "1" ]]; then
   echo "Building required full-model transition update for ${VERSION}"
-  npx electron-builder --mac zip --publish=never
+  # Both artifacts contain the same complete app, so sign and notarize it once.
+  npx electron-builder --mac dmg zip --publish=never
 else
+  # The DMG remains a complete clean installer while the updater ZIP omits models.
+  npx electron-builder --mac dmg --publish=never
   echo "Building lightweight app-only update for ${VERSION}"
   MEMO_THIN_UPDATE=1 npx electron-builder --mac zip --publish=never
 fi
