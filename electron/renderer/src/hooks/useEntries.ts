@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { FeedEntryData } from '../components/FeedEntry';
 import { entryService } from '../services/EntryService';
+import { mergeChronologically } from '../utils/orderEntries';
 
 export function useEntries() {
   const [entries, setEntries] = useState<FeedEntryData[]>([]);
@@ -37,7 +38,7 @@ export function useEntries() {
     // Listen for new entries
     const handleEntryAdded = (entry: FeedEntryData) => {
       if (!abortController.signal.aborted && mountedRef.current) {
-        setEntries(prev => [entry, ...prev]);
+        setEntries(prev => mergeChronologically(prev, [entry]));
       }
     };
 
@@ -74,7 +75,7 @@ export function useEntries() {
   const loadMore = useCallback(async (count: number = 50) => {
     try {
       const newEntries = await entryService.loadMoreEntries(count);
-      setEntries(prev => [...prev, ...newEntries]);
+      setEntries(prev => mergeChronologically(prev, newEntries));
       return newEntries;
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to load more entries'));

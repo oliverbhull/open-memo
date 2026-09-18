@@ -3,6 +3,7 @@ import { storageService } from './StorageService';
 import { createValidEntry, convertToMemoEntry, convertToFeedEntry } from '../utils/validation';
 import { getDeviceId } from './DeviceIdService';
 import { logger } from '../utils/logger';
+import { mergeChronologically } from '../utils/orderEntries';
 
 interface EntryEventMap {
   initialized: [];
@@ -42,6 +43,10 @@ export class EntryService extends EventEmitter {
   private initPromise: Promise<void> | null = null;
   private recentEntries: FeedEntryData[] = [];
   private readonly INITIAL_LOAD_COUNT = 100;
+
+  private insertChronologically(entry: FeedEntryData): void {
+    this.recentEntries = mergeChronologically(this.recentEntries, [entry]).slice(0, 200);
+  }
 
   /**
    * Initialize the service and load recent entries
@@ -118,8 +123,7 @@ export class EntryService extends EventEmitter {
     if (existing) {
       const entry = convertToFeedEntry(existing);
       if (!this.recentEntries.some((cached) => cached.id === id)) {
-        this.recentEntries.unshift(entry);
-        this.recentEntries = this.recentEntries.slice(0, 200);
+        this.insertChronologically(entry);
         this.emit('entryAdded', entry);
       }
       return entry;
@@ -136,13 +140,8 @@ export class EntryService extends EventEmitter {
       const memoEntry = convertToMemoEntry(feedEntry, deviceId);
       await storageService.saveEntry(memoEntry);
 
-      // Add to recent entries cache (at the beginning)
-      this.recentEntries.unshift(feedEntry);
-
-      // Keep cache size reasonable (only keep most recent 200 in memory)
-      if (this.recentEntries.length > 200) {
-        this.recentEntries = this.recentEntries.slice(0, 200);
-      }
+      // Keep live additions in the same chronological order as database reloads.
+      this.insertChronologically(feedEntry);
 
       this.emit('entryAdded', feedEntry);
       return feedEntry;

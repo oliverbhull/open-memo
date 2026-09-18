@@ -23,9 +23,10 @@ CREATE TABLE IF NOT EXISTS memo_entries(
   deleted_at_ms INTEGER,
   context_json TEXT NOT NULL CHECK(json_valid(context_json))
 );
-CREATE INDEX IF NOT EXISTS memo_entries_active_updated_idx
-  ON memo_entries(updated_at_ms DESC, id DESC)
+CREATE INDEX IF NOT EXISTS memo_entries_active_created_idx
+  ON memo_entries(created_at_ms DESC, id DESC)
   WHERE deleted_at_ms IS NULL;
+DROP INDEX IF EXISTS memo_entries_active_updated_idx;
 INSERT OR IGNORE INTO schema_meta(key, value)
   VALUES('desktop_schema_version', '1');
 `;
@@ -210,7 +211,7 @@ FROM memo_entries WHERE id=${sqliteText(normalizedId)} LIMIT 1;
 SELECT id, device_id, text, created_at_ms, updated_at_ms, deleted_at_ms, context_json
 FROM memo_entries
 WHERE deleted_at_ms IS NULL
-ORDER BY updated_at_ms DESC, id DESC
+ORDER BY created_at_ms DESC, id DESC
 LIMIT ${normalizedLimit} OFFSET ${normalizedOffset};
 `);
       return rows.map(parseEntry);
@@ -224,7 +225,7 @@ LIMIT ${normalizedLimit} OFFSET ${normalizedOffset};
 SELECT id, device_id, text, created_at_ms, updated_at_ms, deleted_at_ms, context_json
 FROM memo_entries
 WHERE deleted_at_ms IS NULL
-ORDER BY updated_at_ms DESC, id DESC;
+ORDER BY created_at_ms DESC, id DESC;
 `);
       return rows.map(parseEntry);
     });
@@ -236,7 +237,7 @@ ORDER BY updated_at_ms DESC, id DESC;
       const rows = await this.query(`
 SELECT id, device_id, text, created_at_ms, updated_at_ms, deleted_at_ms, context_json
 FROM memo_entries
-ORDER BY updated_at_ms DESC, id DESC;
+ORDER BY created_at_ms DESC, id DESC;
 `);
       return rows.map(parseEntry);
     });

@@ -65,6 +65,34 @@ test('renderer displays a main-persisted entry once and never resurrects a tombs
   assert.equal(events.length, 1);
 });
 
+test('reconciled supermicrophone recordings retain chronological feed order', async () => {
+  const stored = new Map([
+    ['new-desktop', { id: 'new-desktop', deviceId: 'desktop-test', text: 'New.', createdAt: 3000, updatedAt: 3000, context: { source: 'desktop' } }],
+    ['old-device', { id: 'old-device', deviceId: 'desktop-test', text: 'Old.', createdAt: 1000, updatedAt: 1000, context: { source: 'memo-device' } }],
+  ]);
+  const { EntryService } = load('electron/renderer/src/services/EntryService.ts', {
+    './StorageService': { storageService: { init: async () => {},
+      getEntries: async () => [stored.get('new-desktop')],
+      getEntry: async id => stored.get(id), saveEntry: async () => assert.fail('already persisted') } },
+    './DeviceIdService': { getDeviceId: async () => 'desktop-test' },
+    '../utils/logger': { logger: { warn() {}, error() {} } },
+  });
+  const service = new EntryService();
+  await service.init();
+  await service.addEntry({ id: 'old-device', processedText: 'Old.', timestamp: 1000 });
+  assert.deepEqual(service.getRecentEntries().map(entry => entry.id), ['new-desktop', 'old-device']);
+});
+
+test('database history is ordered by creation time rather than later updates', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'memo-order-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { MemoDatabaseService } = load('electron/main/services/MemoDatabaseService.ts');
+  const database = new MemoDatabaseService({ databasePath: path.join(directory, 'history.sqlite3') });
+  await database.saveEntry({ id: 'new', deviceId: 'test', text: 'New.', createdAt: 3000, updatedAt: 3000, context: {} });
+  await database.saveEntry({ id: 'old-edited', deviceId: 'test', text: 'Old.', createdAt: 1000, updatedAt: 4000, context: {} });
+  assert.deepEqual((await database.getEntries(10, 0)).map(entry => entry.id), ['new', 'old-edited']);
+});
+
 test('application metadata does not block dictation on a shell lookup', () => {
   const { ApplicationIconService } = load('electron/main/services/ApplicationIconService.ts', {
     electron: { app: { isPackaged: true }, nativeImage: {} },
