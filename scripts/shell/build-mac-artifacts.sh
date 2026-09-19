@@ -12,8 +12,8 @@ if [[ "${FULL_UPDATE}" == "1" ]]; then
   # Both artifacts contain the same complete app, so sign and notarize it once.
   npx electron-builder --mac dmg zip --publish=never
 else
-  # The DMG remains a complete clean installer while the updater ZIP omits models.
-  npx electron-builder --mac dmg --publish=never
+  # Thin releases reuse the last notarized full installer and notarize only the
+  # app-only updater. This avoids a second Apple submission in the same job.
   echo "Building lightweight app-only update for ${VERSION}"
   MEMO_THIN_UPDATE=1 npx electron-builder --mac zip --publish=never
 fi
