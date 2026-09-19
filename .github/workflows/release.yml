@@ -170,11 +170,19 @@ jobs:
 
       - name: Verify signed app
         run: |
-          bash scripts/shell/verify-conomo-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/conomo
-          bash scripts/shell/verify-pnc-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/pnc
-          bash scripts/shell/verify-cleanup-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/cleanup
-          test "$(jq -r .fixture dist/mac-arm64/Memo.app/Contents/Resources/cleanup/manifest.json)" = false
-          test "$(jq -r .status dist/mac-arm64/Memo.app/Contents/Resources/cleanup/manifest.json)" = production_ready
+          version="$(node -p "require('./package.json').version")"
+          full_update="$(node -e "const versions=require('./config/full-model-update-versions.json'); process.stdout.write(versions.includes(process.argv[1]) ? '1' : '0')" "${version}")"
+          if [[ "${full_update}" == "1" ]]; then
+            bash scripts/shell/verify-conomo-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/conomo
+            bash scripts/shell/verify-pnc-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/pnc
+            bash scripts/shell/verify-cleanup-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/cleanup
+            test "$(jq -r .fixture dist/mac-arm64/Memo.app/Contents/Resources/cleanup/manifest.json)" = false
+            test "$(jq -r .status dist/mac-arm64/Memo.app/Contents/Resources/cleanup/manifest.json)" = production_ready
+          else
+            test ! -e dist/mac-arm64/Memo.app/Contents/Resources/conomo
+            test ! -e dist/mac-arm64/Memo.app/Contents/Resources/pnc
+            test ! -e dist/mac-arm64/Memo.app/Contents/Resources/cleanup
+          fi
           dictation_bin="dist/mac-arm64/Memo.app/Contents/Resources/dictation/memo-dictation"
           test -x "${dictation_bin}"
           codesign --verify --strict --verbose=2 "${dictation_bin}"
@@ -187,14 +195,25 @@ jobs:
           xcrun stapler validate dist/mac-arm64/Memo.app
 
       - name: Collect release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p release-artifacts
           node scripts/release-artifacts.cjs dist
+          version="$(node -p "require('./package.json').version")"
+          full_update="$(node -e "const versions=require('./config/full-model-update-versions.json'); process.stdout.write(versions.includes(process.argv[1]) ? '1' : '0')" "${version}")"
           shopt -s nullglob
-          dmg_artifacts=(dist/Open-Memo-*.dmg)
-          artifacts=(dist/Open-Memo-*.dmg dist/Open-Memo-*.zip dist/latest-mac.yml)
+          artifacts=(dist/Open-Memo-*.zip dist/latest-mac.yml)
           cp "${artifacts[@]}" release-artifacts/
-          cp "${dmg_artifacts[0]}" release-artifacts/Open-Memo-latest-arm64.dmg
+          if [[ "${full_update}" == "1" ]]; then
+            dmg_artifacts=(dist/Open-Memo-*.dmg)
+            cp "${dmg_artifacts[0]}" release-artifacts/
+            cp "${dmg_artifacts[0]}" release-artifacts/Open-Memo-latest-arm64.dmg
+          else
+            installer_tag="$(node -p "require('./config/full-installer-release.json').tag")"
+            installer_asset="$(node -p "require('./config/full-installer-release.json').asset")"
+            gh release download "${installer_tag}" --pattern "${installer_asset}" --dir release-artifacts
+          fi
           ls -lh release-artifacts
 
       - name: Upload release artifacts
