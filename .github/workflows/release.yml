@@ -25,6 +25,7 @@ jobs:
   release:
     name: Build signed macOS release
     runs-on: macos-15
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -155,6 +156,7 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           CSC_NAME: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          DEBUG: electron-notarize*
         run: |
           if [[ -z "${CONOMO_URL}" || -z "${CONOMO_SHA256}" || -z "${CONOMO_TOKEN}" || -z "${CLEANUP_URL}" || -z "${CLEANUP_SHA256}" || -z "${APPLE_TEAM_ID}" || -z "${APPLE_API_KEY_BASE64}" || -z "${APPLE_API_KEY_ID}" || -z "${APPLE_API_ISSUER}" ]]; then
             echo "Missing model bundle or Apple release secrets." >&2

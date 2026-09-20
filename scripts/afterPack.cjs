@@ -11,6 +11,23 @@ function sh(cmd, args, opts = {}) {
   });
 }
 
+const CODESIGN_TIMEOUT_MS = 120_000;
+
+async function codesign(args) {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      return await sh('codesign', args, {
+        timeout: CODESIGN_TIMEOUT_MS,
+        killSignal: 'SIGKILL',
+      });
+    } catch (error) {
+      const timedOut = error && (error.killed || error.signal === 'SIGKILL');
+      if (!timedOut || attempt === 2) throw error;
+      console.warn(`codesign exceeded ${CODESIGN_TIMEOUT_MS / 1000}s; retrying once`);
+    }
+  }
+}
+
 function capture(cmd, args) {
   return new Promise((resolve, reject) => {
     execFile(cmd, args, { encoding: 'utf8' }, (err, stdout) => err ? reject(err) : resolve(stdout));
@@ -61,7 +78,7 @@ module.exports = async function afterPack(context) {
   if (thinUpdate) {
     if (shouldSign) {
       const signer = process.env.CSC_NAME || process.env.CODE_SIGN_IDENTITY || 'Developer ID Application';
-      await sh('codesign', [
+      await codesign([
         '--force', '--options', 'runtime',
         '--entitlements', path.resolve('config/entitlements.mac.plist'),
         '--sign', signer,
@@ -143,7 +160,7 @@ module.exports = async function afterPack(context) {
     const nativeLibraries = walkFiles(path.join(conomoPath, 'device-runtime'))
       .filter((filePath) => filePath.endsWith('.so') || filePath.endsWith('.dylib'));
     for (const nativeLibrary of nativeLibraries) {
-      await sh('codesign', [
+      await codesign([
         '--force',
         '--options', 'runtime',
         '--sign', signer,
@@ -156,31 +173,31 @@ module.exports = async function afterPack(context) {
       if (description.includes('Mach-O')) cleanupNativeFiles.push(filePath);
     }
     for (const nativeFile of cleanupNativeFiles) {
-      await sh('codesign', [
+      await codesign([
         '--force', '--options', 'runtime',
         '--entitlements', path.resolve('config/entitlements.cleanup.plist'),
         '--sign', signer, nativeFile,
       ]);
     }
-    await sh('codesign', [
+    await codesign([
       '--force',
       '--options', 'runtime',
       '--entitlements', path.resolve('config/entitlements.mac.plist'),
       '--sign', signer,
       devicePython,
     ]);
-    await sh('codesign', [
+    await codesign([
       '--force', '--options', 'runtime',
       '--entitlements', path.resolve('config/entitlements.mac.plist'),
       '--sign', signer, conomoWorker,
     ]);
-    await sh('codesign', [
+    await codesign([
       '--force', '--options', 'runtime',
       '--entitlements', path.resolve('config/entitlements.mac.plist'),
       '--sign', signer, pncWorker,
     ]);
     console.log(`✓ Signed ${nativeLibraries.length} device runtime libraries, ${cleanupNativeFiles.length} cleanup runtime binaries, Python, conomo worker, and PnC worker`);
-    await sh('codesign', [
+    await codesign([
       '--force',
       '--options', 'runtime',
       '--entitlements', path.resolve('config/entitlements.mac.plist'),
