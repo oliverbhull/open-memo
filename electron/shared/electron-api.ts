@@ -49,6 +49,14 @@ export interface MemoSttError {
   name: string;
 }
 
+export interface DictationReadiness {
+  hotkey: boolean;
+  microphone: boolean;
+  model: boolean;
+  ready: boolean;
+  microphoneName?: string;
+}
+
 export interface PhraseReplacementRule {
   id: string;
   find: string;
@@ -168,12 +176,16 @@ export interface ElectronAPI {
   restart(): Promise<void>;
   checkMicrophonePermission(): Promise<boolean>;
   requestMicrophonePermission(): Promise<boolean>;
+  openMicrophonePreferences(): Promise<void>;
   checkInputMonitoringPermission(): Promise<boolean>;
+  requestInputMonitoringPermission(): Promise<boolean>;
   openInputMonitoringPreferences(): Promise<void>;
   checkAccessibilityPermission(): Promise<boolean>;
+  requestAccessibilityPermission(): Promise<boolean>;
   openSystemPreferences(): Promise<void>;
+  openAutomationPreferences(): Promise<void>;
   restartApp(): Promise<void>;
-  startMemoSttService(): Promise<void>;
+  startMemoSttService(): Promise<DictationReadiness>;
   saveUserName(name: string): Promise<void>;
   getUserName(): Promise<string | null>;
   isUserOnboarded(userName: string): Promise<boolean>;

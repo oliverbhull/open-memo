@@ -7,7 +7,7 @@ const fullModelUpdateVersions = require('../config/full-model-update-versions.js
 async function verifyReleaseArtifacts(directory, version, options = {}) {
   const names = fs.readdirSync(directory);
   const fullUpdate = options.fullUpdate ?? fullModelUpdateVersions.includes(version);
-  const extensions = fullUpdate ? ['zip', 'dmg'] : ['zip'];
+  const extensions = ['zip', 'dmg'];
   const expected = extensions.map(extension => `Open-Memo-${version}-arm64.${extension}`);
   for (const extension of extensions) {
     const matches = names.filter(name => name.endsWith(`.${extension}`));
@@ -15,14 +15,9 @@ async function verifyReleaseArtifacts(directory, version, options = {}) {
       throw new Error(`Expected exactly one versioned ARM64 ${extension}: ${version}`);
     }
   }
-  if (!fullUpdate && names.some(name => name.endsWith('.dmg'))) {
-    throw new Error('Thin release build must not contain a DMG');
-  }
-  if (fullUpdate) {
-    const dmgPath = path.join(directory, expected[1]);
-    if (!fs.lstatSync(dmgPath).isFile() || fs.statSync(dmgPath).size === 0) {
-      throw new Error('Full installer DMG is empty');
-    }
+  const dmgPath = path.join(directory, expected[1]);
+  if (!fs.lstatSync(dmgPath).isFile() || fs.statSync(dmgPath).size === 0) {
+    throw new Error('Full installer DMG is empty');
   }
   const manifest = load(fs.readFileSync(path.join(directory, 'latest-mac.yml'), 'utf8'));
   const expectedManifestFiles = fullUpdate ? 2 : 1;

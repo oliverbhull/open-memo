@@ -1,6 +1,6 @@
 {
   "name": "open-memo",
-  "version": "0.8.17",
+  "version": "0.8.18",
   "description": "Open-source push-to-talk dictation for macOS",
   "homepage": "https://github.com/oliverbhull/open-memo",
   "main": "dist/main.cjs",
@@ -122,6 +122,7 @@
       ],
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Memo needs microphone access to record audio for transcription.",
+        "NSAppleEventsUsageDescription": "Memo uses System Events to type your dictation into the app you are using.",
         "NSBluetoothAlwaysUsageDescription": "Memo uses Bluetooth to connect to supermicrophone."
       },
       "notarize": true,

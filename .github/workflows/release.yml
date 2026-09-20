@@ -172,13 +172,22 @@ jobs:
         run: |
           version="$(node -p "require('./package.json').version")"
           full_update="$(node -e "const versions=require('./config/full-model-update-versions.json'); process.stdout.write(versions.includes(process.argv[1]) ? '1' : '0')" "${version}")"
-          if [[ "${full_update}" == "1" ]]; then
-            bash scripts/shell/verify-conomo-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/conomo
-            bash scripts/shell/verify-pnc-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/pnc
-            bash scripts/shell/verify-cleanup-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/cleanup
-            test "$(jq -r .fixture dist/mac-arm64/Memo.app/Contents/Resources/cleanup/manifest.json)" = false
-            test "$(jq -r .status dist/mac-arm64/Memo.app/Contents/Resources/cleanup/manifest.json)" = production_ready
-          else
+          installer_mount="$(mktemp -d /tmp/memo-installer.XXXXXX)"
+          hdiutil attach "dist/Open-Memo-${version}-arm64.dmg" -nobrowse -readonly -mountpoint "${installer_mount}"
+          trap 'hdiutil detach "${installer_mount}" >/dev/null 2>&1 || true; rm -rf "${installer_mount}"' EXIT
+          installer_app="${installer_mount}/Memo.app"
+          test "$(defaults read "${installer_app}/Contents/Info" CFBundleShortVersionString)" = "${version}"
+          bash scripts/shell/verify-conomo-bundle.sh "${installer_app}/Contents/Resources/conomo"
+          bash scripts/shell/verify-pnc-bundle.sh "${installer_app}/Contents/Resources/pnc"
+          bash scripts/shell/verify-cleanup-bundle.sh "${installer_app}/Contents/Resources/cleanup"
+          test "$(jq -r .fixture "${installer_app}/Contents/Resources/cleanup/manifest.json")" = false
+          test "$(jq -r .status "${installer_app}/Contents/Resources/cleanup/manifest.json")" = production_ready
+          codesign --verify --deep --strict --verbose=2 "${installer_app}"
+          spctl --assess --type execute --verbose "${installer_app}"
+          hdiutil detach "${installer_mount}"
+          rm -rf "${installer_mount}"
+          trap - EXIT
+          if [[ "${full_update}" != "1" ]]; then
             test ! -e dist/mac-arm64/Memo.app/Contents/Resources/conomo
             test ! -e dist/mac-arm64/Memo.app/Contents/Resources/pnc
             test ! -e dist/mac-arm64/Memo.app/Contents/Resources/cleanup
@@ -195,25 +204,14 @@ jobs:
           xcrun stapler validate dist/mac-arm64/Memo.app
 
       - name: Collect release artifacts
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p release-artifacts
           node scripts/release-artifacts.cjs dist
-          version="$(node -p "require('./package.json').version")"
-          full_update="$(node -e "const versions=require('./config/full-model-update-versions.json'); process.stdout.write(versions.includes(process.argv[1]) ? '1' : '0')" "${version}")"
           shopt -s nullglob
-          artifacts=(dist/Open-Memo-*.zip dist/latest-mac.yml)
+          dmg_artifacts=(dist/Open-Memo-*.dmg)
+          artifacts=(dist/Open-Memo-*.dmg dist/Open-Memo-*.zip dist/latest-mac.yml)
           cp "${artifacts[@]}" release-artifacts/
-          if [[ "${full_update}" == "1" ]]; then
-            dmg_artifacts=(dist/Open-Memo-*.dmg)
-            cp "${dmg_artifacts[0]}" release-artifacts/
-            cp "${dmg_artifacts[0]}" release-artifacts/Open-Memo-latest-arm64.dmg
-          else
-            installer_tag="$(node -p "require('./config/full-installer-release.json').tag")"
-            installer_asset="$(node -p "require('./config/full-installer-release.json').asset")"
-            gh release download "${installer_tag}" --pattern "${installer_asset}" --dir release-artifacts
-          fi
+          cp "${dmg_artifacts[0]}" release-artifacts/Open-Memo-latest-arm64.dmg
           ls -lh release-artifacts
 
       - name: Upload release artifacts

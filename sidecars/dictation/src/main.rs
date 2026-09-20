@@ -48,6 +48,17 @@ fn require_input_monitoring() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn input_monitoring_authorized(request: bool) -> bool {
+    (unsafe { CGPreflightListenEventAccess() })
+        || request && unsafe { CGRequestListenEventAccess() }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn input_monitoring_authorized(_request: bool) -> bool {
+    true
+}
+
 #[cfg(not(target_os = "macos"))]
 fn require_input_monitoring() -> Result<(), Box<dyn std::error::Error>> {
     println_ui_flush!("HOTKEY_READY");
@@ -552,6 +563,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     parent_watchdog::start();
     if std::env::args().any(|argument| argument == "--batch-transcribe") {
         return mrec_batch::run();
+    }
+
+    // Permission probes intentionally exit before microphone/model startup so
+    // onboarding can request and verify the global hotkey capability directly.
+    if std::env::args().any(|argument| argument == "--check-input-monitoring") {
+        if input_monitoring_authorized(false) {
+            println_ui_flush!("HOTKEY_READY");
+            return Ok(());
+        }
+        println_ui_flush!("HOTKEY_PERMISSION_REQUIRED");
+        std::process::exit(2);
+    }
+    if std::env::args().any(|argument| argument == "--request-input-monitoring") {
+        if input_monitoring_authorized(true) {
+            println_ui_flush!("HOTKEY_READY");
+            return Ok(());
+        }
+        println_ui_flush!("HOTKEY_PERMISSION_REQUIRED");
+        std::process::exit(2);
     }
 
     // Parse the configured hotkey.

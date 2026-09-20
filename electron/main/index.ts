@@ -36,6 +36,7 @@ import { CleanupService } from './services/CleanupService';
 import { pasteIntoFocusedTarget } from './services/checkedPaste';
 import { createDictationEntry } from '../shared/dictationEntry';
 import { ensurePersistentModelPacks } from './services/ModelPackService';
+import { checkInputMonitoringPermission } from './services/InputMonitoringPermissionService';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
 
@@ -324,7 +325,23 @@ async function setupMemoSttService(): Promise<void> {
             delivery = 'clipboard_only';
             const clipboardMs = performance.now() - pasteStarted;
             const pasteEventStarted = performance.now();
-            const outcome = pasteIntoFocusedTarget(pressEnterThisTime);
+            // The onboarding test field lives inside Memo. Paste into our own
+            // focused renderer directly; routing that through System Events can
+            // trigger an unrelated Automation prompt or timeout. Other apps
+            // continue through the permission-checked system paste path.
+            const outcome = mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()
+              ? (() => {
+                  mainWindow.webContents.paste();
+                  if (pressEnterThisTime) {
+                    mainWindow.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
+                    mainWindow.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
+                  }
+                  return {
+                    status: 'pasted' as const,
+                    appContext: { appName: 'Memo', windowTitle: 'Memo' },
+                  };
+                })()
+              : pasteIntoFocusedTarget(pressEnterThisTime);
             delivery = outcome.status;
             deliveryAppContext = outcome.appContext;
             const pasted = outcome.status === 'pasted';
@@ -789,24 +806,19 @@ ipcMain.handle('permissions:request-microphone', async () => {
   }
 });
 
-ipcMain.handle('permissions:check-input-monitoring', async () => {
-  if (process.platform !== 'darwin') {
-    return true; // Assume granted on non-macOS
-  }
-  
-  try {
-    // Input Monitoring doesn't have a direct API in Electron
-    // We check by trying to use the permission (indirect check)
-    // For now, we'll use a workaround: check if the app can monitor input
-    // This is a best-effort check - the actual permission is managed by macOS
-    // Electron has no API for this distinct macOS permission. The memo-stt
-    // process reports an actionable error if access is missing.
-    return app.isReady();
-  } catch (error) {
-    logger.error('Failed to check input monitoring permission:', error);
-    return false;
+ipcMain.handle('permissions:open-microphone-preferences', async () => {
+  if (process.platform === 'darwin') {
+    await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
   }
 });
+
+ipcMain.handle('permissions:check-input-monitoring', async () => {
+  return checkInputMonitoringPermission(false);
+});
+
+ipcMain.handle('permissions:request-input-monitoring', async () => (
+  checkInputMonitoringPermission(true)
+));
 
 ipcMain.handle('permissions:open-input-monitoring-preferences', async () => {
   if (process.platform !== 'darwin') {
@@ -850,6 +862,16 @@ ipcMain.handle('permissions:check-accessibility', async () => {
   }
 });
 
+ipcMain.handle('permissions:request-accessibility', async () => {
+  if (process.platform !== 'darwin') return true;
+  try {
+    return systemPreferences.isTrustedAccessibilityClient(true);
+  } catch (error) {
+    logger.error('Failed to request accessibility permission:', error);
+    return false;
+  }
+});
+
 ipcMain.handle('permissions:open-system-preferences', async () => {
   if (process.platform !== 'darwin') {
     return;
@@ -869,6 +891,12 @@ ipcMain.handle('permissions:open-system-preferences', async () => {
   }
 });
 
+ipcMain.handle('permissions:open-automation-preferences', async () => {
+  if (process.platform === 'darwin') {
+    await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Automation');
+  }
+});
+
 ipcMain.handle('app:restart', () => {
   app.relaunch();
   app.exit(0);
@@ -880,8 +908,11 @@ ipcMain.handle('app:start-memo-stt-service', async () => {
     logger.info('[Main] Starting memo-stt service on demand');
     await setupMemoSttService();
   } else {
-    logger.info('[Main] memo-stt service already running');
+    logger.info('[Main] Ensuring memo-stt service is running');
+    await startLiveDictation();
   }
+  if (!memoSttService) throw new Error('Memo dictation service could not be created.');
+  return memoSttService.waitUntilReady();
 });
 
 // User name handlers
@@ -890,7 +921,19 @@ function normalizeUserName(value: unknown): string {
 }
 
 ipcMain.handle('user:save-name', async (_event, name: unknown) => {
-  saveUserSettings({ userName: normalizeUserName(name) });
+  const normalizedName = normalizeUserName(name);
+  saveUserSettings({ userName: normalizedName });
+  if (normalizedName) {
+    const settings = loadSettings();
+    const hasName = settings.vocabWords.some(
+      word => word.toLocaleLowerCase() === normalizedName.toLocaleLowerCase(),
+    );
+    if (!hasName) {
+      settings.vocabWords = [...settings.vocabWords, normalizedName];
+      saveSettings(settings);
+      memoSttService?.updateVocabulary();
+    }
+  }
 });
 
 ipcMain.handle('user:get-name', async () => {

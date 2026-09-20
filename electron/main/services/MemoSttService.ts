@@ -9,7 +9,7 @@ import { isWhisperModelInstalled, whisperModelPath } from './AsrModelService';
 import { resolveModelPackPath } from './ModelPackService';
 import { resolveTranscriptionText, resolveCleanInput } from '../../shared/transcription';
 import { normalizeTranscriptionText } from './textProcessing';
-import type { TranscriptionData as SharedTranscriptionData } from '../../shared/electron-api';
+import type { DictationReadiness, TranscriptionData as SharedTranscriptionData } from '../../shared/electron-api';
 
 export interface AppContext {
   appName: string;
@@ -56,6 +56,12 @@ export class MemoSttService extends EventEmitter {
   /** Timestamp (ms) when the current process was spawned — used to detect quick-exit device errors */
   private processStartedAt: number | null = null;
   private hotkeyPermissionFailed = false;
+  private readiness: DictationReadiness = {
+    hotkey: false,
+    microphone: false,
+    model: false,
+    ready: false,
+  };
   /** Quick-exit threshold: if process exits within this many ms with non-zero code, assume audio device error */
   private readonly QUICK_EXIT_THRESHOLD_MS = 4000;
   constructor() {
@@ -69,6 +75,58 @@ export class MemoSttService extends EventEmitter {
 
   setHotkey(hotkey: string): void {
     this.hotkey = hotkey;
+  }
+
+  getReadiness(): DictationReadiness {
+    return { ...this.readiness };
+  }
+
+  private updateReadiness(update: Partial<DictationReadiness>): void {
+    this.readiness = { ...this.readiness, ...update };
+    this.readiness.ready = this.readiness.hotkey && this.readiness.microphone && this.readiness.model;
+    this.emit('readiness', this.getReadiness());
+  }
+
+  async waitUntilReady(timeoutMs = 60_000): Promise<DictationReadiness> {
+    if (this.readiness.ready) return this.getReadiness();
+    if (this.status === 'error') {
+      throw new Error('Memo could not start the microphone and keyboard shortcut.');
+    }
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timeout);
+        this.removeListener('readiness', onReadiness);
+        this.removeListener('error', onError);
+        this.removeListener('status', onStatus);
+        this.removeListener('micDeviceError', onMicDeviceError);
+      };
+      const onReadiness = (state: DictationReadiness) => {
+        if (!state.ready) return;
+        cleanup();
+        resolve(state);
+      };
+      const onError = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+      const onStatus = (status: MemoSttStatus) => {
+        if (status === 'running') return;
+        cleanup();
+        reject(new Error('Memo stopped before the microphone and keyboard shortcut were ready.'));
+      };
+      const onMicDeviceError = () => {
+        cleanup();
+        reject(new Error('Memo could not open the system microphone.'));
+      };
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('Memo could not finish preparing the microphone and keyboard shortcut.'));
+      }, timeoutMs);
+      this.on('readiness', onReadiness);
+      this.on('error', onError);
+      this.on('status', onStatus);
+      this.on('micDeviceError', onMicDeviceError);
+    });
   }
 
   /**
@@ -157,6 +215,7 @@ export class MemoSttService extends EventEmitter {
     
     logger.info(`[MemoSttService #${this.instanceId}] Starting dictation service`);
     this.hotkeyPermissionFailed = false;
+    this.readiness = { hotkey: false, microphone: false, model: false, ready: false };
 
     // Clear any pending restart
     if (this.restartTimeout) {
@@ -563,6 +622,7 @@ export class MemoSttService extends EventEmitter {
   private async processLine(line: string): Promise<void> {
     if (line === 'HOTKEY_READY') {
       logger.info('[MemoSttService] Hotkey listener authorized');
+      this.updateReadiness({ hotkey: true });
       return;
     }
 
@@ -602,6 +662,7 @@ export class MemoSttService extends EventEmitter {
           logger.debug('[MemoSttService] Could not persist MIC_INFO:', e);
         }
         logger.info(`[MemoSttService] Active microphone: ${name} (${rate} Hz)`);
+        this.updateReadiness({ microphoneName: name });
         this.emit('micInfoUpdated');
       }
       return;
@@ -609,6 +670,13 @@ export class MemoSttService extends EventEmitter {
 
     if (line === 'MIC_READY') {
       logger.info('[MemoSttService] Selected microphone stream is ready');
+      this.updateReadiness({ microphone: true });
+      return;
+    }
+
+    if (line === 'Ready!') {
+      logger.info('[MemoSttService] Speech model is ready');
+      this.updateReadiness({ model: true });
       return;
     }
 

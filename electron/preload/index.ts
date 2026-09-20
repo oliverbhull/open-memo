@@ -4,6 +4,7 @@ import type {
   AsrSelectionResult,
   AsrState,
   CleanupState,
+  DictationReadiness,
   DeviceSyncStatus,
   ElectronAPI,
   MemoSttError,
@@ -129,8 +130,16 @@ const electronAPI = {
     return ipcRenderer.invoke('permissions:request-microphone');
   },
 
+  openMicrophonePreferences: (): Promise<void> => {
+    return ipcRenderer.invoke('permissions:open-microphone-preferences');
+  },
+
   checkInputMonitoringPermission: (): Promise<boolean> => {
     return ipcRenderer.invoke('permissions:check-input-monitoring');
+  },
+
+  requestInputMonitoringPermission: (): Promise<boolean> => {
+    return ipcRenderer.invoke('permissions:request-input-monitoring');
   },
 
   openInputMonitoringPreferences: (): Promise<void> => {
@@ -141,15 +150,23 @@ const electronAPI = {
     return ipcRenderer.invoke('permissions:check-accessibility');
   },
 
+  requestAccessibilityPermission: (): Promise<boolean> => {
+    return ipcRenderer.invoke('permissions:request-accessibility');
+  },
+
   openSystemPreferences: (): Promise<void> => {
     return ipcRenderer.invoke('permissions:open-system-preferences');
+  },
+
+  openAutomationPreferences: (): Promise<void> => {
+    return ipcRenderer.invoke('permissions:open-automation-preferences');
   },
 
   restartApp: (): Promise<void> => {
     return ipcRenderer.invoke('app:restart');
   },
 
-  startMemoSttService: (): Promise<void> => {
+  startMemoSttService: (): Promise<DictationReadiness> => {
     return ipcRenderer.invoke('app:start-memo-stt-service');
   },
 
