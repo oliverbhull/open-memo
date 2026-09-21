@@ -78,6 +78,10 @@ module.exports = async function afterPack(context) {
   if (thinUpdate) {
     if (shouldSign) {
       const signer = process.env.CSC_NAME || process.env.CODE_SIGN_IDENTITY || 'Developer ID Application';
+      // The full installer pass can leave this hardlinked staging binary signed.
+      // Replacing that signature has hung codesign on GitHub's macOS runners, so
+      // make the thin pass start from an explicitly unsigned helper.
+      await sh('codesign', ['--remove-signature', bleBridge]);
       await codesign([
         '--force', '--options', 'runtime',
         '--entitlements', path.resolve('config/entitlements.mac.plist'),
