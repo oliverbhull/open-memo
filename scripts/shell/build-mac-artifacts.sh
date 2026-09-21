@@ -14,7 +14,14 @@ if [[ "${FULL_UPDATE}" == "1" ]]; then
 else
   # Every release needs a current, self-contained clean installer. The updater
   # remains thin so existing installations keep their persistent model packs.
+  # Use a separate output tree so the second signing pass never reuses the
+  # notarized full app's staging path.
   npx electron-builder --mac dmg --publish=never
   echo "Building lightweight app-only update for ${VERSION}"
-  MEMO_THIN_UPDATE=1 npx electron-builder --mac zip --publish=never
+  MEMO_THIN_UPDATE=1 npx electron-builder --mac zip --publish=never \
+    --config.directories.output=dist-thin
+  cp "dist-thin/Open-Memo-${VERSION}-arm64.zip" dist/
+  cp dist-thin/latest-mac.yml dist/
+  rm -rf dist/mac-arm64
+  cp -R dist-thin/mac-arm64 dist/mac-arm64
 fi
