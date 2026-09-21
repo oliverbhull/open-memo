@@ -78,16 +78,21 @@ module.exports = async function afterPack(context) {
   if (thinUpdate) {
     if (shouldSign) {
       const signer = process.env.CSC_NAME || process.env.CODE_SIGN_IDENTITY || 'Developer ID Application';
-      // The full installer pass can leave this hardlinked staging binary signed.
-      // Replacing that signature has hung codesign on GitHub's macOS runners, so
-      // make the thin pass start from an explicitly unsigned helper.
-      await sh('codesign', ['--remove-signature', bleBridge]);
-      await codesign([
-        '--force', '--options', 'runtime',
-        '--entitlements', path.resolve('config/entitlements.mac.plist'),
-        '--sign', signer,
-        bleBridge,
-      ]);
+      let alreadySigned = false;
+      try {
+        await sh('codesign', ['--verify', '--strict', '--verbose', bleBridge]);
+        alreadySigned = true;
+      } catch {}
+      if (!alreadySigned) {
+        await codesign([
+          '--force', '--options', 'runtime',
+          '--entitlements', path.resolve('config/entitlements.mac.plist'),
+          '--sign', signer,
+          bleBridge,
+        ]);
+      } else {
+        console.log('✓ Memo BLE bridge already carries a valid signature');
+      }
       await sh('codesign', ['--verify', '--verbose', bleBridge]);
       console.log('✓ Memo BLE bridge signed');
     } else {
