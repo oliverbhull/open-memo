@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import type { TranscriptionData } from '../../shared/electron-api';
 import { normalizeUsbTranscriptRows } from '../../shared/usb-transcripts';
 import { logger } from '../utils/logger';
+import { audioDirectoryPath } from './AudioStorageService';
 
 const execFileAsync = promisify(execFile);
 
@@ -68,7 +69,12 @@ export class UsbTranscriptService {
 
     const userData = app.getPath('userData');
     const database = path.join(userData, 'memo.sqlite3');
-    const library = path.join(userData, 'device-recordings');
+    const libraries = [
+      audioDirectoryPath(),
+      // Keep recordings imported by older versions readable after the shared
+      // audio directory replaces the legacy device-only directory.
+      path.join(userData, 'device-recordings'),
+    ];
     const sourceSha256 = match[1].toLowerCase();
     try {
       const { stdout } = await execFileAsync(
@@ -80,12 +86,18 @@ export class UsbTranscriptService {
       const audioPath = rows[0]?.audio_path;
       if (typeof audioPath !== 'string' || path.basename(audioPath) !== 'audio.wav') return null;
 
-      const [realLibrary, realAudioPath] = await Promise.all([
-        fs.realpath(library),
-        fs.realpath(audioPath),
-      ]);
-      const relative = path.relative(realLibrary, realAudioPath);
-      if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null;
+      const realAudioPath = await fs.realpath(audioPath);
+      const isInRecordingLibrary = (await Promise.all(libraries.map(async library => {
+        try {
+          const realLibrary = await fs.realpath(library);
+          const relative = path.relative(realLibrary, realAudioPath);
+          return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+          throw error;
+        }
+      }))).some(Boolean);
+      if (!isInRecordingLibrary) return null;
       return await fs.readFile(realAudioPath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {

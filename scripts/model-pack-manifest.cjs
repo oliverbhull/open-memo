@@ -2,7 +2,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const PACKS = ['conomo', 'pnc', 'cleanup'];
+const PACKS = ['conomo', 'pnc'];
 const INCLUDED_TOP_LEVEL = {
   conomo: new Set(['conomo', 'compiled', 'tokenizer.json', 'manifest.json', 'LICENSE-APACHE-2.0.txt', 'NOTICE.txt', 'VERSIONS', 'device-runtime']),
   pnc: new Set(['memo-pnc', 'compiled', 'tokenizer.vocab', 'manifest.json', 'VERSIONS', 'NOTICE.md']),

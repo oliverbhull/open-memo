@@ -26,9 +26,9 @@ PYTHONPATH="${TARGET_DIR}${PYTHONPATH:+:${PYTHONPATH}}" \
   "${GRANITE_PYTHON}" "${ROOT_DIR}/experiments/contextual-ctc/prototype.py" \
   --model "${GRANITE_MODEL}" --self-test
 
-if [[ ! -x "${NATIVE_WORKER}" || "${ROOT_DIR}/experiments/contextual-ctc/native_worker.swift" -nt "${NATIVE_WORKER}" ]]; then
+if [[ ! -x "${NATIVE_WORKER}" || "${ROOT_DIR}/sidecars/conomo/contextual_worker.swift" -nt "${NATIVE_WORKER}" ]]; then
   xcrun swiftc -O -framework Foundation -framework CoreML -framework Accelerate \
-    "${ROOT_DIR}/experiments/contextual-ctc/native_worker.swift" \
+    "${ROOT_DIR}/sidecars/conomo/contextual_worker.swift" \
     -o "${NATIVE_WORKER}"
   chmod 755 "${NATIVE_WORKER}"
 fi

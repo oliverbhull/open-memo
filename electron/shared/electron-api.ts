@@ -108,8 +108,10 @@ export type WritingMode = 'as-spoken' | 'clean';
 
 export interface CleanupState {
   available: boolean;
-  status: 'disabled' | 'loading' | 'ready' | 'unavailable';
+  status: 'disabled' | 'not-downloaded' | 'downloading' | 'loading' | 'ready' | 'unavailable';
   detail?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
 }
 
 export type AsrModelInstallState =
@@ -165,7 +167,6 @@ export interface ElectronAPI {
   };
   deviceSync: {
     getStatus(): Promise<DeviceSyncStatus>;
-    openRecordingsFolder(): Promise<{ success: boolean; error?: string }>;
     onStatus(callback: (status: DeviceSyncStatus) => void): () => void;
   };
   onStatus(callback: (status: string) => void): void;
@@ -196,6 +197,7 @@ export interface ElectronAPI {
       handsFreeMode: boolean;
       saveAudio: boolean;
       writingMode: WritingMode;
+      experimentalEmailFormatting: boolean;
       cleanupState: CleanupState;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
@@ -206,6 +208,7 @@ export interface ElectronAPI {
     setSayEnterToPressEnter(enabled: boolean): Promise<boolean>;
     setHandsFreeMode(enabled: boolean): Promise<boolean>;
     setSaveAudio(enabled: boolean): Promise<boolean>;
+    setExperimentalEmailFormatting(enabled: boolean): Promise<boolean>;
     setWritingMode(mode: WritingMode): Promise<boolean>;
     setStartAtLogin(enabled: boolean): Promise<boolean>;
     onCleanupStateChanged(callback: (state: CleanupState) => void): () => void;

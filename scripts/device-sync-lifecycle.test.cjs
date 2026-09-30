@@ -20,6 +20,7 @@ function setup(options = {}) {
     if (request === './ModelPackService') return { resolveModelPackPath: () => '/test-conomo' };
     if (request === './FirmwareReleaseService') return { FirmwareReleaseService: class {} };
     if (request === './SettingsService') return { loadSettings: () => ({ asrModel: 'conomo' }) };
+    if (request === './AudioStorageService') return { audioDirectoryPath: () => '/test-memo/audio' };
     if (request === '../utils/logger') return { logger: { info() {}, warn() {}, error() {} } };
     if (request === 'node:child_process') return { ...childProcess, spawn(_bin, args) {
       const child = new EventEmitter();
@@ -47,6 +48,8 @@ test('concurrent starts spawn one parent-bound worker', async () => {
   assert.equal(children.length, 1);
   const index = children[0].args.indexOf('--parent-pid');
   assert.equal(children[0].args[index + 1], String(process.pid));
+  const libraryIndex = children[0].args.indexOf('--library');
+  assert.equal(children[0].args[libraryIndex + 1], '/test-memo/audio');
   await service.stop();
 });
 

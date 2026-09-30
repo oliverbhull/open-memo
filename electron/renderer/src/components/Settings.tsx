@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useId, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { hexToHsl, hslToHex } from '../utils/colorUtils';
 import { storageService } from '../services/StorageService';
+import { ActivityInsights } from './ActivityInsights';
 import { buildTranscriptionExport } from '../services/transcriptionExport';
 import type {
   AsrModelId,
@@ -34,6 +35,65 @@ const FolderIcon = () => (
   </svg>
 );
 
+const InfoTooltip = ({
+  label,
+  align = 'left',
+  children,
+}: {
+  label: string;
+  align?: 'left' | 'center' | 'right';
+  children: React.ReactNode;
+}) => {
+  const tooltipId = useId();
+
+  return (
+    <span className="settings-info-tooltip">
+      <button
+        type="button"
+        className="settings-info-tooltip__trigger"
+        aria-label={label}
+        aria-describedby={tooltipId}
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          aria-hidden="true"
+        >
+          <circle cx="8" cy="8" r="6.25" />
+          <path d="M8 7.25v3.5" strokeLinecap="round" />
+          <circle cx="8" cy="4.75" r="0.65" fill="currentColor" stroke="none" />
+        </svg>
+      </button>
+      <span
+        id={tooltipId}
+        role="tooltip"
+        className={`settings-info-tooltip__content settings-info-tooltip__content--${align}`}
+      >
+        {children}
+      </span>
+    </span>
+  );
+};
+
+const SettingsSectionHeading = ({ children }: { children: React.ReactNode }) => (
+  <div style={{
+    margin: '14px 0 9px',
+    paddingTop: '12px',
+    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: '10px',
+    fontWeight: 650,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+  }}>
+    {children}
+  </div>
+);
+
 function toLocalDateTime(timestamp: number): string {
   const date = new Date(timestamp);
   const localTime = new Date(timestamp - date.getTimezoneOffset() * 60_000);
@@ -52,6 +112,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [microphoneSelecting, setMicrophoneSelecting] = useState(false);
   const [microphoneError, setMicrophoneError] = useState<string | null>(null);
   const [saveAudio, setSaveAudio] = useState(false);
+  const [experimentalEmailFormatting, setExperimentalEmailFormatting] = useState(false);
   const [writingMode, setWritingMode] = useState<WritingMode>('as-spoken');
   const [cleanupState, setCleanupState] = useState<CleanupState>({
     available: false,
@@ -61,8 +122,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [isAddingVocabWord, setIsAddingVocabWord] = useState(false);
   const [vocabWordDraft, setVocabWordDraft] = useState('');
   const vocabInputRef = useRef<HTMLInputElement>(null);
-  const [vocabExpanded, setVocabExpanded] = useState(false);
-  const [phraseReplacementsExpanded, setPhraseReplacementsExpanded] = useState(false);
   const [phraseReplacementRules, setPhraseReplacementRules] = useState<PhraseReplacementRule[]>([]);
   const colorBarSpectrumRef = useRef<HTMLDivElement>(null);
   const [colorBarHue, setColorBarHue] = useState(0);
@@ -81,6 +140,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       setHandsFreeMode(settings.handsFreeMode ?? false);
       setStartAtLogin(settings.startAtLogin);
       setSaveAudio(settings.saveAudio ?? false);
+      setExperimentalEmailFormatting(settings.experimentalEmailFormatting ?? false);
       setWritingMode(settings.writingMode ?? 'as-spoken');
       setCleanupState(settings.cleanupState);
       setVocabWords(Array.isArray(settings.vocabWords) ? settings.vocabWords : []);
@@ -151,7 +211,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       typeof crypto !== 'undefined' && 'randomUUID' in crypto
         ? crypto.randomUUID()
         : `pr_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-    setPhraseReplacementRules((prev) => [...prev, { id, find: '', replace: '', enabled: true }]);
+    setPhraseReplacementRules((prev) => [{ id, find: '', replace: '', enabled: true }, ...prev]);
   };
 
   const removePhraseRule = async (id: string) => {
@@ -192,7 +252,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const addVocabWord = async (raw: string) => {
     const word = normalizeVocabWord(raw);
     if (!word) return;
-    const deduped = Array.from(new Set([...(vocabWords || []), word]));
+    const deduped = Array.from(new Set([word, ...(vocabWords || [])]));
     await persistVocabWords(deduped);
     setVocabWordDraft('');
     setIsAddingVocabWord(false);
@@ -370,6 +430,16 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
           </button>
 
           <div className="settings-content">
+            <div style={{
+              margin: '0 0 8px',
+              color: 'rgba(255, 255, 255, 0.5)',
+              fontSize: '10px',
+              fontWeight: 650,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+            }}>
+              Appearance
+            </div>
             {/* Color bar (expanded, no animation) — top */}
             <div className="settings-color-bar">
               <div
@@ -384,6 +454,8 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 />
               </div>
             </div>
+
+            <SettingsSectionHeading>Audio</SettingsSectionHeading>
 
             <div style={{
               width: '92%',
@@ -403,7 +475,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   disabled={!microphoneState || microphoneSelecting}
                   onChange={(event) => void selectMicrophone(event.target.value)}
                   style={{
-                    width: '238px',
+                    width: '224px',
                     maxWidth: '100%',
                     padding: '6px 28px 6px 8px',
                     borderRadius: '6px',
@@ -479,7 +551,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     disabled={!asrState || whisperDownloading}
                     onChange={(event) => void selectAsrModel(event.target.value as AsrModelId)}
                     style={{
-                      width: '238px',
+                      width: '224px',
                       maxWidth: '100%',
                       padding: '6px 28px 6px 8px',
                       borderRadius: '6px',
@@ -547,6 +619,52 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               )}
             </div>
 
+            <div className="settings-section" style={{
+              width: '92%',
+              margin: '0 auto 12px',
+            }}>
+              <div className="settings-checkbox-stack">
+                <div className="settings-checkbox-row">
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    borderRadius: '4px',
+                    transition: 'background 0.2s',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={handsFreeMode}
+                      onChange={async (e) => {
+                        const newValue = e.target.checked;
+                        setHandsFreeMode(newValue);
+                        await window.electronAPI.interface.setHandsFreeMode(newValue);
+                      }}
+                      style={{
+                        width: '16px',
+                        height: '16px',
+                        margin: 0,
+                        cursor: 'pointer',
+                        accentColor: primary,
+                        color: primary,
+                      }}
+                    />
+                    <span style={{ fontSize: '12px', userSelect: 'none' }}>Hands free</span>
+                  </label>
+                  <InfoTooltip label="About Hands free" align="center">
+                    Starts recording when you speak and transcribes after silence. The Function key still works.
+                  </InfoTooltip>
+                </div>
+
+              </div>
+            </div>
+
+            <SettingsSectionHeading>Writing</SettingsSectionHeading>
+
             {/* Development-only transcript cleanup experiment */}
             <div style={{
               width: '92%',
@@ -555,8 +673,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               flexDirection: 'column',
               gap: '5px',
             }}>
-              <label
-                htmlFor="writing-mode"
+              <div
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -564,18 +681,35 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   gap: '12px',
                 }}
               >
-                <span style={{ fontSize: '12px', userSelect: 'none' }}>Writing</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                  <label htmlFor="writing-mode" style={{ fontSize: '12px', userSelect: 'none' }}>
+                    Mode
+                  </label>
+                  {writingMode === 'clean' && (
+                    <InfoTooltip label="About Cleaned mode">
+                      {cleanupState.status === 'ready'
+                        ? 'Adds punctuation and layout locally while preserving your words.'
+                        : cleanupState.status === 'downloading'
+                          ? cleanupState.detail || 'Downloading Cleaned…'
+                        : cleanupState.status === 'loading'
+                          ? 'Loading LFM locally…'
+                          : cleanupState.detail || 'Downloads once when selected, then runs locally.'}
+                    </InfoTooltip>
+                  )}
+                </span>
                 <span style={{ position: 'relative', display: 'inline-flex', minWidth: 0 }}>
                   <select
                     id="writing-mode"
                     value={writingMode}
                     onChange={async (event) => {
                       const mode = event.target.value as WritingMode;
+                      const previousMode = writingMode;
+                      setWritingMode(mode);
                       const accepted = await window.electronAPI.interface.setWritingMode(mode);
-                      if (accepted) setWritingMode(mode);
+                      if (!accepted) setWritingMode(previousMode);
                     }}
                     style={{
-                      width: '238px',
+                      width: '224px',
                       maxWidth: '100%',
                       padding: '6px 28px 6px 8px',
                       borderRadius: '6px',
@@ -589,12 +723,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     }}
                   >
                     <option value="as-spoken">As spoken</option>
-                    <option
-                      value="clean"
-                      disabled={cleanupState.status === 'disabled'}
-                    >
-                      Cleaned
-                    </option>
+                    <option value="clean">Cleaned</option>
                   </select>
                   <span
                     aria-hidden="true"
@@ -611,265 +740,97 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     ▾
                   </span>
                 </span>
-              </label>
-              {writingMode === 'clean' && (
-                <span style={{ fontSize: '10px', opacity: 0.7, paddingLeft: '4px' }}>
-                  {cleanupState.status === 'ready'
-                    ? 'Cleans up your dictation locally while preserving your message.'
-                    : cleanupState.status === 'loading'
-                      ? 'Loading LFM locally…'
-                      : cleanupState.detail || 'Clean is available only in the local development app.'}
-                </span>
-              )}
-            </div>
-
-            {/* Interface Section */}
-            <div style={{
-              height: '1px',
-              background: 'rgba(255, 255, 255, 0.08)',
-              margin: '12px 0',
-            }} />
-
-            <div
-              className="settings-section"
-              style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}
-            >
+              </div>
+              <div className="settings-checkbox-stack" style={{ fontSize: '12px' }}>
+                <div className="settings-checkbox-row">
+                  <label style={{ display: 'flex', gap: '8px', alignItems: 'center', cursor: writingMode === 'clean' ? 'pointer' : 'default' }}>
+                    <input
+                      type="checkbox"
+                      checked={experimentalEmailFormatting}
+                      disabled={writingMode !== 'clean'}
+                      onChange={async event => {
+                        const enabled = event.target.checked;
+                        if (await window.electronAPI.interface.setExperimentalEmailFormatting(enabled)) {
+                          setExperimentalEmailFormatting(enabled);
+                        }
+                      }}
+                      style={{
+                        width: '16px',
+                        height: '16px',
+                        margin: 0,
+                        cursor: writingMode === 'clean' ? 'pointer' : 'default',
+                        accentColor: primary,
+                      }}
+                    />
+                    Email formatting (experimental)
+                  </label>
+                  <InfoTooltip label="About email formatting" align="right">
+                    In Cleaned mode, formats Gmail and all Safari dictation as email using the active app and URL locally.
+                  </InfoTooltip>
+                </div>
                 {/* Say 'enter' to press Enter */}
-                <label style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  cursor: 'pointer',
-                  padding: '2px 4px',
-                  borderRadius: '4px',
-                  transition: 'background 0.2s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={sayEnterToPressEnter}
-                    onChange={async (e) => {
-                      const newValue = e.target.checked;
-                      setSayEnterToPressEnter(newValue);
-                      await window.electronAPI.interface.setSayEnterToPressEnter(newValue);
-                    }}
-                    style={{
-                      width: '16px',
-                      height: '16px',
-                      cursor: 'pointer',
-                      accentColor: primary,
-                      color: primary,
-                    }}
-                  />
-                  <span style={{
-                    fontSize: '12px',
-                    userSelect: 'none',
-                  }}>
-                    Say &quot;ENTER&quot; to submit
-                  </span>
-                </label>
-
-                {/* Hands Free */}
-                <label style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  cursor: 'pointer',
-                  padding: '2px 4px',
-                  borderRadius: '4px',
-                  transition: 'background 0.2s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={handsFreeMode}
-                    onChange={async (e) => {
-                      const newValue = e.target.checked;
-                      setHandsFreeMode(newValue);
-                      await window.electronAPI.interface.setHandsFreeMode(newValue);
-                    }}
-                    style={{
-                      width: '16px',
-                      height: '16px',
-                      cursor: 'pointer',
-                      accentColor: primary,
-                      color: primary,
-                    }}
-                  />
-                  <span style={{
-                    fontSize: '12px',
-                    userSelect: 'none',
-                  }}>
-                    Hands Free
-                  </span>
-                </label>
-
-                {/* Start at Login */}
-                <label style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  cursor: 'pointer',
-                  padding: '2px 4px',
-                  borderRadius: '4px',
-                  transition: 'background 0.2s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={startAtLogin}
-                    onChange={async (e) => {
-                      const newValue = e.target.checked;
-                      setStartAtLogin(newValue);
-                      await window.electronAPI.interface.setStartAtLogin(newValue);
-                    }}
-                    style={{
-                      width: '16px',
-                      height: '16px',
-                      cursor: 'pointer',
-                      accentColor: primary,
-                      color: primary,
-                    }}
-                  />
-                  <span style={{
-                    fontSize: '12px',
-                    userSelect: 'none',
-                  }}>
-                    Start at Login
-                  </span>
-                </label>
-
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  padding: '2px 4px',
-                }}>
+                <div className="settings-checkbox-row">
                   <label style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
                     cursor: 'pointer',
-                  }}>
+                    borderRadius: '4px',
+                    transition: 'background 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                  >
                     <input
                       type="checkbox"
-                      checked={saveAudio}
-                      onChange={async (event) => {
-                        const enabled = event.target.checked;
-                        setSaveAudio(enabled);
-                        await window.electronAPI.interface.setSaveAudio(enabled);
+                      checked={sayEnterToPressEnter}
+                      onChange={async (e) => {
+                        const newValue = e.target.checked;
+                        setSayEnterToPressEnter(newValue);
+                        await window.electronAPI.interface.setSayEnterToPressEnter(newValue);
                       }}
                       style={{
                         width: '16px',
                         height: '16px',
+                        margin: 0,
                         cursor: 'pointer',
                         accentColor: primary,
+                        color: primary,
                       }}
                     />
-                    <span style={{ fontSize: '12px', userSelect: 'none' }}>Save dictation audio</span>
+                    <span style={{
+                      fontSize: '12px',
+                      userSelect: 'none',
+                    }}>
+                      Say &quot;ENTER&quot; to submit
+                    </span>
                   </label>
-                  <button
-                    type="button"
-                    aria-label="Open dictation audio folder"
-                    title="Open dictation audio folder"
-                    onClick={() => { void window.electronAPI.audio.openFolder(); }}
-                    style={{
-                      border: 0,
-                      padding: '4px',
-                      color: primary,
-                      background: 'transparent',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <FolderIcon />
-                  </button>
+                  <InfoTooltip label="About Say ENTER to submit" align="center">
+                    When dictation ends with the spoken word &quot;enter,&quot; Memo removes the word and presses Return after pasting.
+                  </InfoTooltip>
                 </div>
+              </div>
+            </div>
 
-                <div style={{
+              <SettingsSectionHeading>Vocab</SettingsSectionHeading>
+
+              <div
+                className="settings-section"
+                style={{
+                  width: '92%',
+                  margin: '0 auto 12px',
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  padding: '2px 4px',
-                }}>
-                  <span style={{ fontSize: '12px', userSelect: 'none' }}>supermicrophone recordings</span>
-                  <button
-                    type="button"
-                    aria-label="Open supermicrophone recordings folder"
-                    title="Open supermicrophone recordings folder"
-                    onClick={() => { void window.electronAPI.deviceSync.openRecordingsFolder(); }}
-                    style={{
-                      border: 0,
-                      padding: '4px',
-                      color: primary,
-                      background: 'transparent',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <FolderIcon />
-                  </button>
-                </div>
+                  flexDirection: 'column',
+                  gap: '2px',
+                }}
+              >
 
                 {/* Vocab (STT boosting) */}
-                <div style={{
-                  marginTop: '8px',
-                }}>
-                  <button
-                    type="button"
-                    onClick={() => setVocabExpanded((v) => !v)}
-                    style={{
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '8px',
-                      padding: '5px 4px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      background: 'transparent',
-                      color: primary,
-                      cursor: 'pointer',
-                      marginBottom: vocabExpanded ? '6px' : '0',
-                    }}
-                  >
-                    <span style={{ fontSize: '12px', fontWeight: 650, letterSpacing: '0.01em' }}>Vocab</span>
-                    <span style={{ opacity: 0.75, fontSize: '12px' }}>
-                      {vocabExpanded ? '▾' : '▸'}
-                    </span>
-                  </button>
-
-                  {vocabExpanded && (
-                    <div style={{
-                      padding: '4px 0 0',
-                      borderRadius: '0',
-                      border: 'none',
-                      background: 'transparent',
-                    }}>
+                <div>
                       {isAddingVocabWord && (
                         <input
                           ref={vocabInputRef}
@@ -946,45 +907,24 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           </button>
                         ))}
                       </div>
-                    </div>
-                  )}
                 </div>
+              </div>
 
-                {/* Phrase replacement */}
-                <div style={{
-                  marginTop: '4px',
-                }}>
-                  <button
-                    type="button"
-                    onClick={() => setPhraseReplacementsExpanded((v) => !v)}
-                    style={{
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '8px',
-                      padding: '5px 4px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      background: 'transparent',
-                      color: primary,
-                      cursor: 'pointer',
-                      marginBottom: phraseReplacementsExpanded ? '6px' : '0',
-                    }}
-                  >
-                    <span style={{ fontSize: '12px', fontWeight: 650, letterSpacing: '0.01em' }}>Phrase replacement</span>
-                    <span style={{ opacity: 0.75, fontSize: '12px' }}>
-                      {phraseReplacementsExpanded ? '▾' : '▸'}
-                    </span>
-                  </button>
+              <SettingsSectionHeading>Snippets</SettingsSectionHeading>
 
-                  {phraseReplacementsExpanded && (
-                    <div style={{
-                      padding: '4px 0 0',
-                      borderRadius: '0',
-                      border: 'none',
-                      background: 'transparent',
-                    }}>
+              <div
+                className="settings-section"
+                style={{
+                  width: '92%',
+                  margin: '0 auto 12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px',
+                }}
+              >
+
+                {/* Snippets */}
+                <div>
                       <button
                         type="button"
                         onClick={addPhraseRule}
@@ -999,7 +939,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           marginBottom: '6px',
                         }}
                       >
-                        + Add rule
+                        + Add snippet
                       </button>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         {phraseReplacementRules.map((rule) => (
@@ -1015,12 +955,10 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                               background: 'rgba(18, 18, 24, 0.6)',
                             }}
                           >
-                            <label style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                              <span style={{ fontSize: '11px', opacity: 0.55 }}>
-                                Phrase
-                              </span>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                               <input
                                 type="text"
+                                aria-label="Spoken phrase"
                                 value={rule.find}
                                 placeholder="Spoken phrase…"
                                 onChange={(e) => {
@@ -1042,12 +980,10 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                                   fontSize: '12px',
                                 }}
                               />
-                            </label>
-                            <label style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                              <span style={{ fontSize: '11px', opacity: 0.55 }}>
-                                Replace with
-                              </span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                               <textarea
+                                aria-label="Replacement text"
                                 value={rule.replace}
                                 placeholder="Replacement text…"
                                 rows={2}
@@ -1073,7 +1009,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                                   fontFamily: 'inherit',
                                 }}
                               />
-                            </label>
+                            </div>
                             <div
                               style={{
                                 display: 'flex',
@@ -1137,10 +1073,97 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           </div>
                         ))}
                       </div>
-                    </div>
-                  )}
                 </div>
               </div>
+
+            <SettingsSectionHeading>General</SettingsSectionHeading>
+            <div className="settings-section" style={{
+              width: '92%',
+              margin: '0 auto 12px',
+            }}>
+              <div className="settings-checkbox-stack">
+              <div className="settings-checkbox-row">
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: 'pointer',
+                borderRadius: '4px',
+                transition: 'background 0.2s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <input
+                  type="checkbox"
+                  checked={startAtLogin}
+                  onChange={async (e) => {
+                    const newValue = e.target.checked;
+                    setStartAtLogin(newValue);
+                    await window.electronAPI.interface.setStartAtLogin(newValue);
+                  }}
+                  style={{
+                    width: '16px',
+                    height: '16px',
+                    margin: 0,
+                    cursor: 'pointer',
+                    accentColor: primary,
+                    color: primary,
+                  }}
+                />
+                <span style={{ fontSize: '12px', userSelect: 'none' }}>Start at Login</span>
+              </label>
+              </div>
+              <div
+                className="settings-checkbox-row"
+                style={{
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                }}
+              >
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={saveAudio}
+                    onChange={async (event) => {
+                      const enabled = event.target.checked;
+                      setSaveAudio(enabled);
+                      await window.electronAPI.interface.setSaveAudio(enabled);
+                    }}
+                    style={{
+                      width: '16px',
+                      height: '16px',
+                      margin: 0,
+                      cursor: 'pointer',
+                      accentColor: primary,
+                    }}
+                  />
+                  <span style={{ fontSize: '12px', userSelect: 'none' }}>Save dictation audio</span>
+                </label>
+                <button
+                  type="button"
+                  aria-label="Open audio folder"
+                  title="Open audio folder"
+                  onClick={() => { void window.electronAPI.audio.openFolder(); }}
+                  style={{
+                    border: 0,
+                    padding: '4px',
+                    color: primary,
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <FolderIcon />
+                </button>
+              </div>
+              </div>
+            </div>
+
+            <SettingsSectionHeading>Activity</SettingsSectionHeading>
+            <ActivityInsights />
 
             {/* Total words dictated (not typed) */}
             <div style={{

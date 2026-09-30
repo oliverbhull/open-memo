@@ -5,6 +5,10 @@ import type { AudioAttachment } from '../../shared/electron-api';
 
 const ENTRY_ID_PATTERN = /^[a-zA-Z0-9_-]{1,128}$/;
 
+export function audioDirectoryPath(): string {
+  return path.join(app.getPath('userData'), 'audio');
+}
+
 function assertEntryId(entryId: string): void {
   if (!ENTRY_ID_PATTERN.test(entryId)) {
     throw new Error('Invalid memo entry ID');
@@ -13,7 +17,7 @@ function assertEntryId(entryId: string): void {
 
 export class AudioStorageService {
   private get audioDirectory(): string {
-    return path.join(app.getPath('userData'), 'audio');
+    return audioDirectoryPath();
   }
 
   private audioPath(entryId: string): string {

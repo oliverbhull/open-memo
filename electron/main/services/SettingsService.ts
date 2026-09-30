@@ -19,6 +19,7 @@ export interface Settings {
   handsFreeMode: boolean;
   saveAudio: boolean;
   writingMode: WritingMode;
+  experimentalEmailFormatting: boolean;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
 }
@@ -55,6 +56,7 @@ export function loadSettings(): Settings {
     sayEnterToPressEnter: store.get('sayEnterToPressEnter', false),
     handsFreeMode: store.get('handsFreeMode', false),
     saveAudio: store.get('saveAudio', false),
+    experimentalEmailFormatting: store.get('experimentalEmailFormatting', false) === true,
     writingMode: store.get('writingMode') === 'clean' ? 'clean' : 'as-spoken',
     vocabWords: stringArray(store.get('vocabWords')),
     phraseReplacements: clampPhraseReplacementRulesFromInput(store.get('phraseReplacements')),
@@ -69,6 +71,7 @@ export function saveSettings(next: Settings): void {
     sayEnterToPressEnter: next.sayEnterToPressEnter === true,
     handsFreeMode: next.handsFreeMode === true,
     saveAudio: next.saveAudio === true,
+    experimentalEmailFormatting: next.experimentalEmailFormatting === true,
     writingMode: next.writingMode === 'clean' ? 'clean' : 'as-spoken',
     vocabWords: stringArray(next.vocabWords),
     phraseReplacements: clampPhraseReplacementRulesFromInput(next.phraseReplacements),
@@ -79,6 +82,7 @@ export function saveSettings(next: Settings): void {
   store.set('handsFreeMode', settings.handsFreeMode);
   store.set('saveAudio', settings.saveAudio);
   store.set('writingMode', settings.writingMode);
+  store.set('experimentalEmailFormatting', settings.experimentalEmailFormatting);
   store.set('vocabWords', settings.vocabWords);
   store.set('phraseReplacements', settings.phraseReplacements);
 }

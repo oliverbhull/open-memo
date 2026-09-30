@@ -119,6 +119,8 @@ docs/*
 !docs/development.md
 !docs/production-audit.md
 !docs/cleanup-production-candidate.md
+!docs/experimental-email-formatting.md
+!docs/faithful-dictation.md
 !docs/clean-v1/
 .env.example
 tsconfig.base.json

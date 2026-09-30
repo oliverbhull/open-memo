@@ -20,7 +20,7 @@
       "reviewedSpokenText": "All right, I am here with Rayaan. We are about to go check in and see if the supermicrophone is going to work. I am going to need to see if a JTECH team is available as well.",
       "expectedGreedy": "all right i am here with rayon we are about to go check in and see if the super microphone is going to work i am going to need to see if a jch team is available as well",
       "expectedContextual": "all right i am here with rayaan we are about to go check in and see if the supermicrophone is going to work i am going to need to see if a jtech team is available as well",
-      "expectedSelected": "all right i am here with rayaan we are about to go check in and see if the supermicrophone is going to work i am going to need to see if a jtech team is available as well"
+      "expectedSelected": "all right i am here with Rayaan we are about to go check in and see if the supermicrophone is going to work i am going to need to see if a JTECH team is available as well"
     },
     {
       "name": "ramsey-preservation-and-unsafe-boundary-rejection",
