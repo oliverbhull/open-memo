@@ -10,10 +10,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build macOS app
     runs-on: macos-15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -43,7 +48,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .build/dictation-target
-          key: ${{ runner.os }}-dictation-${{ hashFiles('scripts/shell/build-dictation.sh', 'sidecars/dictation/Cargo.toml', 'sidecars/dictation/Cargo.lock', 'sidecars/dictation/src/**') }}
+          key: ${{ runner.os }}-dictation-${{ hashFiles('scripts/shell/build-dictation.sh', 'sidecars/dictation/Cargo.toml', 'sidecars/dictation/Cargo.lock', 'sidecars/dictation/src/**', 'sidecars/conomo/contextual_*') }}
           restore-keys: |
             ${{ runner.os }}-dictation-
 
@@ -69,18 +74,20 @@ jobs:
         run: |
           export CONOMO_SOURCE="scripts/fixtures/conomo-bundle"
           export CONOMO_SHA256="$(shasum -a 256 "${CONOMO_SOURCE}/conomo" | awk '{print $1}')"
-          bash scripts/shell/build-cleanup-fixture.sh
-          export CLEANUP_SOURCE=".build/cleanup-fixture"
           npm run build:dir
 
       - name: Verify packaged dictation sidecar
-        run: test -x dist/mac-arm64/Memo.app/Contents/Resources/dictation/memo-dictation
+        run: |
+          test -x dist/mac-arm64/Memo.app/Contents/Resources/dictation/memo-dictation
+          test -x dist/mac-arm64/Memo.app/Contents/Resources/dictation/memo-conomo-contextual
+          test -x dist/mac-arm64/Memo.app/Contents/Resources/dictation/run-contextual-conomo
+          test -f dist/mac-arm64/Memo.app/Contents/Resources/dictation/contextual-worker.py
 
       - name: Verify packaged conomo backend
         run: bash scripts/shell/verify-conomo-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/conomo
 
-      - name: Verify packaged cleanup backend
-        run: bash scripts/shell/verify-cleanup-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/cleanup
+      - name: Verify cleanup remains on demand
+        run: test ! -e dist/mac-arm64/Memo.app/Contents/Resources/cleanup
 
       - name: Upload app smoke-build artifact
         uses: actions/upload-artifact@v4

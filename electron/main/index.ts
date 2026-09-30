@@ -14,7 +14,6 @@ import { applyPhraseReplacements, clampPhraseReplacementRulesFromInput } from '.
 import { updateOverlayVisibility, sendAudioLevels, sendStatusToOverlay } from './services/WindowService';
 import path from 'path';
 import os from 'os';
-import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { logger } from './utils/logger';
 import { normalizeTranscriptionText, stripLeadingDashSpace, stripTrailingEnter } from './services/textProcessing';
@@ -34,6 +33,7 @@ import { AppUpdateService } from './services/AppUpdateService';
 import { PunctuationService } from './services/PunctuationService';
 import { CleanupService } from './services/CleanupService';
 import { pasteIntoFocusedTarget } from './services/checkedPaste';
+import { detectEmailTarget } from './services/emailFormatting';
 import { createDictationEntry } from '../shared/dictationEntry';
 import { ensurePersistentModelPacks } from './services/ModelPackService';
 import { checkInputMonitoringPermission } from './services/InputMonitoringPermissionService';
@@ -83,6 +83,7 @@ const asrModelService = new AsrModelService();
 const usbTranscriptService = new UsbTranscriptService();
 const punctuationService = new PunctuationService();
 const cleanupService = new CleanupService();
+let writingModeSelectionGeneration = 0;
 
 cleanupService.on('state-changed', (state) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -273,6 +274,10 @@ async function setupMemoSttService(): Promise<void> {
     updateProcessingState();
     const timestamp = Date.now();
     const settings = loadSettings();
+    const senderName = loadUserSettings().userName;
+    // Snapshot the destination before this delivery waits behind another one.
+    const emailTarget = settings.writingMode === 'clean' && settings.experimentalEmailFormatting
+      ? detectEmailTarget() : Promise.resolve(false);
     deliveryQueue = deliveryQueue.then(async () => {
       let deliveryFinished = false;
       const finishDelivery = () => {
@@ -301,15 +306,22 @@ async function setupMemoSttService(): Promise<void> {
         let formatted: string;
         let cleanProvenance: Record<string, unknown> | undefined;
         if (cleanMode) {
-          const cleanup = await cleanupService.format(asSpoken, settings.vocabWords);
+          const cleanup = await cleanupService.format(asSpoken, settings.vocabWords, await emailTarget ? 'email' : 'plain', senderName);
           formatted = cleanup.text;
+          if (cleanup.reason === 'protected_input_bounds' ||
+              (cleanup.reason === 'input_bounds' && asSpoken.length > 20_000)) {
+            mainWindow?.webContents.send('audio:showToast', {
+              message: 'Dictation was too long to clean; original text retained.',
+              severity: 'warning', duration: 4000,
+            });
+          }
           cleanProvenance = { asSpoken, candidate: cleanup.candidateText, selected: cleanup.text,
             status: cleanup.status, reason: cleanup.reason, model: cleanup.model,
             contract: cleanup.contract, latencyMs: cleanup.latencyMs };
           logger.info(`[Main] Clean ${cleanup.status}${cleanup.reason ? ` (${cleanup.reason})` : ''}` +
             `${cleanup.latencyMs === undefined ? '' : ` in ${cleanup.latencyMs.toFixed(0)} ms`}`);
         } else {
-          formatted = app.isPackaged && !isQuitting ? await punctuationService.format(normalized) : asSpoken;
+          formatted = !isQuitting ? await punctuationService.format(normalized) : asSpoken;
         }
         const afterPhrases = applyPhraseReplacements(formatted, settings.phraseReplacements);
         const { textToPaste: textBeforeNormalization, pressEnter: pressEnterThisTime } = stripTrailingEnter(afterPhrases, settings.sayEnterToPressEnter ?? false);
@@ -614,7 +626,7 @@ app.whenReady().then(async () => {
   openMainWindow();
   appUpdateService.start();
   if (loadSettings().writingMode === 'clean') cleanupService.start();
-  else if (app.isPackaged) punctuationService.start();
+  else if (app.isPackaged || process.env.MEMO_PNC_ENGINE === 'edge') punctuationService.start();
 
   // Resolve a remembered microphone before memo-stt starts. An unavailable
   // explicit selection remains selected and capture stays stopped.
@@ -746,18 +758,6 @@ ipcMain.handle('entries:get-total-word-count', () => memoDatabaseService.getTota
 ipcMain.handle('device-sync:get-status', () => (
   deviceSyncService?.getStatus() || { state: 'disconnected', completed: 0, total: 0 }
 ));
-
-ipcMain.handle('device-sync:open-recordings-folder', async () => {
-  try {
-    const directory = deviceSyncService?.recordingsDirectory()
-      || path.join(app.getPath('userData'), 'device-recordings');
-    await fs.promises.mkdir(directory, { recursive: true });
-    const error = await shell.openPath(directory);
-    return error ? { success: false, error } : { success: true };
-  } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : String(error) };
-  }
-});
 
 ipcMain.handle('memo-stt:restart', async () => memoSttService?.restart());
 
@@ -1030,6 +1030,7 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
     handsFreeMode: settings.handsFreeMode ?? false,
     saveAudio: settings.saveAudio ?? false,
     writingMode: settings.writingMode,
+    experimentalEmailFormatting: settings.experimentalEmailFormatting,
     cleanupState: cleanupService.getState(),
     vocabWords: Array.isArray(settings.vocabWords) ? settings.vocabWords : [],
     phraseReplacements: Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : [],
@@ -1089,20 +1090,36 @@ ipcMain.handle('settings:setSaveAudio', async (_event, enabled: boolean) => {
   return true;
 });
 
+ipcMain.handle('settings:setExperimentalEmailFormatting', (_event, enabled: unknown) => {
+  if (typeof enabled !== 'boolean') throw new Error('Email formatting must be a boolean.');
+  const settings = loadSettings();
+  settings.experimentalEmailFormatting = enabled;
+  saveSettings(settings);
+  return true;
+});
+
 ipcMain.handle('settings:setWritingMode', async (_event, mode: unknown) => {
   if (mode !== 'as-spoken' && mode !== 'clean') {
     throw new Error('Writing mode must be As spoken or Clean.');
   }
+  const generation = ++writingModeSelectionGeneration;
   const settings = loadSettings();
-  settings.writingMode = mode;
-  saveSettings(settings);
   if (mode === 'clean') {
     punctuationService.stop();
-    cleanupService.start();
+    if (!await cleanupService.start()) {
+      if (app.isPackaged || process.env.MEMO_PNC_ENGINE === 'edge') punctuationService.start();
+      return false;
+    }
+    if (generation !== writingModeSelectionGeneration) {
+      cleanupService.stop();
+      return false;
+    }
   } else {
     cleanupService.stop();
-    if (app.isPackaged) punctuationService.start();
+    if (app.isPackaged || process.env.MEMO_PNC_ENGINE === 'edge') punctuationService.start();
   }
+  settings.writingMode = mode;
+  saveSettings(settings);
   return true;
 });
 

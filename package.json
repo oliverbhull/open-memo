@@ -1,15 +1,16 @@
 {
   "name": "open-memo",
-  "version": "0.8.18",
+  "version": "0.8.19",
   "description": "Open-source push-to-talk dictation for macOS",
   "homepage": "https://github.com/oliverbhull/open-memo",
   "main": "dist/main.cjs",
   "preload": "dist/preload.cjs",
   "type": "module",
   "scripts": {
-    "dev": "npm run setup:contextual-ctc && npm run setup:cleanup && npm run build:dictation && npm run build:ble && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
+    "dev": "npm run setup:contextual-ctc && npm run setup:cleanup && npm run setup:pnc:edge && npm run build:dictation && npm run build:ble && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development MEMO_PNC_ENGINE=edge electron .\"",
     "setup:contextual-ctc": "bash scripts/shell/setup-contextual-ctc.sh",
     "setup:cleanup": "bash scripts/shell/setup-cleanup-dev.sh",
+    "setup:pnc:edge": "bash scripts/shell/setup-edge-punct-dev.sh",
     "fuse:cleanup": "bash scripts/shell/fuse-cleanup-dev.sh",
     "build:cleanup:6bit": "bash scripts/shell/build-cleanup-6bit-dev.sh",
     "build:cleanup:mixed": "bash scripts/shell/build-cleanup-mixed-dev.sh",
@@ -32,7 +33,7 @@
     "build:pnc": "bash scripts/shell/build-pnc.sh",
     "verify:pnc": "bash scripts/shell/verify-pnc-bundle.sh",
     "build:model-manifests": "node scripts/model-pack-manifest.cjs",
-    "build:backends": "npm run build:dictation && npm run build:conomo && npm run build:pnc && npm run build:cleanup && npm run build:model-manifests",
+    "build:backends": "npm run build:dictation && npm run build:conomo && npm run build:pnc && npm run build:model-manifests",
     "build:ble": "bash scripts/shell/build-ble-bridge.sh",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.json",
     "check": "npm run typecheck && npm test",
@@ -171,7 +172,10 @@
         "from": ".build/dictation/",
         "to": "dictation",
         "filter": [
-          "memo-dictation"
+          "memo-dictation",
+          "memo-conomo-contextual",
+          "run-contextual-conomo",
+          "contextual-worker.py"
         ]
       },
       {
@@ -200,13 +204,6 @@
           "model-pack.json",
           "VERSIONS",
           "NOTICE.md"
-        ]
-      },
-      {
-        "from": ".build/cleanup/",
-        "to": "cleanup",
-        "filter": [
-          "**/*"
         ]
       },
       {

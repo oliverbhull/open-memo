@@ -13,6 +13,7 @@ import {
   type FirmwareUpdateArtifact,
 } from './FirmwareReleaseService';
 import { loadSettings } from './SettingsService';
+import { audioDirectoryPath } from './AudioStorageService';
 import { logger } from '../utils/logger';
 
 const execFileAsync = promisify(execFile);
@@ -97,7 +98,7 @@ export class DeviceSyncService extends EventEmitter {
       '-B', resources.helper,
       '--parent-pid', String(process.pid),
       '--database', path.join(userData, 'memo.sqlite3'),
-      '--library', path.join(userData, 'device-recordings'),
+      '--library', audioDirectoryPath(),
       '--batch-directory', path.join(userData, 'batches'),
       '--journal', path.join(userData, 'device-sync-journal.json'),
       '--trusted-device', path.join(userData, 'trusted-memo-device.json'),
@@ -175,10 +176,6 @@ export class DeviceSyncService extends EventEmitter {
     await this.stop({ restoreDictation: false });
     this.stopped = false;
     await this.start();
-  }
-
-  recordingsDirectory(): string {
-    return path.join(app.getPath('userData'), 'device-recordings');
   }
 
   private resolveResources(): {

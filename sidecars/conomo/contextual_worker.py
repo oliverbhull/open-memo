@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Thin development broker: tokenize Vocab, then stream to native Core ML."""
+"""Conservative vocabulary broker: tokenize terms, then stream to native Core ML."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def vocabulary_from_prompt(prompt: object) -> list[str]:
         dict.fromkeys(
             term
             for value in match.group(1).split(", ")
-            if (term := " ".join(value.strip().split()).casefold())
+            if (term := " ".join(value.strip().split()))
         )
     )
 
@@ -33,6 +33,7 @@ def token_patterns(tokenizer: Tokenizer, vocabulary: list[str]) -> list[list[int
     patterns: list[list[int]] = []
     seen: set[tuple[int, ...]] = set()
     for term in vocabulary:
+        term = term.casefold()
         for text in (term, f" {term}"):
             ids = tuple(tokenizer.encode(text, add_special_tokens=False).ids)
             if ids and ids not in seen:
@@ -44,7 +45,7 @@ def token_patterns(tokenizer: Tokenizer, vocabulary: list[str]) -> list[list[int
 def safe_contextual_change(greedy: str, contextual: str, vocabulary: list[str]) -> bool:
     if contextual == greedy:
         return True
-    allowed = {term.replace(" ", "") for term in vocabulary}
+    allowed = {term.casefold().replace(" ", "") for term in vocabulary}
     before = greedy.casefold().split()
     after = contextual.casefold().split()
     changed = False
@@ -58,6 +59,21 @@ def safe_contextual_change(greedy: str, contextual: str, vocabulary: list[str]) 
         if left_start == left_end or not replacement or replacement not in allowed:
             return False
     return changed
+
+
+def canonicalize_vocabulary(text: str, vocabulary: list[str]) -> str:
+    """Restore exact saved spelling after an acoustically accepted decode."""
+    canonical: dict[str, str] = {}
+    for term in vocabulary:
+        canonical.setdefault(term.casefold(), term)
+    ordered = sorted(canonical.values(), key=len, reverse=True)
+    if not ordered:
+        return text
+    pattern = re.compile(
+        r"(?<!\w)(?:" + "|".join(re.escape(term) for term in ordered) + r")(?!\w)",
+        re.IGNORECASE,
+    )
+    return pattern.sub(lambda match: canonical[match.group(0).casefold()], text)
 
 
 def parse_args() -> argparse.Namespace:
@@ -118,7 +134,7 @@ def main() -> int:
                     contextual = str(payload.get("processedText", ""))
                     greedy = str(payload.get("greedyText", contextual))
                     accepted = safe_contextual_change(greedy, contextual, vocabulary)
-                    selected = contextual if accepted else greedy
+                    selected = canonicalize_vocabulary(contextual, vocabulary) if accepted else greedy
                     if contextual != greedy:
                         print(
                             f"CONTEXTUAL: {'accepted' if accepted else 'rejected unsafe change'} "

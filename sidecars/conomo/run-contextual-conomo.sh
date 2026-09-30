@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${MEMO_CONTEXTUAL_PYTHON:?MEMO_CONTEXTUAL_PYTHON is required}"
+: "${MEMO_CONTEXTUAL_BROKER:?MEMO_CONTEXTUAL_BROKER is required}"
+: "${MEMO_CONTEXTUAL_NATIVE:?MEMO_CONTEXTUAL_NATIVE is required}"
+: "${MEMO_ASR_MODEL_PATH:?MEMO_ASR_MODEL_PATH is required}"
+: "${MEMO_ASR_TOKENIZER_PATH:?MEMO_ASR_TOKENIZER_PATH is required}"
+
+exec "${MEMO_CONTEXTUAL_PYTHON}" -B "${MEMO_CONTEXTUAL_BROKER}" \
+  --native "${MEMO_CONTEXTUAL_NATIVE}" \
+  --model-path "${MEMO_ASR_MODEL_PATH}" \
+  --tokenizer-path "${MEMO_ASR_TOKENIZER_PATH}" "$@"

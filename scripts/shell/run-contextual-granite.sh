@@ -9,7 +9,7 @@ NATIVE_WORKER="${MEMO_CONTEXTUAL_NATIVE:-${ROOT_DIR}/.build/contextual-granite-n
 
 export PYTHONPATH="${TARGET_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 exec "${GRANITE_PYTHON}" \
-  "${ROOT_DIR}/experiments/contextual-ctc/app_worker.py" \
+  "${ROOT_DIR}/sidecars/conomo/contextual_worker.py" \
   --native "${NATIVE_WORKER}" \
   --model-path "${ROOT_DIR}/.build/conomo/compiled/GraniteSpeech.mlmodelc" \
   --tokenizer-path "${GRANITE_MODEL}/tokenizer.json" \

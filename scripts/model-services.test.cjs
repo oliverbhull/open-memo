@@ -5,6 +5,7 @@ const Module = require('node:module');
 const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
 const { buildSync } = require('esbuild');
+const fs = require('node:fs');
 
 function load(name, mocks) {
   const entry = path.resolve(`electron/main/services/${name}.ts`);
@@ -59,4 +60,15 @@ test('later model choice wins over a pending Whisper download', async () => {
   assert.equal((await oldSelection).success, false);
   assert.equal(settings.asrModel, 'conomo');
   assert.equal(restarts, 0);
+});
+
+test('cleanup download is immutable, verified, and absent from packaged resources', () => {
+  const service = fs.readFileSync(path.resolve('electron/main/services/ModelPackService.ts'), 'utf8');
+  const packageJson = require('../package.json');
+  assert.match(service, /cleanup-model-v1\/open-memo-cleanup-v1\.tar\.gz/);
+  assert.match(service, /CLEANUP_PACK_BYTES = 1_034_639_401/);
+  assert.match(service, /CLEANUP_PACK_SHA256 = '932c010ad09edf1331486a134c59b0fc5b850d78a2f15db839d79c1a5f6530c0'/);
+  assert.match(service, /downloadedBytes !== CLEANUP_PACK_BYTES \|\| hash\.digest\('hex'\) !== CLEANUP_PACK_SHA256/);
+  assert.match(service, /Downloaded Cleaned package is incomplete/);
+  assert.equal(packageJson.build.extraResources.some(resource => resource?.to === 'cleanup'), false);
 });

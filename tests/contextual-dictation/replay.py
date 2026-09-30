@@ -76,8 +76,12 @@ def worker_messages(audio_path: Path, vocabulary: list[str], native: Path | None
     environment = os.environ.copy()
     if native is not None:
         environment["MEMO_CONTEXTUAL_NATIVE"] = str(native.resolve())
+    worker = Path(os.environ.get(
+        "MEMO_CONTEXTUAL_WORKER",
+        ROOT / "scripts/shell/run-contextual-granite.sh",
+    ))
     process = subprocess.Popen(
-        [str(ROOT / "scripts/shell/run-contextual-granite.sh"), "--worker"],
+        [str(worker), "--worker"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

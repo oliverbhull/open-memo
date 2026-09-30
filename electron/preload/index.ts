@@ -74,9 +74,6 @@ const electronAPI = {
 
   deviceSync: {
     getStatus: (): Promise<DeviceSyncStatus> => ipcRenderer.invoke('device-sync:get-status'),
-    openRecordingsFolder: (): Promise<{ success: boolean; error?: string }> => (
-      ipcRenderer.invoke('device-sync:open-recordings-folder')
-    ),
     onStatus: (callback: (status: DeviceSyncStatus) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, status: DeviceSyncStatus) => callback(status);
       ipcRenderer.on('device-sync:status', handler);
@@ -193,6 +190,7 @@ const electronAPI = {
       handsFreeMode: boolean;
       saveAudio: boolean;
       writingMode: WritingMode;
+      experimentalEmailFormatting: boolean;
       cleanupState: CleanupState;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
@@ -215,6 +213,7 @@ const electronAPI = {
     setSaveAudio: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setSaveAudio', enabled);
     },
+    setExperimentalEmailFormatting: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setExperimentalEmailFormatting', enabled),
     setWritingMode: (mode: WritingMode): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setWritingMode', mode);
     },

@@ -20,6 +20,45 @@ interface PendingRequest {
   timer: NodeJS.Timeout;
 }
 
+interface WorkerLaunch {
+  command: string;
+  args: string[];
+  label: string;
+}
+
+function punctuationWorkerLaunch(): WorkerLaunch {
+  if (!process.env.MEMO_PNC_ENGINE || process.env.MEMO_PNC_ENGINE === 'distilbert') {
+    const bundle = resolveModelPackPath('pnc');
+    const compiled = path.join(bundle, 'compiled');
+    const modelName = fs.readdirSync(compiled).find((name) => name.endsWith('.mlmodelc'));
+    if (!modelName) throw new Error('compiled PnC model is missing');
+    return {
+      command: path.join(bundle, 'memo-pnc'),
+      args: [
+        '--model-path', path.join(compiled, modelName),
+        '--vocabulary-path', path.join(bundle, 'tokenizer.vocab'),
+        '--worker',
+      ],
+      label: 'DistilBERT',
+    };
+  }
+  if (process.env.MEMO_PNC_ENGINE !== 'edge') {
+    throw new Error(`unsupported PnC engine: ${process.env.MEMO_PNC_ENGINE}`);
+  }
+  const root = process.cwd();
+  const bundle = process.env.MEMO_EDGE_PNC_DIR || path.join(root, '.build', 'edge-punct-casing');
+  return {
+    command: path.join(bundle, 'venv', 'bin', 'python'),
+    args: [
+      path.join(root, 'scripts', 'python', 'edge-punct-worker.py'),
+      '--model-path', path.join(bundle, 'model', 'model.int8.onnx'),
+      '--vocabulary-path', path.join(bundle, 'model', 'bpe.vocab'),
+      '--worker',
+    ],
+    label: 'Edge-Punct-Casing',
+  };
+}
+
 export class PunctuationService {
   private process: ChildProcessWithoutNullStreams | null = null;
   private ready = false;
@@ -28,21 +67,12 @@ export class PunctuationService {
   start(): void {
     if (this.process) return;
     try {
-      const bundle = resolveModelPackPath('pnc');
-      const compiled = path.join(bundle, 'compiled');
-      const modelName = fs.readdirSync(compiled).find((name) => name.endsWith('.mlmodelc'));
-      if (!modelName) throw new Error('compiled PnC model is missing');
-      const worker = path.join(bundle, 'memo-pnc');
-      const vocabulary = path.join(bundle, 'tokenizer.vocab');
-      this.process = spawn(worker, [
-        '--model-path', path.join(compiled, modelName),
-        '--vocabulary-path', vocabulary,
-        '--worker',
-      ], { stdio: ['pipe', 'pipe', 'pipe'] });
+      const launch = punctuationWorkerLaunch();
+      this.process = spawn(launch.command, launch.args, { stdio: ['pipe', 'pipe', 'pipe'] });
 
       const child = this.process;
       const lines = readline.createInterface({ input: child.stdout });
-      lines.on('line', (line) => { if (this.process === child) this.handleLine(line); });
+      lines.on('line', (line) => { if (this.process === child) this.handleLine(line, launch.label); });
       this.process.stderr.on('data', (chunk) => logger.debug(`[PunctuationService] ${String(chunk).trim()}`));
       child.stdin.on('error', (error) => { if (this.process === child) this.handleExit(error); });
       child.once('error', (error) => { if (this.process === child) this.handleExit(error); });
@@ -87,10 +117,10 @@ export class PunctuationService {
     });
   }
 
-  private handleLine(line: string): void {
+  private handleLine(line: string, label: string): void {
     if (line === 'READY') {
       this.ready = true;
-      logger.info('[PunctuationService] DistilBERT punctuation and capitalization ready');
+      logger.info(`[PunctuationService] ${label} punctuation and capitalization ready`);
       return;
     }
     try {

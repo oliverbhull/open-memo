@@ -9,45 +9,37 @@ import json
 from pathlib import Path
 import sys
 import time
-from cleanup_completion import complete_output
+from cleanup_completion import complete_output, output_token_budget
 
 
-from cleanup_prompt import PROMPT_VERSION, user_content
+from cleanup_prompt import PROMPT_VERSION, chat_messages
 
 
 MAX_INPUT_CHARACTERS = 20_000
-MAX_VOCABULARY_ITEMS = 500
-MAX_VOCABULARY_CHARACTERS = 200
 
 
 def write_message(payload: dict) -> None:
     print(json.dumps(payload, ensure_ascii=False), flush=True)
 
 
-def validate_request(payload: object) -> tuple[str, str, list[str]]:
+def validate_request(payload: object) -> tuple[str, str]:
     if not isinstance(payload, dict):
         raise ValueError("request must be an object")
     request_id = payload.get("id")
     text = payload.get("text")
-    vocabulary = payload.get("vocabulary", [])
     if not isinstance(request_id, str) or not request_id:
         raise ValueError("request id is required")
     if not isinstance(text, str) or not text.strip():
         raise ValueError("transcript text is required")
     if len(text) > MAX_INPUT_CHARACTERS:
         raise ValueError("transcript is too long")
-    if not isinstance(vocabulary, list) or len(vocabulary) > MAX_VOCABULARY_ITEMS:
-        raise ValueError("vocabulary is invalid")
-    cleaned_vocabulary: list[str] = []
-    for item in vocabulary:
-        if not isinstance(item, str) or not item.strip() or len(item) > MAX_VOCABULARY_CHARACTERS:
-            raise ValueError("vocabulary item is invalid")
-        cleaned_vocabulary.append(item.strip())
-    return request_id, text.strip(), cleaned_vocabulary
+    if payload.get("format", "plain") not in ("plain", "email"):
+        raise ValueError("unsupported cleanup format")
+    return request_id, text.strip()
 
 
 def self_test() -> None:
-    _, text, _ = validate_request({"id": "test", "text": "ask JTECH for fifty two", "vocabulary": []})
+    _, text = validate_request({"id": "test", "text": "ask JTECH for fifty two"})
     assert text == "ask JTECH for fifty two"
 
 
@@ -72,9 +64,9 @@ def run_worker(
         model.load_weights(str(adapter_file), strict=False)
     sampler = make_sampler(temp=0.0)
 
-    def prompt_tokens(text: str) -> list[int]:
+    def prompt_tokens(text: str, format: str = "plain") -> list[int]:
         prompt = tokenizer.apply_chat_template(
-            [{"role": "user", "content": user_content(text)}],
+            chat_messages(text, format),
             tokenize=False,
             add_generation_prompt=True,
         )
@@ -95,7 +87,7 @@ def run_worker(
             model(mx.array(stable_prefix)[None], cache=prefix_cache)
             mx.eval([item.state for item in prefix_cache])
     warmup = tokenizer.apply_chat_template(
-        [{"role": "user", "content": user_content("hello there")}],
+        chat_messages("hello there"),
         tokenize=False,
         add_generation_prompt=True,
     )
@@ -114,16 +106,20 @@ def run_worker(
         stages: dict[str, float] = {}
         try:
             stage_started = time.perf_counter()
-            request_id, source_text, vocabulary = validate_request(json.loads(line))
+            payload = json.loads(line)
+            # Preserve correlation even when text validation rejects the request.
+            if isinstance(payload, dict) and isinstance(payload.get("id"), str):
+                request_id = payload["id"]
+            request_id, source_text = validate_request(payload)
             stages["request"] = elapsed_ms(stage_started)
             stage_started = time.perf_counter()
-            tokens = prompt_tokens(source_text)
+            tokens = prompt_tokens(source_text, payload.get("format", "plain"))
             cache = None
             if prefix_cache is not None and tokens[:len(stable_prefix)] == stable_prefix:
                 cache = copy.deepcopy(prefix_cache)
                 tokens = tokens[len(stable_prefix):]
             stages["prompt"] = elapsed_ms(stage_started)
-            max_tokens = min(512, max(64, len(source_text.split()) * 2 + 32))
+            max_tokens = output_token_budget(len(tokenizer.encode(source_text, add_special_tokens=False)))
             stage_started = time.perf_counter()
             model_output = complete_output(stream_generate(
                 model,

@@ -325,21 +325,47 @@ export class MemoSttService extends EventEmitter {
         );
       } else {
         const conomoRoot = resolveModelPackPath('conomo');
-        const bundledWorker = path.join(conomoRoot, 'conomo');
         const contextualWorker = path.join(process.cwd(), 'scripts', 'shell', 'run-contextual-granite.sh');
+        const packagedContextualWorker = isDev
+          ? ''
+          : path.join(process.resourcesPath, 'dictation', 'run-contextual-conomo');
 
-        // Development can use an explicitly supplied worker. Packaged apps
-        // always use the signed conomo executable in their resources.
+        // Development can use an explicitly supplied worker. Packaged apps use
+        // the owned contextual broker and native decoder shipped with Memo.
         env.MEMO_ASR_WORKER = isDev && process.env.MEMO_ASR_WORKER
           ? process.env.MEMO_ASR_WORKER
           : isDev
             ? contextualWorker
-            : bundledWorker;
-        if (isDev && env.MEMO_ASR_WORKER === contextualWorker) {
+            : packagedContextualWorker;
+        if (env.MEMO_ASR_WORKER === contextualWorker || env.MEMO_ASR_WORKER === packagedContextualWorker) {
           env.MEMO_CONTEXTUAL_VOCAB = '1';
         }
 
-        const requiredResources = [['worker', env.MEMO_ASR_WORKER]] as const;
+        if (!isDev) {
+          const compiledDirectory = path.join(conomoRoot, 'compiled');
+          const modelDirectories = fs.existsSync(compiledDirectory)
+            ? fs.readdirSync(compiledDirectory).filter(name => name.endsWith('.mlmodelc'))
+            : [];
+          if (modelDirectories.length !== 1) {
+            throw new Error(`Expected exactly one compiled Conomo model, found ${modelDirectories.length}.`);
+          }
+          env.MEMO_ASR_MODEL_PATH = path.join(compiledDirectory, modelDirectories[0]!);
+          env.MEMO_ASR_TOKENIZER_PATH = path.join(conomoRoot, 'tokenizer.json');
+          env.MEMO_CONTEXTUAL_PYTHON = path.join(resolveModelPackPath('cleanup'), 'runtime', 'bin', 'python');
+          env.MEMO_CONTEXTUAL_BROKER = path.join(process.resourcesPath, 'dictation', 'contextual-worker.py');
+          env.MEMO_CONTEXTUAL_NATIVE = path.join(process.resourcesPath, 'dictation', 'memo-conomo-contextual');
+        }
+
+        const requiredResources: Array<[string, string | undefined]> = [
+          ['worker', env.MEMO_ASR_WORKER],
+          ...(!isDev ? [
+            ['model', env.MEMO_ASR_MODEL_PATH],
+            ['tokenizer', env.MEMO_ASR_TOKENIZER_PATH],
+            ['contextual Python', env.MEMO_CONTEXTUAL_PYTHON],
+            ['contextual broker', env.MEMO_CONTEXTUAL_BROKER],
+            ['contextual native decoder', env.MEMO_CONTEXTUAL_NATIVE],
+          ] as Array<[string, string | undefined]> : []),
+        ];
         for (const [label, resourcePath] of requiredResources) {
           if (!resourcePath || !fs.existsSync(resourcePath)) {
             throw new Error(

@@ -11,6 +11,7 @@ export interface StoreSchema {
   handsFreeMode: boolean;
   saveAudio: boolean;
   writingMode: WritingMode;
+  experimentalEmailFormatting: boolean;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
   userName: string | null;
@@ -29,7 +30,8 @@ export const storeDefaults: StoreSchema = {
   sayEnterToPressEnter: false,
   handsFreeMode: false,
   saveAudio: false,
-  writingMode: 'clean',
+  writingMode: 'as-spoken',
+  experimentalEmailFormatting: false,
   vocabWords: [],
   phraseReplacements: [],
   userName: null,

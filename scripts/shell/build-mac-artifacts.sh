@@ -12,8 +12,8 @@ if [[ "${FULL_UPDATE}" == "1" ]]; then
   # Both artifacts contain the same complete app, so sign and notarize it once.
   npx electron-builder --mac dmg zip --publish=never
 else
-  # Every release needs a current, self-contained clean installer. The updater
-  # remains thin so existing installations keep their persistent model packs.
+  # Every release contains the included speech packs. The optional LFM cleanup
+  # pack is downloaded only when the user selects Cleaned.
   # Use a separate output tree so the second signing pass never reuses the
   # notarized full app's staging path.
   npx electron-builder --mac dmg --publish=never

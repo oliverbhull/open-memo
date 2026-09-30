@@ -6,7 +6,9 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { CleanupState } from '../../shared/electron-api';
 import { logger } from '../utils/logger';
-import { resolveModelPackPath } from './ModelPackService';
+import { installCleanupModelPack, isCleanupModelPackInstalled, resolveModelPackPath } from './ModelPackService';
+import { protectVocabulary, type ProtectedVocabulary } from './vocabularyProtection';
+import { formatEmailLineBreaks, preserveEmailOpening } from './emailFormatting';
 
 /** A deadline, not a delay: completed text is delivered immediately. */
 export function cleanupTimeoutMs(text: string): number {
@@ -43,6 +45,10 @@ interface PendingRequest {
   fallback: string;
   deadline: number;
   timer: NodeJS.Timeout;
+  protectedVocabulary: ProtectedVocabulary;
+  format: 'plain' | 'email';
+  senderName?: string;
+  maxCandidateLength: number;
 }
 
 interface CleanupPaths {
@@ -114,6 +120,7 @@ export class CleanupService extends EventEmitter {
   private startupTimer?: NodeJS.Timeout;
   private generation = 0;
   private queue: Promise<void> = Promise.resolve();
+  private starting: Promise<boolean> | null = null;
 
   isEnabled(): boolean { return process.platform === 'darwin'; }
 
@@ -121,8 +128,29 @@ export class CleanupService extends EventEmitter {
     return { ...this.state };
   }
 
-  start(): void {
-    if (this.process || !this.isEnabled()) return;
+  start(): Promise<boolean> {
+    if (this.process) return Promise.resolve(true);
+    if (!this.isEnabled()) return Promise.resolve(false);
+    if (this.starting) return this.starting;
+    this.starting = this.startAfterInstall().finally(() => { this.starting = null; });
+    return this.starting;
+  }
+
+  private async startAfterInstall(): Promise<boolean> {
+    if (app.isPackaged && !isCleanupModelPackInstalled()) {
+      this.setState({ available: false, status: 'downloading', downloadedBytes: 0, totalBytes: 1_034_639_401 });
+      try {
+        await installCleanupModelPack(progress => this.setState({
+          available: false, status: 'downloading', ...progress,
+          detail: `Downloading Cleaned (${Math.round(progress.downloadedBytes / progress.totalBytes * 100)}%)…`,
+        }));
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        this.setState({ available: false, status: 'unavailable', detail });
+        logger.warn('[CleanupService] Could not install cleanup model:', error);
+        return false;
+      }
+    }
     const paths = cleanupPaths();
     const required = [
       paths.python,
@@ -140,7 +168,7 @@ export class CleanupService extends EventEmitter {
         detail: 'Cleanup model files are missing.',
       });
       logger.warn('[CleanupService] Cleanup assets are incomplete; retaining original speech');
-      return;
+      return false;
     }
 
     this.stopping = false;
@@ -195,6 +223,7 @@ export class CleanupService extends EventEmitter {
       if (this.process !== worker) return;
       this.handleExit(new Error(`worker exited (${code ?? signal})`));
     });
+    return true;
   }
 
   stop(): void {
@@ -208,26 +237,32 @@ export class CleanupService extends EventEmitter {
     this.setState({ available: false, status: 'disabled' });
   }
 
-  async format(text: string, vocabulary: string[]): Promise<CleanupResult> {
+  async format(text: string, vocabulary: string[], format: 'plain' | 'email' = 'plain', senderName?: string): Promise<CleanupResult> {
     const generation = this.generation;
     const job = this.queue.then(async (): Promise<CleanupResult> => {
       if (!this.isEnabled()) return { text, status: 'fallback', reason: 'candidate_unavailable' };
       if (generation !== this.generation) return { text, status: 'fallback', reason: 'worker_stopped' };
-      if (!text.trim() || text.length > 20_000 || vocabulary.length > 500 ||
+      if (!text.trim() || text.length > 20_000 ||
           vocabulary.some(item => typeof item !== 'string' || !item.trim() || item.length > 200)) return { text, status: 'fallback', reason: 'input_bounds' };
       this.start();
-      const result = await this.formatOne(text, vocabulary);
-      return { ...result, model: cleanupPaths().model, contract: 'memo-lfm-hybrid-v3-plain-text' };
+      const result = await this.formatOne(text, vocabulary, format, senderName);
+      return { ...result,
+        model: cleanupPaths().model,
+        contract: format === 'email' ? 'memo-lfm-email-v4-profile-signature' : 'memo-lfm-faithful-v2-ungated' };
     });
     this.queue = job.then(() => undefined, () => undefined);
     return job;
   }
 
-  private async formatOne(text: string, vocabulary: string[]): Promise<CleanupResult> {
+  private async formatOne(text: string, vocabulary: string[], format: 'plain' | 'email', senderName?: string): Promise<CleanupResult> {
     if (!text || this.state.status !== 'ready' || !this.process?.stdin.writable) {
       return { text, status: 'fallback', reason: 'not_ready' };
     }
     const id = randomUUID();
+    const protectedVocabulary = protectVocabulary(text, vocabulary);
+    if (protectedVocabulary.text.length > 20_000) {
+      return { text, status: 'fallback', reason: 'protected_input_bounds' };
+    }
     const timeoutMs = cleanupTimeoutMs(text);
     logger.debug(`[CleanupService] input_words=${text.trim().split(/\s+/u).length} deadline_ms=${timeoutMs}`);
     return new Promise<CleanupResult>((resolve) => {
@@ -241,8 +276,17 @@ export class CleanupService extends EventEmitter {
         resolve({ text, status: 'fallback', reason: 'timeout' });
       }, timeoutMs);
       timer.unref();
-      this.pending.set(id, { resolve, fallback: text, deadline: performance.now() + timeoutMs, timer });
-      this.process!.stdin.write(`${JSON.stringify({ id, text, vocabulary })}\n`, (error) => {
+      this.pending.set(id, {
+        resolve,
+        fallback: text,
+        deadline: performance.now() + timeoutMs,
+        timer,
+        protectedVocabulary,
+        format,
+        senderName,
+        maxCandidateLength: Math.min(40_000, Math.max(protectedVocabulary.text.length * 2, 256)),
+      });
+      this.process!.stdin.write(`${JSON.stringify({ id, text: protectedVocabulary.text, ...(format === 'email' ? { format } : {}) })}\n`, (error) => {
         if (!error) return;
         const pending = this.pending.get(id);
         if (!pending) return;
@@ -272,7 +316,7 @@ export class CleanupService extends EventEmitter {
         this.handleExit(new Error('worker response arrived after deadline'));
         return;
       }
-      if (response.status !== 'accepted' || typeof response.text !== 'string' || !response.text.trim() || response.text.length > Math.max(pending.fallback.length * 2, 256)) {
+      if (response.status !== 'accepted' || typeof response.text !== 'string' || !response.text.trim() || response.text.length > pending.maxCandidateLength) {
         logger.info(`[CleanupService] Candidate rejected (${response.reason || 'unknown'}); retaining original speech`);
         if (response.error_detail) logger.debug(`[CleanupService] Failure detail: ${JSON.stringify(response.error_detail)}`);
         pending.resolve({
@@ -285,10 +329,28 @@ export class CleanupService extends EventEmitter {
         });
         return;
       }
+      const laidOut = pending.format === 'email' ? formatEmailLineBreaks(response.text) : response.text;
+      const restored = pending.protectedVocabulary.restore(laidOut);
+      if (!restored.ok) {
+        logger.info('[CleanupService] Candidate rejected (vocabulary_protection); retaining original speech');
+        pending.resolve({
+          text: pending.fallback,
+          status: 'fallback',
+          reason: 'vocabulary_protection',
+          candidateText: typeof response.candidate_text === 'string' && response.candidate_text.length <= 40_000 ? response.candidate_text : undefined,
+          latencyMs: response.latency_ms,
+          stageMs: response.stage_ms,
+        });
+        return;
+      }
+      const signedText = pending.format === 'email' && pending.senderName
+        ? formatEmailLineBreaks(restored.text, pending.senderName) : restored.text;
+      const finalText = pending.format === 'email'
+        ? preserveEmailOpening(signedText, pending.fallback) : signedText;
       pending.resolve({
-        text: response.text,
+        text: finalText,
         status: 'accepted',
-        candidateText: typeof response.candidate_text === 'string' && response.candidate_text.length <= 40_000 ? response.candidate_text : undefined,
+        candidateText: finalText,
         latencyMs: response.latency_ms,
         stageMs: response.stage_ms,
       });
