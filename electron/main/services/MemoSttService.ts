@@ -351,7 +351,7 @@ export class MemoSttService extends EventEmitter {
           }
           env.MEMO_ASR_MODEL_PATH = path.join(compiledDirectory, modelDirectories[0]!);
           env.MEMO_ASR_TOKENIZER_PATH = path.join(conomoRoot, 'tokenizer.json');
-          env.MEMO_CONTEXTUAL_PYTHON = path.join(resolveModelPackPath('cleanup'), 'runtime', 'bin', 'python');
+          env.MEMO_CONTEXTUAL_PYTHON = path.join(conomoRoot, 'device-runtime', 'bin', 'python3.12');
           env.MEMO_CONTEXTUAL_BROKER = path.join(process.resourcesPath, 'dictation', 'contextual-worker.py');
           env.MEMO_CONTEXTUAL_NATIVE = path.join(process.resourcesPath, 'dictation', 'memo-conomo-contextual');
         }

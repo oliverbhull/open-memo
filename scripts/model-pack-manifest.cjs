@@ -14,6 +14,7 @@ function isStablePackFile(name, relative) {
   // after build-time manifests are created. Their code signatures provide the
   // executable integrity boundary; the content manifest covers immutable
   // weights, tokenizers, configuration, notices, and worker source.
+  if (name === 'conomo' && relative === 'device-runtime/.memo-runtime-version') return true;
   if (name === 'conomo' && (relative === 'conomo' || relative.startsWith('device-runtime/'))) return false;
   if (name === 'pnc' && relative === 'memo-pnc') return false;
   if (name === 'cleanup' && relative.startsWith('runtime/')) return false;
@@ -25,7 +26,7 @@ function filesUnder(root, current = root) {
     // electron-builder excludes dotfiles from these resource filters. They are
     // build caches/markers, not runtime inputs, so keep them out of the signed
     // content contract as well.
-    if (entry.name.startsWith('.')) return [];
+    if (entry.name.startsWith('.') && entry.name !== '.memo-runtime-version') return [];
     const absolute = path.join(current, entry.name);
     if (entry.isDirectory()) return filesUnder(root, absolute);
     if (!entry.isFile() || entry.name === 'model-pack.json') return [];

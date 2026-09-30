@@ -12,7 +12,7 @@ MODEL_COUNT="$(find "${BUNDLE_DIR}/compiled" -maxdepth 1 -type d -name '*.mlmode
 [[ "$(jq -r .quantization "${BUNDLE_DIR}/manifest.json")" == int4 ]] || { echo "conomo manifest is not INT4" >&2; exit 1; }
 [[ "$(jq -r .int4_operations "${BUNDLE_DIR}/manifest.json")" -gt 0 ]] || { echo "conomo manifest has no INT4 operations" >&2; exit 1; }
 [[ -x "${BUNDLE_DIR}/conomo" ]] || { echo "conomo is not executable" >&2; exit 1; }
-"${BUNDLE_DIR}/device-runtime/bin/python3.12" -B -c 'import serial; print(serial.VERSION)' >/dev/null
+"${BUNDLE_DIR}/device-runtime/bin/python3.12" -B -c 'import serial; from tokenizers import Tokenizer; print(serial.VERSION, Tokenizer.__name__)' >/dev/null
 READY="$(printf '' | "${BUNDLE_DIR}/conomo" --worker | head -n 1)"
 [[ "${READY}" == READY ]] || { echo "conomo did not become ready: ${READY}" >&2; exit 1; }
 echo "conomo bundle verified at ${BUNDLE_DIR}"
