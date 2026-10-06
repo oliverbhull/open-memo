@@ -102,7 +102,7 @@ export interface ToastData {
   duration: number;
 }
 
-export type AsrModelId = 'conomo' | 'whisper';
+export type AsrModelId = 'conomo';
 
 export type WritingMode = 'as-spoken' | 'clean';
 
@@ -113,33 +113,6 @@ export interface CleanupState {
   detail?: string;
   downloadedBytes?: number;
   totalBytes?: number;
-}
-
-export type AsrModelInstallState =
-  | 'included'
-  | 'not-downloaded'
-  | 'downloading'
-  | 'downloaded'
-  | 'error';
-
-export interface AsrModelStatus {
-  id: AsrModelId;
-  name: string;
-  installState: AsrModelInstallState;
-  downloadedBytes: number;
-  totalBytes: number;
-  error?: string;
-}
-
-export interface AsrState {
-  selectedModel: AsrModelId;
-  models: Record<AsrModelId, AsrModelStatus>;
-}
-
-export interface AsrSelectionResult {
-  success: boolean;
-  state: AsrState;
-  error?: string;
 }
 
 export interface MicrophoneInputDevice {
@@ -214,12 +187,6 @@ export interface ElectronAPI {
     removeCleaned(): Promise<{ writingMode: WritingMode; cleanupState: CleanupState }>;
     setStartAtLogin(enabled: boolean): Promise<boolean>;
     onCleanupStateChanged(callback: (state: CleanupState) => void): () => void;
-  };
-  asr: {
-    getState(): Promise<AsrState>;
-    selectModel(model: AsrModelId): Promise<AsrSelectionResult>;
-    removeWhisper(): Promise<AsrState>;
-    onStateChanged(callback: (state: AsrState) => void): () => void;
   };
   microphone: {
     getState(): Promise<MicrophoneInputState>;

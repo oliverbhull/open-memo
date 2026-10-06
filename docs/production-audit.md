@@ -33,7 +33,7 @@ The preexisting `WindowService.ts` edits were preserved.
 | History | Main saves delivered text, original recognition, cleanup evidence and optional audio independently of renderer availability. A UI failure cannot delete audio belonging to an already-persisted entry. Tombstones are not reinserted. |
 | Delivery | Complete delivery jobs are ordered. Icon decoration no longer invokes synchronous AppleScript before history persistence. Shutdown skips new paste/cleanup work and drains accepted output. |
 | Shutdown | Quit/update waits for child stream closure and queued history. A suspended service cannot be resumed by a late sync callback; stale stream events cannot affect replacements. |
-| Model services | Late Whisper downloads cannot override a newer model choice. Punctuation worker replacement and broken-pipe handling preserve fallback. |
+| Model services | Legacy Whisper downloads are removed on upgrade and Conomo is the only speech model. Punctuation worker replacement and broken-pipe handling preserve fallback. |
 | Updates | Download failures are observed and retryable; explicit install awaits worker shutdown. |
 | Release assets | Exactly one versioned ARM64 ZIP and DMG plus a matching manifest are required; sizes, SHA512 values and legacy ZIP references are verified before upload. Successful CI must be a main-branch push run. |
 | Privacy | Malformed transcription payloads are not printed in production error logs. Development comparison logging remains available as requested. |

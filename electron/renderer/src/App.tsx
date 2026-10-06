@@ -261,11 +261,8 @@ function App() {
       if (status.state === 'transcribing') {
         setToast({ message: 'Syncing Memo recordings… dictation will resume automatically.', severity: 'info', duration: 3500 });
       } else if (status.state === 'complete') {
-        const fallback = status.requestedModel === 'whisper' && status.actualModel === 'conomo'
-          ? ' (transcribed with conomo fallback)'
-          : '';
         void importUsbTranscripts()
-          .then(() => setToast({ message: `Memo sync complete${fallback}`, severity: 'success', duration: 3500 }))
+          .then(() => setToast({ message: 'Memo sync complete', severity: 'success', duration: 3500 }))
           .catch((error) => {
             logger.error('[App] Failed to show synced Memo recordings:', error);
             setToast({ message: 'Recordings are safe, but Memo could not add them to the feed.', severity: 'error', duration: 7000 });

@@ -44,47 +44,34 @@ test('old punctuation worker exit cannot disable replacement; pipe errors retain
   } finally { service.stop(); }
 });
 
-test('later model choice wins over a pending Whisper download', async () => {
-  let settings = { asrModel: 'conomo' };
-  const Service = load('AsrModelService', {
-    electron: { app: { isPackaged: true, getPath: () => '/nonexistent' } },
-    './SettingsService': { loadSettings: () => ({ ...settings }), saveSettings: next => { settings = next; } },
-  });
-  const service = new Service();
-  let finish;
-  service.downloadWhisper = () => new Promise(resolve => { finish = resolve; });
-  let restarts = 0;
-  const oldSelection = service.selectModel('whisper', () => { restarts++; });
-  assert.equal((await service.selectModel('conomo', () => { restarts++; })).success, true);
-  finish();
-  assert.equal((await oldSelection).success, false);
-  assert.equal(settings.asrModel, 'conomo');
-  assert.equal(restarts, 0);
-});
-
-test('removing active Whisper switches to Conomo before deleting only its downloaded file', async t => {
-  const userData = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'memo-model-removal-'));
+test('upgrade resets Whisper selection and removes its downloads without touching other models', async t => {
+  const userData = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'memo-whisper-migration-'));
   t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
-  const model = path.join(userData, 'models', 'whisper', 'ggml-small.en-q5_1.bin');
-  fs.mkdirSync(path.dirname(model), { recursive: true });
-  fs.closeSync(fs.openSync(model, 'w'));
-  fs.truncateSync(model, 190_098_681);
-  let settings = { asrModel: 'whisper' };
-  let restarted = false;
-  const Service = load('AsrModelService', {
-    electron: { app: { isPackaged: true, getPath: () => userData } },
-    './SettingsService': { loadSettings: () => ({ ...settings }), saveSettings: next => { settings = next; } },
-  });
-  const service = new Service();
-  const state = await service.removeWhisper(async () => {
-    assert.equal(settings.asrModel, 'conomo');
-    assert.equal(fs.existsSync(model), true);
-    restarted = true;
-  });
-  assert.equal(restarted, true);
-  assert.equal(fs.existsSync(model), false);
-  assert.equal(state.selectedModel, 'conomo');
-  assert.equal(state.models.whisper.installState, 'not-downloaded');
+  const whisperDirectory = path.join(userData, 'models', 'whisper');
+  const otherModel = path.join(userData, 'models', 'other', 'keep.bin');
+  fs.mkdirSync(whisperDirectory, { recursive: true });
+  fs.mkdirSync(path.dirname(otherModel), { recursive: true });
+  fs.writeFileSync(path.join(whisperDirectory, 'ggml-small.en-q5_1.bin'), 'old model');
+  fs.writeFileSync(path.join(whisperDirectory, 'ggml-small.en-q5_1.bin.part'), 'partial download');
+  fs.writeFileSync(otherModel, 'keep');
+  let selection = 'whisper';
+  const entry = path.resolve('electron/main/services/LegacyWhisperCleanup.ts');
+  const source = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs',
+    external: ['electron', './SettingsService', '../utils/logger'], write: false }).outputFiles[0].text;
+  const loaded = new Module(entry, module);
+  const original = Module._load;
+  Module._load = (id, ...args) => {
+    if (id === 'electron') return { app: { getPath: () => userData } };
+    if (id === './SettingsService') return { store: { get: () => selection, set: (_key, value) => { selection = value; } } };
+    if (id === '../utils/logger') return { logger: { info() {} } };
+    return original(id, ...args);
+  };
+  try { loaded._compile(source, entry); } finally { Module._load = original; }
+  await loaded.exports.removeLegacyWhisperModel();
+  await loaded.exports.removeLegacyWhisperModel();
+  assert.equal(selection, 'conomo');
+  assert.equal(fs.existsSync(whisperDirectory), false);
+  assert.equal(fs.readFileSync(otherModel, 'utf8'), 'keep');
 });
 
 test('removing Cleaned leaves included model packs in place', async t => {

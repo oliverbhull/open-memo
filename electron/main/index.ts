@@ -22,8 +22,7 @@ import { audioStorageService } from './services/AudioStorageService';
 import { applicationIconService } from './services/ApplicationIconService';
 import { saveJsonExport } from './services/JsonExportService';
 import { audioInputService } from './services/AudioInputService';
-import { AsrModelService } from './services/AsrModelService';
-import type { AppContext, AsrModelId, AsrState } from '../shared/electron-api';
+import type { AppContext } from '../shared/electron-api';
 import { resolveTranscriptionText, resolveCleanInput } from '../shared/transcription';
 import { UsbTranscriptService } from './services/UsbTranscriptService';
 import { DeviceSyncService } from './services/DeviceSyncService';
@@ -37,6 +36,7 @@ import { detectEmailTarget } from './services/emailFormatting';
 import { createDictationEntry } from '../shared/dictationEntry';
 import { verifyBundledModelPacks, removeLegacyBundledModelPacks, isCleanupModelPackInstalled, removeCleanupModelPack } from './services/ModelPackService';
 import { checkInputMonitoringPermission } from './services/InputMonitoringPermissionService';
+import { removeLegacyWhisperModel } from './services/LegacyWhisperCleanup';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
 
@@ -78,7 +78,6 @@ let isRecording = false;
 let isQuitting = false;
 let deliveryQueue: Promise<void> = Promise.resolve();
 let micDeviceRecoveryTimer: NodeJS.Timeout | null = null;
-const asrModelService = new AsrModelService();
 const usbTranscriptService = new UsbTranscriptService();
 const punctuationService = new PunctuationService();
 const cleanupService = new CleanupService();
@@ -88,12 +87,6 @@ let removingCleanupModel = false;
 cleanupService.on('state-changed', (state) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('writing:cleanup-state-changed', state);
-  }
-});
-
-asrModelService.on('state-changed', (state: AsrState) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('asr:state-changed', state);
   }
 });
 
@@ -625,6 +618,12 @@ app.whenReady().then(async () => {
   openMainWindow();
   appUpdateService.start();
 
+  try {
+    await removeLegacyWhisperModel();
+  } catch (error) {
+    logger.warn('[Main] Could not remove legacy Whisper download; will retry on next launch:', error);
+  }
+
   // Keep the window and updates available even if this Mac cannot start a
   // model. Existing saved packs remain a fallback until both workers pass.
   try {
@@ -775,26 +774,6 @@ ipcMain.handle('device-sync:get-status', () => (
 ));
 
 ipcMain.handle('memo-stt:restart', async () => memoSttService?.restart());
-
-ipcMain.handle('asr:get-state', () => asrModelService.getState());
-
-ipcMain.handle('asr:select-model', async (_event, model: AsrModelId) => (
-  asrModelService.selectModel(model, () => {
-    const deviceBatchOwnsStt = deviceSyncService?.isTranscribing() ?? false;
-    deviceSyncService?.restart();
-    if (!deviceBatchOwnsStt) memoSttService?.restart();
-  })
-));
-
-ipcMain.handle('asr:remove-whisper', async () => {
-  if (deviceSyncService?.isTranscribing()) {
-    throw new Error('Wait for device transcription to finish before removing Whisper.');
-  }
-  return asrModelService.removeWhisper(async () => {
-    await deviceSyncService?.restart();
-    await memoSttService?.restart();
-  });
-});
 
 // Permission handlers
 ipcMain.handle('permissions:check-microphone', async () => {

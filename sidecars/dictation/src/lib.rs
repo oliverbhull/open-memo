@@ -1,9 +1,5 @@
 //! Shared types for Open Memo's native dictation sidecar.
 
-pub mod engine;
-
-pub use engine::SttEngine;
-
 #[derive(Debug)]
 pub struct Error(pub String);
 

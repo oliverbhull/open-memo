@@ -175,7 +175,7 @@ fn strip_leading_dash_space(text: &str) -> String {
     }
 }
 
-/// Punctuation-only Whisper output is a no-speech artifact, not a transcript.
+/// Punctuation-only output is a no-speech artifact, not a transcript.
 fn has_meaningful_transcript(text: &str) -> bool {
     text.chars().any(char::is_alphanumeric)
 }

@@ -692,10 +692,7 @@ def prepare_archives(args, connection, batch: dict, journal: dict) -> list[dict]
         await_transcription_slot()
         env = dict(os.environ)
         env.update({"MEMO_ASR_BACKEND": args.actual_model, "PYTHONNOUSERSITE": "1"})
-        if args.actual_model == "whisper":
-            env["MEMO_WHISPER_MODEL_PATH"] = str(args.whisper_model)
-        else:
-            env["MEMO_ASR_WORKER"] = str(args.conomo_root / "conomo")
+        env["MEMO_ASR_WORKER"] = str(args.conomo_root / "conomo")
         results = transcribe_batch(args.stt_bin, requests, env)
     archives = []
     completed = 0
@@ -874,9 +871,8 @@ def main() -> int:
     parser.add_argument("--lock", type=Path, required=True)
     parser.add_argument("--stt-bin", type=Path, required=True)
     parser.add_argument("--conomo-root", type=Path, required=True)
-    parser.add_argument("--whisper-model", type=Path, required=True)
-    parser.add_argument("--requested-model", choices=("conomo", "whisper"), required=True)
-    parser.add_argument("--actual-model", choices=("conomo", "whisper"), required=True)
+    parser.add_argument("--requested-model", choices=("conomo",), required=True)
+    parser.add_argument("--actual-model", choices=("conomo",), required=True)
     parser.add_argument("--fallback-reason", default=None)
     parser.add_argument("--poll-seconds", type=float, default=2.0)
     parser.add_argument("--ble-bridge", type=Path)

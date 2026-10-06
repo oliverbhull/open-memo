@@ -5,7 +5,6 @@ import fs from 'fs';
 import { app } from 'electron';
 import { logger } from '../utils/logger';
 import { loadSettings, store } from './SettingsService';
-import { isWhisperModelInstalled, whisperModelPath } from './AsrModelService';
 import { resolveModelPackPath } from './ModelPackService';
 import { resolveTranscriptionText, resolveCleanInput } from '../../shared/transcription';
 import { normalizeTranscriptionText } from './textProcessing';
@@ -304,87 +303,72 @@ export class MemoSttService extends EventEmitter {
         MEMO_EMIT_AUDIO: settings.saveAudio ? '1' : '0',
         MEMO_HANDS_FREE: handsFreeMode ? '1' : '0',
       };
-      const requestedAsrModel = settings.asrModel;
-      const asrModel = requestedAsrModel === 'whisper' && isWhisperModelInstalled()
-        ? 'whisper'
-        : 'conomo';
-      if (requestedAsrModel === 'whisper' && asrModel === 'conomo') {
-        logger.warn('[MemoSttService] Selected Whisper model is missing; falling back to conomo');
+      env.MEMO_ASR_BACKEND = 'conomo';
+
+      const stagedConomoRoot = resolveModelPackPath('conomo');
+      const stagedCompiled = path.join(stagedConomoRoot, 'compiled');
+      const hasStagedModel = fs.existsSync(stagedCompiled) &&
+        fs.readdirSync(stagedCompiled).some(name => name.endsWith('.mlmodelc') && name !== 'fixture.mlmodelc');
+      const conomoRoot = isDev && !hasStagedModel
+        ? path.join('/Applications', 'Memo.app', 'Contents', 'Resources', 'conomo')
+        : stagedConomoRoot;
+      const contextualWorker = path.join(process.cwd(), '.build', 'dictation', 'run-contextual-conomo');
+      const packagedContextualWorker = isDev
+        ? ''
+        : path.join(process.resourcesPath, 'dictation', 'run-contextual-conomo');
+
+      // Development uses the same contextual worker as the packaged app.
+      // An explicit worker override remains available for experiments.
+      env.MEMO_ASR_WORKER = isDev && process.env.MEMO_ASR_WORKER
+        ? process.env.MEMO_ASR_WORKER
+        : isDev
+          ? contextualWorker
+          : packagedContextualWorker;
+      if (env.MEMO_ASR_WORKER === contextualWorker || env.MEMO_ASR_WORKER === packagedContextualWorker) {
+        env.MEMO_CONTEXTUAL_VOCAB = '1';
       }
-      env.MEMO_ASR_BACKEND = asrModel;
 
-      if (asrModel === 'whisper') {
-        env.MEMO_WHISPER_MODEL_PATH = whisperModelPath();
-        logger.info(
-          `[MemoSttService #${this.instanceId}] ASR model: Whisper ` +
-          `(model=${env.MEMO_WHISPER_MODEL_PATH})`,
-        );
-      } else {
-        const stagedConomoRoot = resolveModelPackPath('conomo');
-        const stagedCompiled = path.join(stagedConomoRoot, 'compiled');
-        const hasStagedModel = fs.existsSync(stagedCompiled) &&
-          fs.readdirSync(stagedCompiled).some(name => name.endsWith('.mlmodelc') && name !== 'fixture.mlmodelc');
-        const conomoRoot = isDev && !hasStagedModel
-          ? path.join('/Applications', 'Memo.app', 'Contents', 'Resources', 'conomo')
-          : stagedConomoRoot;
-        const contextualWorker = path.join(process.cwd(), '.build', 'dictation', 'run-contextual-conomo');
-        const packagedContextualWorker = isDev
-          ? ''
-          : path.join(process.resourcesPath, 'dictation', 'run-contextual-conomo');
-
-        // Development uses the same contextual worker as the packaged app.
-        // An explicit worker override remains available for experiments.
-        env.MEMO_ASR_WORKER = isDev && process.env.MEMO_ASR_WORKER
-          ? process.env.MEMO_ASR_WORKER
-          : isDev
-            ? contextualWorker
-            : packagedContextualWorker;
-        if (env.MEMO_ASR_WORKER === contextualWorker || env.MEMO_ASR_WORKER === packagedContextualWorker) {
-          env.MEMO_CONTEXTUAL_VOCAB = '1';
+      if (env.MEMO_ASR_WORKER === contextualWorker || !isDev) {
+        const compiledDirectory = path.join(conomoRoot, 'compiled');
+        const modelDirectories = fs.existsSync(compiledDirectory)
+          ? fs.readdirSync(compiledDirectory).filter(name => name.endsWith('.mlmodelc'))
+          : [];
+        if (modelDirectories.length !== 1) {
+          throw new Error(`Expected one compiled Conomo model in ${compiledDirectory}, found ${modelDirectories.length}. Install Memo.app or stage a Conomo bundle in .build/conomo.`);
         }
-
-        if (env.MEMO_ASR_WORKER === contextualWorker || !isDev) {
-          const compiledDirectory = path.join(conomoRoot, 'compiled');
-          const modelDirectories = fs.existsSync(compiledDirectory)
-            ? fs.readdirSync(compiledDirectory).filter(name => name.endsWith('.mlmodelc'))
-            : [];
-          if (modelDirectories.length !== 1) {
-            throw new Error(`Expected one compiled Conomo model in ${compiledDirectory}, found ${modelDirectories.length}. Install Memo.app or stage a Conomo bundle in .build/conomo.`);
-          }
-          env.MEMO_ASR_MODEL_PATH = path.join(compiledDirectory, modelDirectories[0]!);
-          env.MEMO_ASR_TOKENIZER_PATH = path.join(conomoRoot, 'tokenizer.json');
-          env.MEMO_CONTEXTUAL_PYTHON = path.join(conomoRoot, 'device-runtime', 'bin', 'python3.12');
-          env.MEMO_CONTEXTUAL_BROKER = isDev
-            ? path.join(process.cwd(), '.build', 'dictation', 'contextual-worker.py')
-            : path.join(process.resourcesPath, 'dictation', 'contextual-worker.py');
-          env.MEMO_CONTEXTUAL_NATIVE = isDev
-            ? path.join(process.cwd(), '.build', 'dictation', 'memo-conomo-contextual')
-            : path.join(process.resourcesPath, 'dictation', 'memo-conomo-contextual');
-        }
-
-        const requiredResources: Array<[string, string | undefined]> = [
-          ['worker', env.MEMO_ASR_WORKER],
-          ...(env.MEMO_ASR_WORKER === contextualWorker || !isDev ? [
-            ['model', env.MEMO_ASR_MODEL_PATH],
-            ['tokenizer', env.MEMO_ASR_TOKENIZER_PATH],
-            ['contextual Python', env.MEMO_CONTEXTUAL_PYTHON],
-            ['contextual broker', env.MEMO_CONTEXTUAL_BROKER],
-            ['contextual native decoder', env.MEMO_CONTEXTUAL_NATIVE],
-          ] as Array<[string, string | undefined]> : []),
-        ];
-        for (const [label, resourcePath] of requiredResources) {
-          if (!resourcePath || !fs.existsSync(resourcePath)) {
-            throw new Error(
-              `Bundled conomo ${label} not found at ${resourcePath || '(unset)'}. ` +
-              'Run npm run build:conomo first.',
-            );
-          }
-        }
-        logger.info(
-          `[MemoSttService #${this.instanceId}] ASR model: conomo ` +
-          `(worker=${env.MEMO_ASR_WORKER})`,
-        );
+        env.MEMO_ASR_MODEL_PATH = path.join(compiledDirectory, modelDirectories[0]!);
+        env.MEMO_ASR_TOKENIZER_PATH = path.join(conomoRoot, 'tokenizer.json');
+        env.MEMO_CONTEXTUAL_PYTHON = path.join(conomoRoot, 'device-runtime', 'bin', 'python3.12');
+        env.MEMO_CONTEXTUAL_BROKER = isDev
+          ? path.join(process.cwd(), '.build', 'dictation', 'contextual-worker.py')
+          : path.join(process.resourcesPath, 'dictation', 'contextual-worker.py');
+        env.MEMO_CONTEXTUAL_NATIVE = isDev
+          ? path.join(process.cwd(), '.build', 'dictation', 'memo-conomo-contextual')
+          : path.join(process.resourcesPath, 'dictation', 'memo-conomo-contextual');
       }
+
+      const requiredResources: Array<[string, string | undefined]> = [
+        ['worker', env.MEMO_ASR_WORKER],
+        ...(env.MEMO_ASR_WORKER === contextualWorker || !isDev ? [
+          ['model', env.MEMO_ASR_MODEL_PATH],
+          ['tokenizer', env.MEMO_ASR_TOKENIZER_PATH],
+          ['contextual Python', env.MEMO_CONTEXTUAL_PYTHON],
+          ['contextual broker', env.MEMO_CONTEXTUAL_BROKER],
+          ['contextual native decoder', env.MEMO_CONTEXTUAL_NATIVE],
+        ] as Array<[string, string | undefined]> : []),
+      ];
+      for (const [label, resourcePath] of requiredResources) {
+        if (!resourcePath || !fs.existsSync(resourcePath)) {
+          throw new Error(
+            `Bundled conomo ${label} not found at ${resourcePath || '(unset)'}. ` +
+            'Run npm run build:conomo first.',
+          );
+        }
+      }
+      logger.info(
+        `[MemoSttService #${this.instanceId}] ASR model: conomo ` +
+        `(worker=${env.MEMO_ASR_WORKER})`,
+      );
       // An explicit system microphone is strict. The native process must either
       // open this device or fail; it must never substitute the macOS default.
       const micLabel = store.get('selectedSystemMicName');

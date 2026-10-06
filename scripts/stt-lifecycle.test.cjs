@@ -25,7 +25,6 @@ function harness() {
       if (name === 'electron') return { app: { isPackaged: false } };
       if (name === '../utils/logger') return { logger };
       if (name === './SettingsService') return { loadSettings: () => ({ vocabWords: [] }), store: { get() {} } };
-      if (name === './AsrModelService') return { isWhisperModelInstalled: () => false };
       if (name === './ModelPackService') return { resolveModelPackPath: () => '/test-conomo' };
       if (name.includes('transcription') || name.includes('textProcessing')) return {};
       return require(name);
