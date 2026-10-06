@@ -1,13 +1,13 @@
 {
   "name": "open-memo",
-  "version": "0.8.20",
+  "version": "0.8.21",
   "description": "Open-source push-to-talk dictation for macOS",
   "homepage": "https://github.com/oliverbhull/open-memo",
   "main": "dist/main.cjs",
   "preload": "dist/preload.cjs",
   "type": "module",
   "scripts": {
-    "dev": "npm run setup:contextual-ctc && npm run setup:cleanup && npm run setup:pnc:edge && npm run build:dictation && npm run build:ble && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development MEMO_PNC_ENGINE=edge electron .\"",
+    "dev": "npm run setup:pnc:edge && npm run build:dictation && npm run build:ble && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development MEMO_PNC_ENGINE=edge electron .\"",
     "setup:contextual-ctc": "bash scripts/shell/setup-contextual-ctc.sh",
     "setup:cleanup": "bash scripts/shell/setup-cleanup-dev.sh",
     "setup:pnc:edge": "bash scripts/shell/setup-edge-punct-dev.sh",
@@ -219,7 +219,6 @@
         "to": "device-sync/memo-ble-bridge"
       }
     ],
-    "beforePack": "scripts/beforePack.cjs",
     "afterPack": "scripts/afterPack.cjs",
     "publish": [
       {

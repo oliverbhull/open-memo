@@ -94,7 +94,7 @@ export class PunctuationService {
 
   async format(text: string): Promise<string> {
     // NVIDIA's checkpoint expects lowercase English without sentence punctuation.
-    // Preserve already-formatted output from Whisper or future cased ASR models.
+    // Preserve already-formatted output from Conomo or future cased ASR models.
     if (/\p{Lu}/u.test(text) || /[.!?](?:\s|$)/u.test(text)) return text;
     if (!text || !this.ready || !this.process?.stdin.writable) return text;
     const id = randomUUID();

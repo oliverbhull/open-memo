@@ -71,7 +71,7 @@ test('fresh installs default to As spoken so LFM is opt-in', () => {
 
 test('Cleaned remains selectable after As spoken stops the cleanup worker', () => {
   const settings = fs.readFileSync(path.resolve('electron/renderer/src/components/Settings.tsx'), 'utf8');
-  assert.match(settings, /<option value="clean">Cleaned<\/option>/);
+  assert.match(settings, /<option value="clean">Cleaned – 1\.03 GB model download<\/option>/);
   assert.doesNotMatch(settings, /disabled=\{cleanupState\.status === 'disabled'\}/);
 });
 

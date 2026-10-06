@@ -22,8 +22,7 @@ import { audioStorageService } from './services/AudioStorageService';
 import { applicationIconService } from './services/ApplicationIconService';
 import { saveJsonExport } from './services/JsonExportService';
 import { audioInputService } from './services/AudioInputService';
-import { AsrModelService } from './services/AsrModelService';
-import type { AppContext, AsrModelId, AsrState } from '../shared/electron-api';
+import type { AppContext } from '../shared/electron-api';
 import { resolveTranscriptionText, resolveCleanInput } from '../shared/transcription';
 import { UsbTranscriptService } from './services/UsbTranscriptService';
 import { DeviceSyncService } from './services/DeviceSyncService';
@@ -35,8 +34,9 @@ import { CleanupService } from './services/CleanupService';
 import { pasteIntoFocusedTarget } from './services/checkedPaste';
 import { detectEmailTarget } from './services/emailFormatting';
 import { createDictationEntry } from '../shared/dictationEntry';
-import { ensurePersistentModelPacks } from './services/ModelPackService';
+import { verifyBundledModelPacks, removeLegacyBundledModelPacks, isCleanupModelPackInstalled, removeCleanupModelPack } from './services/ModelPackService';
 import { checkInputMonitoringPermission } from './services/InputMonitoringPermissionService';
+import { removeLegacyWhisperModel } from './services/LegacyWhisperCleanup';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
 
@@ -72,28 +72,21 @@ let memoSttService: MemoSttService | null = null;
 let deviceSyncService: DeviceSyncService | null = null;
 const appUpdateService = new AppUpdateService(() => mainWindow, async () => {
   isQuitting = true;
-  await ensurePersistentModelPacks();
   await cleanupMemoStt();
 });
 let isRecording = false;
 let isQuitting = false;
 let deliveryQueue: Promise<void> = Promise.resolve();
 let micDeviceRecoveryTimer: NodeJS.Timeout | null = null;
-const asrModelService = new AsrModelService();
 const usbTranscriptService = new UsbTranscriptService();
 const punctuationService = new PunctuationService();
 const cleanupService = new CleanupService();
 let writingModeSelectionGeneration = 0;
+let removingCleanupModel = false;
 
 cleanupService.on('state-changed', (state) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('writing:cleanup-state-changed', state);
-  }
-});
-
-asrModelService.on('state-changed', (state: AsrState) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('asr:state-changed', state);
   }
 });
 
@@ -604,13 +597,12 @@ app.whenReady().then(async () => {
 
   // Run migration from file-based settings to electron-store
   migrateToElectronStore();
-
-  // Seed persistent, content-addressed model packs before workers start. App
-  // updates can become lightweight after one migration release has shipped.
-  try {
-    await ensurePersistentModelPacks();
-  } catch (error) {
-    logger.warn('[Main] Could not persist bundled model packs; using bundled assets for this launch:', error);
+  if (app.isPackaged && !store.get('_optionalCleanupMigrationCompleted', false)) {
+    if (loadSettings().writingMode === 'clean' && !isCleanupModelPackInstalled()) {
+      store.set('writingMode', 'as-spoken');
+      logger.info('[Main] Migrated Cleaned without a downloaded model to As spoken');
+    }
+    store.set('_optionalCleanupMigrationCompleted', true);
   }
 
   // Memo owns a normal app window, so keep one foreground app identity on macOS.
@@ -625,6 +617,28 @@ app.whenReady().then(async () => {
   setOpenMainWindowHandler(openMainWindow);
   openMainWindow();
   appUpdateService.start();
+
+  try {
+    await removeLegacyWhisperModel();
+  } catch (error) {
+    logger.warn('[Main] Could not remove legacy Whisper download; will retry on next launch:', error);
+  }
+
+  // Keep the window and updates available even if this Mac cannot start a
+  // model. Existing saved packs remain a fallback until both workers pass.
+  try {
+    await verifyBundledModelPacks();
+    // The updater may still be holding the previous app for rollback during
+    // the first seconds after relaunch. Remove old pack copies after that.
+    const cleanupLegacyPacks = setTimeout(() => {
+      void removeLegacyBundledModelPacks().catch(error =>
+        logger.warn('[Main] Could not remove legacy model copies:', error));
+    }, 60_000);
+    cleanupLegacyPacks.unref();
+  } catch (error) {
+    logger.warn('[Main] Could not verify bundled models; retaining legacy model copies:', error);
+  }
+
   if (loadSettings().writingMode === 'clean') cleanupService.start();
   else if (app.isPackaged || process.env.MEMO_PNC_ENGINE === 'edge') punctuationService.start();
 
@@ -760,16 +774,6 @@ ipcMain.handle('device-sync:get-status', () => (
 ));
 
 ipcMain.handle('memo-stt:restart', async () => memoSttService?.restart());
-
-ipcMain.handle('asr:get-state', () => asrModelService.getState());
-
-ipcMain.handle('asr:select-model', async (_event, model: AsrModelId) => (
-  asrModelService.selectModel(model, () => {
-    const deviceBatchOwnsStt = deviceSyncService?.isTranscribing() ?? false;
-    deviceSyncService?.restart();
-    if (!deviceBatchOwnsStt) memoSttService?.restart();
-  })
-));
 
 // Permission handlers
 ipcMain.handle('permissions:check-microphone', async () => {
@@ -1099,6 +1103,7 @@ ipcMain.handle('settings:setExperimentalEmailFormatting', (_event, enabled: unkn
 });
 
 ipcMain.handle('settings:setWritingMode', async (_event, mode: unknown) => {
+  if (removingCleanupModel) throw new Error('Wait for Cleaned removal to finish.');
   if (mode !== 'as-spoken' && mode !== 'clean') {
     throw new Error('Writing mode must be As spoken or Clean.');
   }
@@ -1121,6 +1126,28 @@ ipcMain.handle('settings:setWritingMode', async (_event, mode: unknown) => {
   settings.writingMode = mode;
   saveSettings(settings);
   return true;
+});
+
+ipcMain.handle('settings:remove-cleaned', async () => {
+  if (!app.isPackaged) throw new Error('Cleaned removal is available in the installed app.');
+  if (removingCleanupModel || ['downloading', 'loading'].includes(cleanupService.getState().status)) {
+    throw new Error('Wait for Cleaned to finish downloading or loading.');
+  }
+  removingCleanupModel = true;
+  writingModeSelectionGeneration += 1;
+  try {
+    const settings = loadSettings();
+    if (settings.writingMode === 'clean') {
+      settings.writingMode = 'as-spoken';
+      saveSettings(settings);
+    }
+    cleanupService.stop();
+    if (app.isPackaged || process.env.MEMO_PNC_ENGINE === 'edge') punctuationService.start();
+    await removeCleanupModelPack();
+    return { writingMode: loadSettings().writingMode, cleanupState: cleanupService.getState() };
+  } finally {
+    removingCleanupModel = false;
+  }
 });
 
 ipcMain.handle('settings:setStartAtLogin', async (_event, enabled: boolean) => {

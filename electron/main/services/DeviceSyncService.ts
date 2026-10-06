@@ -6,13 +6,11 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { promisify } from 'node:util';
 import type { DeviceSyncStatus } from '../../shared/electron-api';
-import { isWhisperModelInstalled, whisperModelPath } from './AsrModelService';
 import { resolveModelPackPath } from './ModelPackService';
 import {
   FirmwareReleaseService,
   type FirmwareUpdateArtifact,
 } from './FirmwareReleaseService';
-import { loadSettings } from './SettingsService';
 import { audioDirectoryPath } from './AudioStorageService';
 import { logger } from '../utils/logger';
 
@@ -88,11 +86,8 @@ export class DeviceSyncService extends EventEmitter {
       }
     }
 
-    const requestedModel = loadSettings().asrModel;
-    const actualModel = requestedModel === 'whisper' && isWhisperModelInstalled() ? 'whisper' : 'conomo';
-    const fallbackReason = requestedModel === 'whisper' && actualModel === 'conomo'
-      ? 'selected Whisper model was not installed'
-      : '';
+    const requestedModel = 'conomo';
+    const actualModel = 'conomo';
     const userData = app.getPath('userData');
     const args = [
       '-B', resources.helper,
@@ -105,12 +100,10 @@ export class DeviceSyncService extends EventEmitter {
       '--lock', path.join(userData, 'device-sync.lock'),
       '--stt-bin', resources.stt,
       '--conomo-root', resources.conomo,
-      '--whisper-model', whisperModelPath(),
       '--requested-model', requestedModel,
       '--actual-model', actualModel,
     ];
     if (process.platform === 'darwin') args.push('--ble-bridge', resources.bleBridge);
-    if (fallbackReason) args.push('--fallback-reason', fallbackReason);
 
     logger.info(`[DeviceSyncService] Starting bundled worker (${requestedModel} -> ${actualModel})`);
     const child = spawn(resources.python, args, {

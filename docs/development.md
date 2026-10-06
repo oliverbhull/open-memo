@@ -52,10 +52,11 @@ artifacts.
 ## Packaging boundary
 
 `build:dir` builds an unsigned application directory. CI uses protocol-only Conomo
-and cleanup fixtures to validate packaging shape; those fixtures do not recognize
-or clean speech. Signed builds reject fixtures. Actual releases download immutable
-ASR and cleanup bundles by SHA-256, sign nested native code, sign the app, notarize
-it, and verify the updater ZIP/DMG manifest before upload.
+fixtures to validate packaging shape; those fixtures do not recognize speech.
+Signed builds reject fixtures. Every release ZIP and DMG includes Conomo and the
+punctuation model. The release signs nested native code, signs and notarizes the
+app, and verifies both artifacts before upload. Memo runs included models directly
+from the app bundle and removes legacy saved copies after verifying both workers.
 
-Packaged Clean mode runs the bundled 6-bit LFM entirely offline. As spoken mode
-uses the bundled punctuation model. Neither model bundle is stored in Git.
+As spoken uses the included punctuation model. Cleaned downloads an optional 6-bit
+LFM model when selected and then runs it offline. Model bundles are not stored in Git.

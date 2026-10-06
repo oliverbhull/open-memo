@@ -18,6 +18,7 @@ export interface StoreSchema {
   onboardedUsers: string[];
   hotkey: string | null;
   _migrationCompleted: boolean;
+  _optionalCleanupMigrationCompleted: boolean;
 }
 
 export const storeDefaults: StoreSchema = {
@@ -38,6 +39,7 @@ export const storeDefaults: StoreSchema = {
   onboardedUsers: [],
   hotkey: null,
   _migrationCompleted: false,
+  _optionalCleanupMigrationCompleted: false,
 };
 
 export type { ToastData };

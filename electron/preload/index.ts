@@ -1,8 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
-  AsrModelId,
-  AsrSelectionResult,
-  AsrState,
   CleanupState,
   DictationReadiness,
   DeviceSyncStatus,
@@ -217,6 +214,9 @@ const electronAPI = {
     setWritingMode: (mode: WritingMode): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setWritingMode', mode);
     },
+    removeCleaned: (): Promise<{ writingMode: WritingMode; cleanupState: CleanupState }> => (
+      ipcRenderer.invoke('settings:remove-cleaned')
+    ),
     setStartAtLogin: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setStartAtLogin', enabled);
     },
@@ -224,17 +224,6 @@ const electronAPI = {
       const handler = (_event: Electron.IpcRendererEvent, state: CleanupState) => callback(state);
       ipcRenderer.on('writing:cleanup-state-changed', handler);
       return () => ipcRenderer.removeListener('writing:cleanup-state-changed', handler);
-    },
-  },
-  asr: {
-    getState: (): Promise<AsrState> => ipcRenderer.invoke('asr:get-state'),
-    selectModel: (model: AsrModelId): Promise<AsrSelectionResult> => (
-      ipcRenderer.invoke('asr:select-model', model)
-    ),
-    onStateChanged: (callback: (state: AsrState) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, state: AsrState) => callback(state);
-      ipcRenderer.on('asr:state-changed', handler);
-      return () => ipcRenderer.removeListener('asr:state-changed', handler);
     },
   },
   microphone: {

@@ -5,8 +5,6 @@ import { storageService } from '../services/StorageService';
 import { ActivityInsights } from './ActivityInsights';
 import { buildTranscriptionExport } from '../services/transcriptionExport';
 import type {
-  AsrModelId,
-  AsrState,
   CleanupState,
   MicrophoneInputState,
   PhraseReplacementRule,
@@ -105,9 +103,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [handsFreeMode, setHandsFreeMode] = useState(false);
   const [sayEnterToPressEnter, setSayEnterToPressEnter] = useState(false);
   const [startAtLogin, setStartAtLogin] = useState(false);
-  const [asrState, setAsrState] = useState<AsrState | null>(null);
-  const [pendingAsrModel, setPendingAsrModel] = useState<AsrModelId | null>(null);
-  const [asrActionError, setAsrActionError] = useState<string | null>(null);
   const [microphoneState, setMicrophoneState] = useState<MicrophoneInputState | null>(null);
   const [microphoneSelecting, setMicrophoneSelecting] = useState(false);
   const [microphoneError, setMicrophoneError] = useState<string | null>(null);
@@ -118,6 +113,8 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     available: false,
     status: 'disabled',
   });
+  const [cleanedRemoving, setCleanedRemoving] = useState(false);
+  const [cleanupActionError, setCleanupActionError] = useState<string | null>(null);
   const [vocabWords, setVocabWords] = useState<string[]>([]);
   const [isAddingVocabWord, setIsAddingVocabWord] = useState(false);
   const [vocabWordDraft, setVocabWordDraft] = useState('');
@@ -169,22 +166,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     };
   }, []);
 
-  useEffect(() => {
-    let mounted = true;
-    void window.electronAPI.asr.getState().then((state) => {
-      if (mounted) setAsrState(state);
-    }).catch((error) => {
-      console.error('[Settings] Failed to load speech model state:', error);
-      if (mounted) setAsrActionError('Could not load speech model status.');
-    });
-    const unsubscribe = window.electronAPI.asr.onStateChanged((state) => {
-      if (mounted) setAsrState(state);
-    });
-    return () => {
-      mounted = false;
-      unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     if (isAddingVocabWord) {
@@ -367,18 +348,21 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     }
   };
 
-  const selectAsrModel = async (model: AsrModelId) => {
-    setPendingAsrModel(model);
-    setAsrActionError(null);
+  const removeCleaned = async () => {
+    setCleanedRemoving(true);
+    setCleanupActionError(null);
     try {
-      const result = await window.electronAPI.asr.selectModel(model);
-      setAsrState(result.state);
-      if (!result.success) setAsrActionError(result.error || 'Could not switch speech models.');
+      const result = await window.electronAPI.interface.removeCleaned();
+      setWritingMode(result.writingMode);
+      setCleanupState(result.cleanupState);
     } catch (error) {
-      console.error('[Settings] Failed to switch speech model:', error);
-      setAsrActionError(error instanceof Error ? error.message : 'Could not switch speech models.');
+      setCleanupActionError(error instanceof Error ? error.message : 'Could not remove Cleaned.');
+      void window.electronAPI.interface.getSettings().then(settings => {
+        setWritingMode(settings.writingMode);
+        setCleanupState(settings.cleanupState);
+      }).catch(() => undefined);
     } finally {
-      setPendingAsrModel(null);
+      setCleanedRemoving(false);
     }
   };
 
@@ -402,15 +386,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     }
   };
 
-  const whisperStatus = asrState?.models.whisper;
-  const whisperDownloading = whisperStatus?.installState === 'downloading';
-  const displayedAsrModel: AsrModelId = pendingAsrModel
-    ?? (whisperDownloading ? 'whisper' : asrState?.selectedModel)
-    ?? 'conomo';
-  const whisperPercent = whisperStatus && whisperStatus.totalBytes > 0
-    ? Math.min(100, Math.round((whisperStatus.downloadedBytes / whisperStatus.totalBytes) * 100))
-    : 0;
-  const formatModelSize = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`;
   const selectedMicrophoneIndex = microphoneState?.selectedDeviceName
     ? microphoneState.devices.findIndex((device) => device.name === microphoneState.selectedDeviceName)
     : -1;
@@ -526,97 +501,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               </div>
             )}
 
-            {/* Speech recognition model */}
-            <div style={{
-              width: '92%',
-              margin: '0 auto 10px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '6px',
-            }}>
-              <label
-                htmlFor="asr-model"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                }}
-              >
-                <span style={{ fontSize: '12px', userSelect: 'none' }}>Speech model</span>
-                <span style={{ position: 'relative', display: 'inline-flex', minWidth: 0 }}>
-                  <select
-                    id="asr-model"
-                    value={displayedAsrModel}
-                    disabled={!asrState || whisperDownloading}
-                    onChange={(event) => void selectAsrModel(event.target.value as AsrModelId)}
-                    style={{
-                      width: '224px',
-                      maxWidth: '100%',
-                      padding: '6px 28px 6px 8px',
-                      borderRadius: '6px',
-                      border: '1px solid rgba(255, 255, 255, 0.14)',
-                      background: 'rgba(18, 18, 24, 0.86)',
-                      color: 'rgba(255, 255, 255, 0.92)',
-                      fontSize: '12px',
-                      cursor: whisperDownloading ? 'wait' : 'pointer',
-                      outline: 'none',
-                      opacity: asrState ? 1 : 0.65,
-                      appearance: 'none',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    <option value="conomo">Conomo — Included</option>
-                    <option value="whisper">
-                      {whisperStatus?.installState === 'downloaded'
-                        ? 'Whisper — Downloaded'
-                        : `Whisper — ${whisperStatus ? formatModelSize(whisperStatus.totalBytes) : '181 MB'} download`}
-                    </option>
-                  </select>
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      position: 'absolute',
-                      right: '9px',
-                      top: '50%',
-                      transform: 'translateY(-52%)',
-                      pointerEvents: 'none',
-                      fontSize: '10px',
-                      opacity: 0.72,
-                    }}
-                  >
-                    ▾
-                  </span>
-                </span>
-              </label>
-
-              {whisperDownloading && whisperStatus && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div style={{
-                    height: '4px',
-                    overflow: 'hidden',
-                    borderRadius: '999px',
-                    background: 'rgba(255, 255, 255, 0.1)',
-                  }}>
-                    <div style={{
-                      width: `${whisperPercent}%`,
-                      height: '100%',
-                      borderRadius: '999px',
-                      background: primary,
-                      transition: 'width 150ms linear',
-                    }} />
-                  </div>
-                  <span style={{ fontSize: '10px', opacity: 0.7 }}>
-                    Downloading Whisper… {whisperPercent}% ({formatModelSize(whisperStatus.downloadedBytes)} of {formatModelSize(whisperStatus.totalBytes)})
-                  </span>
-                </div>
-              )}
-
-              {!whisperDownloading && asrActionError && (
-                <span style={{ fontSize: '10px', color: '#ff8b8b' }}>
-                  {asrActionError}
-                </span>
-              )}
+            <div style={{ width: '92%', margin: '0 auto 10px', display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+              <span>Speech model</span>
+              <span>Conomo — Included</span>
             </div>
 
             <div className="settings-section" style={{
@@ -701,6 +588,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   <select
                     id="writing-mode"
                     value={writingMode}
+                    disabled={cleanedRemoving}
                     onChange={async (event) => {
                       const mode = event.target.value as WritingMode;
                       const previousMode = writingMode;
@@ -722,8 +610,8 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       appearance: 'none',
                     }}
                   >
-                    <option value="as-spoken">As spoken</option>
-                    <option value="clean">Cleaned</option>
+                    <option value="as-spoken">As spoken — Included</option>
+                    <option value="clean">Cleaned – 1.03 GB model download</option>
                   </select>
                   <span
                     aria-hidden="true"
@@ -741,6 +629,20 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   </span>
                 </span>
               </div>
+              {cleanupState.installed && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '6px' }}>
+                  <span style={{ fontSize: '11px', opacity: 0.7 }}>
+                    Cleaned is stored locally. Removing it switches to As spoken.
+                  </span>
+                  <button type="button" onClick={() => void removeCleaned()}
+                    disabled={cleanedRemoving || cleanupState.status === 'downloading' || cleanupState.status === 'loading'}
+                    aria-label="Remove Cleaned download"
+                    style={{ flexShrink: 0, border: 'none', background: 'none', color: '#ff8b8b', fontSize: '11px', cursor: 'pointer' }}>
+                    {cleanedRemoving ? 'Removing…' : 'Remove download'}
+                  </button>
+                </div>
+              )}
+              {cleanupActionError && <div style={{ fontSize: '10px', color: '#ff8b8b' }}>{cleanupActionError}</div>}
               <div className="settings-checkbox-stack" style={{ fontSize: '12px' }}>
                 <div className="settings-checkbox-row">
                   <label style={{ display: 'flex', gap: '8px', alignItems: 'center', cursor: writingMode === 'clean' ? 'pointer' : 'default' }}>

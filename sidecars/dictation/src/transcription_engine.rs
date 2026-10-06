@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use memo_dictation::{Error, Result, SttEngine};
+use memo_dictation::{Error, Result};
 use serde_json::{json, Value};
 use std::env;
 use std::io::{BufRead, BufReader, Write};
@@ -13,7 +13,6 @@ const WORKER_READY_TIMEOUT: Duration = Duration::from_secs(120);
 const TRANSCRIPTION_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub enum TranscriptionEngine {
-    Whisper(SttEngine),
     Worker(WorkerEngine),
 }
 
@@ -25,19 +24,14 @@ impl TranscriptionEngine {
             .as_str()
         {
             "conomo" => Ok(Self::Worker(WorkerEngine::new(input_sample_rate)?)),
-            "whisper" => {
-                let model = required_path("MEMO_WHISPER_MODEL_PATH")?;
-                Ok(Self::Whisper(SttEngine::new(model, input_sample_rate)?))
-            }
             backend => Err(Error(format!(
-                "Unknown ASR backend {backend:?}; expected conomo or whisper"
+                "Unknown ASR backend {backend:?}; expected conomo"
             ))),
         }
     }
 
     pub fn name(&self) -> &'static str {
         match self {
-            Self::Whisper(_) => "Whisper GGML",
             Self::Worker(_) => "conomo",
         }
     }
@@ -47,50 +41,36 @@ impl TranscriptionEngine {
     }
 
     pub fn warmup(&self) -> Result<()> {
-        match self {
-            Self::Whisper(engine) => engine.warmup(),
-            Self::Worker(_) => Ok(()),
-        }
+        Ok(())
     }
 
     pub fn set_prompt(&mut self, prompt: Option<String>) {
-        match self {
-            Self::Whisper(engine) => engine.set_prompt(prompt),
-            Self::Worker(engine) => {
-                if env::var("MEMO_CONTEXTUAL_VOCAB").as_deref() == Ok("1") {
-                    if let Err(error) = engine.set_context(prompt) {
-                        eprintln!("contextual vocabulary update failed: {error}");
-                    }
-                }
+        let Self::Worker(engine) = self;
+        if env::var("MEMO_CONTEXTUAL_VOCAB").as_deref() == Ok("1") {
+            if let Err(error) = engine.set_context(prompt) {
+                eprintln!("contextual vocabulary update failed: {error}");
             }
         }
     }
 
     pub fn begin_live_stream(&mut self) -> Result<()> {
-        if let Self::Worker(engine) = self {
-            engine.begin_live_stream()?;
-        }
-        Ok(())
+        let Self::Worker(engine) = self;
+        engine.begin_live_stream()
     }
 
     pub fn feed_live_audio(&mut self, samples: &[i16]) -> Result<()> {
-        if let Self::Worker(engine) = self {
-            engine.feed_live_audio(samples)?;
-        }
-        Ok(())
+        let Self::Worker(engine) = self;
+        engine.feed_live_audio(samples)
     }
 
     pub fn abort_live_stream(&mut self) {
-        if let Self::Worker(engine) = self {
-            engine.abort_live_stream();
-        }
+        let Self::Worker(engine) = self;
+        engine.abort_live_stream();
     }
 
     pub fn transcribe(&mut self, samples: &[i16]) -> Result<String> {
-        match self {
-            Self::Whisper(engine) => engine.transcribe(samples),
-            Self::Worker(engine) => engine.finish_transcription(samples),
-        }
+        let Self::Worker(engine) = self;
+        engine.finish_transcription(samples)
     }
 }
 

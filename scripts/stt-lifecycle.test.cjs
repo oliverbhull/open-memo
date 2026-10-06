@@ -21,11 +21,10 @@ function harness() {
     setTimeout: (fn, ms) => setTimeout(fn, ms === 500 ? 0 : ms), clearTimeout,
     require: name => {
       if (name === 'child_process') return { spawn, spawnSync: () => ({ status: 0 }) };
-      if (name === 'fs') return { existsSync: () => true };
+      if (name === 'fs') return { existsSync: () => true, readdirSync: () => ['GraniteSpeech.mlmodelc'] };
       if (name === 'electron') return { app: { isPackaged: false } };
       if (name === '../utils/logger') return { logger };
       if (name === './SettingsService') return { loadSettings: () => ({ vocabWords: [] }), store: { get() {} } };
-      if (name === './AsrModelService') return { isWhisperModelInstalled: () => false };
       if (name === './ModelPackService') return { resolveModelPackPath: () => '/test-conomo' };
       if (name.includes('transcription') || name.includes('textProcessing')) return {};
       return require(name);
@@ -78,4 +77,17 @@ test('already closed child does not leave a pending stop', async () => {
   children[0].emit('close', 0, null);
   await service.stop();
   assert.equal(service.process, null);
+});
+test('a bundled model startup failure reports the model error without microphone recovery', async () => {
+  const { service, children } = harness();
+  const errors = [];
+  const micErrors = [];
+  service.on('error', error => errors.push(error.message));
+  service.on('micDeviceError', error => micErrors.push(error));
+  await service.start();
+  children[0].stderr.emit('data', Buffer.from("ModuleNotFoundError: No module named 'tokenizers'\n"));
+  children[0].emit('close', 1, null);
+  assert.equal(service.getStatus(), 'error');
+  assert.equal(micErrors.length, 0);
+  assert.match(errors[0], /included speech model could not start.*tokenizers/i);
 });
