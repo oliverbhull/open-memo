@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { verifyReleaseArtifacts } = require('./release-artifacts.cjs');
-function fixture(t, version = '1.2.3', fullUpdate = false) {
+function fixture(t, version = '1.2.3') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'memo-release-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const files = ['zip', 'dmg'].map(ext => {
@@ -14,18 +14,14 @@ function fixture(t, version = '1.2.3', fullUpdate = false) {
     fs.writeFileSync(path.join(dir, url), data);
     return { url, size: data.length, sha512: crypto.createHash('sha512').update(data).digest('base64') };
   });
-  const manifest = { version, files: fullUpdate ? files : [files[0]], path: files[0].url, sha512: files[0].sha512 };
+  const manifest = { version, files, path: files[0].url, sha512: files[0].sha512 };
   const save = () => fs.writeFileSync(path.join(dir, 'latest-mac.yml'), JSON.stringify(manifest));
   save();
   return { dir, manifest, save };
 }
-test('verifies full installer artifacts and the thin ZIP update manifest', async t => {
+test('verifies full installer and self-contained ZIP update artifacts', async t => {
   const { dir } = fixture(t);
   assert.equal((await verifyReleaseArtifacts(dir, '1.2.3')).length, 3);
-});
-test('verifies a full transition release', async t => {
-  const { dir } = fixture(t, '0.8.15', true);
-  assert.equal((await verifyReleaseArtifacts(dir, '0.8.15', { fullUpdate: true })).length, 3);
 });
 for (const [name, mutate] of Object.entries({
   'missing ZIP': f => fs.unlinkSync(path.join(f.dir, f.manifest.path)),

@@ -107,6 +107,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [startAtLogin, setStartAtLogin] = useState(false);
   const [asrState, setAsrState] = useState<AsrState | null>(null);
   const [pendingAsrModel, setPendingAsrModel] = useState<AsrModelId | null>(null);
+  const [whisperRemoving, setWhisperRemoving] = useState(false);
   const [asrActionError, setAsrActionError] = useState<string | null>(null);
   const [microphoneState, setMicrophoneState] = useState<MicrophoneInputState | null>(null);
   const [microphoneSelecting, setMicrophoneSelecting] = useState(false);
@@ -118,6 +119,8 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     available: false,
     status: 'disabled',
   });
+  const [cleanedRemoving, setCleanedRemoving] = useState(false);
+  const [cleanupActionError, setCleanupActionError] = useState<string | null>(null);
   const [vocabWords, setVocabWords] = useState<string[]>([]);
   const [isAddingVocabWord, setIsAddingVocabWord] = useState(false);
   const [vocabWordDraft, setVocabWordDraft] = useState('');
@@ -382,6 +385,37 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     }
   };
 
+  const removeWhisper = async () => {
+    setWhisperRemoving(true);
+    setAsrActionError(null);
+    try {
+      setAsrState(await window.electronAPI.asr.removeWhisper());
+    } catch (error) {
+      setAsrActionError(error instanceof Error ? error.message : 'Could not remove Whisper.');
+      void window.electronAPI.asr.getState().then(setAsrState).catch(() => undefined);
+    } finally {
+      setWhisperRemoving(false);
+    }
+  };
+
+  const removeCleaned = async () => {
+    setCleanedRemoving(true);
+    setCleanupActionError(null);
+    try {
+      const result = await window.electronAPI.interface.removeCleaned();
+      setWritingMode(result.writingMode);
+      setCleanupState(result.cleanupState);
+    } catch (error) {
+      setCleanupActionError(error instanceof Error ? error.message : 'Could not remove Cleaned.');
+      void window.electronAPI.interface.getSettings().then(settings => {
+        setWritingMode(settings.writingMode);
+        setCleanupState(settings.cleanupState);
+      }).catch(() => undefined);
+    } finally {
+      setCleanedRemoving(false);
+    }
+  };
+
   const selectMicrophone = async (value: string) => {
     const deviceName = value === 'system-default'
       ? null
@@ -410,7 +444,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const whisperPercent = whisperStatus && whisperStatus.totalBytes > 0
     ? Math.min(100, Math.round((whisperStatus.downloadedBytes / whisperStatus.totalBytes) * 100))
     : 0;
-  const formatModelSize = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`;
+  const formatModelSize = (bytes: number) => `${Math.round(bytes / 1_000_000)} MB`;
   const selectedMicrophoneIndex = microphoneState?.selectedDeviceName
     ? microphoneState.devices.findIndex((device) => device.name === microphoneState.selectedDeviceName)
     : -1;
@@ -548,7 +582,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   <select
                     id="asr-model"
                     value={displayedAsrModel}
-                    disabled={!asrState || whisperDownloading}
+                    disabled={!asrState || whisperDownloading || whisperRemoving}
                     onChange={(event) => void selectAsrModel(event.target.value as AsrModelId)}
                     style={{
                       width: '224px',
@@ -570,7 +604,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     <option value="whisper">
                       {whisperStatus?.installState === 'downloaded'
                         ? 'Whisper — Downloaded'
-                        : `Whisper — ${whisperStatus ? formatModelSize(whisperStatus.totalBytes) : '181 MB'} download`}
+                        : `Whisper — ${whisperStatus ? formatModelSize(whisperStatus.totalBytes) : '190 MB'} download`}
                     </option>
                   </select>
                   <span
@@ -589,6 +623,21 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   </span>
                 </span>
               </label>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                <span style={{ fontSize: '11px', opacity: 0.7 }}>
+                  {whisperStatus?.installState === 'downloaded'
+                    ? 'Whisper is stored locally. Removing it switches to Conomo.'
+                    : `Whisper requires a ${whisperStatus ? formatModelSize(whisperStatus.totalBytes) : '190 MB'} download before first use.`}
+                </span>
+                {whisperStatus?.installState === 'downloaded' && (
+                  <button type="button" onClick={() => void removeWhisper()} disabled={whisperRemoving || Boolean(pendingAsrModel)}
+                    aria-label="Remove Whisper download"
+                    style={{ flexShrink: 0, border: 'none', background: 'none', color: '#ff8b8b', fontSize: '11px', cursor: 'pointer' }}>
+                    {whisperRemoving ? 'Removing…' : 'Remove download'}
+                  </button>
+                )}
+              </div>
 
               {whisperDownloading && whisperStatus && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -701,6 +750,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   <select
                     id="writing-mode"
                     value={writingMode}
+                    disabled={cleanedRemoving}
                     onChange={async (event) => {
                       const mode = event.target.value as WritingMode;
                       const previousMode = writingMode;
@@ -722,8 +772,8 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       appearance: 'none',
                     }}
                   >
-                    <option value="as-spoken">As spoken</option>
-                    <option value="clean">Cleaned</option>
+                    <option value="as-spoken">As spoken — Included</option>
+                    <option value="clean">Cleaned – 1.03 GB model download</option>
                   </select>
                   <span
                     aria-hidden="true"
@@ -741,6 +791,20 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   </span>
                 </span>
               </div>
+              {cleanupState.installed && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '6px' }}>
+                  <span style={{ fontSize: '11px', opacity: 0.7 }}>
+                    Cleaned is stored locally. Removing it switches to As spoken.
+                  </span>
+                  <button type="button" onClick={() => void removeCleaned()}
+                    disabled={cleanedRemoving || cleanupState.status === 'downloading' || cleanupState.status === 'loading'}
+                    aria-label="Remove Cleaned download"
+                    style={{ flexShrink: 0, border: 'none', background: 'none', color: '#ff8b8b', fontSize: '11px', cursor: 'pointer' }}>
+                    {cleanedRemoving ? 'Removing…' : 'Remove download'}
+                  </button>
+                </div>
+              )}
+              {cleanupActionError && <div style={{ fontSize: '10px', color: '#ff8b8b' }}>{cleanupActionError}</div>}
               <div className="settings-checkbox-stack" style={{ fontSize: '12px' }}>
                 <div className="settings-checkbox-row">
                   <label style={{ display: 'flex', gap: '8px', alignItems: 'center', cursor: writingMode === 'clean' ? 'pointer' : 'default' }}>

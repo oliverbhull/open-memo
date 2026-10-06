@@ -53,8 +53,6 @@ export class MemoSttService extends EventEmitter {
   private readonly MAX_BUFFER_SIZE = 64 * 1024 * 1024;
   private readonly instanceId: number;
   private pendingAudioData: { wavBuffer?: Buffer; duration?: number } | null = null;
-  /** Timestamp (ms) when the current process was spawned — used to detect quick-exit device errors */
-  private processStartedAt: number | null = null;
   private hotkeyPermissionFailed = false;
   private readiness: DictationReadiness = {
     hotkey: false,
@@ -62,8 +60,6 @@ export class MemoSttService extends EventEmitter {
     model: false,
     ready: false,
   };
-  /** Quick-exit threshold: if process exits within this many ms with non-zero code, assume audio device error */
-  private readonly QUICK_EXIT_THRESHOLD_MS = 4000;
   constructor() {
     super();
     this.instanceId = ++nextInstanceId;
@@ -324,14 +320,20 @@ export class MemoSttService extends EventEmitter {
           `(model=${env.MEMO_WHISPER_MODEL_PATH})`,
         );
       } else {
-        const conomoRoot = resolveModelPackPath('conomo');
-        const contextualWorker = path.join(process.cwd(), 'scripts', 'shell', 'run-contextual-granite.sh');
+        const stagedConomoRoot = resolveModelPackPath('conomo');
+        const stagedCompiled = path.join(stagedConomoRoot, 'compiled');
+        const hasStagedModel = fs.existsSync(stagedCompiled) &&
+          fs.readdirSync(stagedCompiled).some(name => name.endsWith('.mlmodelc') && name !== 'fixture.mlmodelc');
+        const conomoRoot = isDev && !hasStagedModel
+          ? path.join('/Applications', 'Memo.app', 'Contents', 'Resources', 'conomo')
+          : stagedConomoRoot;
+        const contextualWorker = path.join(process.cwd(), '.build', 'dictation', 'run-contextual-conomo');
         const packagedContextualWorker = isDev
           ? ''
           : path.join(process.resourcesPath, 'dictation', 'run-contextual-conomo');
 
-        // Development can use an explicitly supplied worker. Packaged apps use
-        // the owned contextual broker and native decoder shipped with Memo.
+        // Development uses the same contextual worker as the packaged app.
+        // An explicit worker override remains available for experiments.
         env.MEMO_ASR_WORKER = isDev && process.env.MEMO_ASR_WORKER
           ? process.env.MEMO_ASR_WORKER
           : isDev
@@ -341,24 +343,28 @@ export class MemoSttService extends EventEmitter {
           env.MEMO_CONTEXTUAL_VOCAB = '1';
         }
 
-        if (!isDev) {
+        if (env.MEMO_ASR_WORKER === contextualWorker || !isDev) {
           const compiledDirectory = path.join(conomoRoot, 'compiled');
           const modelDirectories = fs.existsSync(compiledDirectory)
             ? fs.readdirSync(compiledDirectory).filter(name => name.endsWith('.mlmodelc'))
             : [];
           if (modelDirectories.length !== 1) {
-            throw new Error(`Expected exactly one compiled Conomo model, found ${modelDirectories.length}.`);
+            throw new Error(`Expected one compiled Conomo model in ${compiledDirectory}, found ${modelDirectories.length}. Install Memo.app or stage a Conomo bundle in .build/conomo.`);
           }
           env.MEMO_ASR_MODEL_PATH = path.join(compiledDirectory, modelDirectories[0]!);
           env.MEMO_ASR_TOKENIZER_PATH = path.join(conomoRoot, 'tokenizer.json');
           env.MEMO_CONTEXTUAL_PYTHON = path.join(conomoRoot, 'device-runtime', 'bin', 'python3.12');
-          env.MEMO_CONTEXTUAL_BROKER = path.join(process.resourcesPath, 'dictation', 'contextual-worker.py');
-          env.MEMO_CONTEXTUAL_NATIVE = path.join(process.resourcesPath, 'dictation', 'memo-conomo-contextual');
+          env.MEMO_CONTEXTUAL_BROKER = isDev
+            ? path.join(process.cwd(), '.build', 'dictation', 'contextual-worker.py')
+            : path.join(process.resourcesPath, 'dictation', 'contextual-worker.py');
+          env.MEMO_CONTEXTUAL_NATIVE = isDev
+            ? path.join(process.cwd(), '.build', 'dictation', 'memo-conomo-contextual')
+            : path.join(process.resourcesPath, 'dictation', 'memo-conomo-contextual');
         }
 
         const requiredResources: Array<[string, string | undefined]> = [
           ['worker', env.MEMO_ASR_WORKER],
-          ...(!isDev ? [
+          ...(env.MEMO_ASR_WORKER === contextualWorker || !isDev ? [
             ['model', env.MEMO_ASR_MODEL_PATH],
             ['tokenizer', env.MEMO_ASR_TOKENIZER_PATH],
             ['contextual Python', env.MEMO_CONTEXTUAL_PYTHON],
@@ -375,7 +381,7 @@ export class MemoSttService extends EventEmitter {
           }
         }
         logger.info(
-          `[MemoSttService #${this.instanceId}] ASR model: ${env.MEMO_CONTEXTUAL_VOCAB === '1' ? 'Contextual Granite prototype' : 'conomo'} ` +
+          `[MemoSttService #${this.instanceId}] ASR model: conomo ` +
           `(worker=${env.MEMO_ASR_WORKER})`,
         );
       }
@@ -396,7 +402,8 @@ export class MemoSttService extends EventEmitter {
       });
       this.process = child;
       this.stdinClosed = false;
-      this.processStartedAt = Date.now();
+      let audioDeviceErrorReported = false;
+      let startupStderr = '';
 
       child.stdin?.on('error', (error: NodeJS.ErrnoException) => {
         if (this.process !== child) return;
@@ -420,6 +427,7 @@ export class MemoSttService extends EventEmitter {
         if (this.process !== child) return;
         // Log stderr but do not treat it as an error channel; the sidecar uses it for status messages.
         const message = data.toString();
+        if (!this.readiness.ready) startupStderr = (startupStderr + message).slice(-2048);
         // Log at info level so we can see what's happening in production
         logger.info(`[memo-dictation stderr] ${message.trim()}`);
         
@@ -442,6 +450,7 @@ export class MemoSttService extends EventEmitter {
           (message.toLowerCase().includes('audio') && message.toLowerCase().includes('device') && message.toLowerCase().includes('error'))
         );
         if (isDeviceError) {
+          audioDeviceErrorReported = true;
           logger.warn('[MemoSttService] Audio device error detected in stderr, emitting micDeviceError');
           this.emit('micDeviceError', message.trim());
         }
@@ -486,7 +495,6 @@ export class MemoSttService extends EventEmitter {
         this.process = null;
         this.stdinClosed = true;
         this.status = 'stopped';
-        this.emit('status', 'stopped');
         
         // Attempt to restart if it wasn't manually stopped and we haven't exceeded max attempts
         if (
@@ -496,15 +504,21 @@ export class MemoSttService extends EventEmitter {
           wasRunning &&
           this.restartAttempts < this.MAX_RESTART_ATTEMPTS
         ) {
-          // Quick-exit heuristic: if the process died within QUICK_EXIT_THRESHOLD_MS of starting
-          // with a non-zero code, it almost certainly failed to open the
-          // audio device. Let main verify the selected input before scheduling a retry.
-          const uptime = this.processStartedAt ? Date.now() - this.processStartedAt : Infinity;
-          if (uptime < this.QUICK_EXIT_THRESHOLD_MS) {
-            logger.warn(`[MemoSttService] Process exited quickly (${uptime}ms) in system mode — treating as audio device error`);
-            this.processStartedAt = null;
-            this.emit('micDeviceError', `process exited after ${uptime}ms`);
-            return; // Let main restart only when the selected input is available
+          // A startup exit can mean the bundled speech worker failed. Only an
+          // explicit CoreAudio error should trigger microphone recovery.
+          if (!this.readiness.ready) {
+            if (!audioDeviceErrorReported && !this.hotkeyPermissionFailed) {
+              const detail = startupStderr.trim().split('\n').filter(Boolean).slice(-2).join(' ').slice(0, 500);
+              const message = this.readiness.model
+                ? 'Memo dictation could not finish starting.'
+                : 'The included speech model could not start.';
+              const error = new Error(detail ? `${message} ${detail}` : message);
+              logger.error(`[MemoSttService] ${error.message}`);
+              this.status = 'error';
+              this.emit('error', error);
+            }
+            this.emit('status', this.status);
+            return;
           }
 
           const delay = this.RESTART_DELAY_BASE * Math.pow(2, this.restartAttempts);
@@ -520,6 +534,7 @@ export class MemoSttService extends EventEmitter {
           logger.error('Max restart attempts reached. Stopping auto-restart.');
           this.emit('error', new Error('Max restart attempts reached'));
         }
+        this.emit('status', this.status);
       });
 
       this.status = 'running';

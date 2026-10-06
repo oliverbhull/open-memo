@@ -8,6 +8,7 @@ const execFileAsync = promisify(execFile);
 
 export interface PreparedMacUpdate {
   install(): void;
+  discard?(): Promise<void>;
 }
 
 export interface MacUpdateInstallerLike {
@@ -31,8 +32,10 @@ done
 rollback() {
   if [ -d "$backup_app" ]; then
     /bin/rm -rf "$target_app"
-    /bin/mv "$backup_app" "$target_app"
-    /usr/bin/open "$target_app" >/dev/null 2>&1 || true
+    if /bin/mv "$backup_app" "$target_app"; then
+      /usr/bin/open "$target_app" >/dev/null 2>&1 || true
+      /bin/rm -rf "$work_root"
+    fi
   fi
 }
 
@@ -80,45 +83,51 @@ export class MacUpdateInstaller implements MacUpdateInstallerLike {
     }
 
     const workRoot = await fs.promises.mkdtemp(path.join(app.getPath('userData'), 'prepared-update-'));
-    const extractedRoot = path.join(workRoot, 'extracted');
-    await fs.promises.mkdir(extractedRoot);
-    await execFileAsync('/usr/bin/ditto', ['-x', '-k', downloadedFile, extractedRoot]);
+    try {
+      const extractedRoot = path.join(workRoot, 'extracted');
+      await fs.promises.mkdir(extractedRoot);
+      await execFileAsync('/usr/bin/ditto', ['-x', '-k', downloadedFile, extractedRoot]);
 
-    const stagedApp = path.join(extractedRoot, 'Memo.app');
-    const stagedExecutable = path.join(stagedApp, 'Contents', 'MacOS', 'Memo');
-    const targetApp = this.targetApp;
-    if (!fs.existsSync(stagedExecutable)) throw new Error('The update does not contain Memo.app.');
+      const stagedApp = path.join(extractedRoot, 'Memo.app');
+      const stagedExecutable = path.join(stagedApp, 'Contents', 'MacOS', 'Memo');
+      const targetApp = this.targetApp;
+      if (!fs.existsSync(stagedExecutable)) throw new Error('The update does not contain Memo.app.');
 
-    const version = (await execFileAsync('/usr/bin/defaults', [
-      'read', path.join(stagedApp, 'Contents', 'Info.plist'), 'CFBundleShortVersionString',
-    ])).stdout.trim();
-    if (version !== expectedVersion) throw new Error(`Expected Memo ${expectedVersion}, received ${version}.`);
+      const version = (await execFileAsync('/usr/bin/defaults', [
+        'read', path.join(stagedApp, 'Contents', 'Info.plist'), 'CFBundleShortVersionString',
+      ])).stdout.trim();
+      if (version !== expectedVersion) throw new Error(`Expected Memo ${expectedVersion}, received ${version}.`);
 
-    await execFileAsync('/usr/bin/codesign', ['--verify', '--deep', '--strict', '--verbose=2', stagedApp]);
-    await execFileAsync('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose', stagedApp]);
-    const [currentTeam, stagedTeam] = await Promise.all([
-      teamIdentifier(targetApp),
-      teamIdentifier(stagedApp),
-    ]);
-    if (currentTeam !== stagedTeam) throw new Error('The update was signed by a different Apple team.');
+      await execFileAsync('/usr/bin/codesign', ['--verify', '--deep', '--strict', '--verbose=2', stagedApp]);
+      await execFileAsync('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose', stagedApp]);
+      const [currentTeam, stagedTeam] = await Promise.all([
+        teamIdentifier(targetApp),
+        teamIdentifier(stagedApp),
+      ]);
+      if (currentTeam !== stagedTeam) throw new Error('The update was signed by a different Apple team.');
 
-    const helperPath = path.join(workRoot, 'install-update.sh');
-    const backupApp = path.join(workRoot, 'Previous Memo.app');
-    await fs.promises.writeFile(helperPath, updateHelperScript, { mode: 0o700 });
+      const helperPath = path.join(workRoot, 'install-update.sh');
+      const backupApp = path.join(workRoot, 'Previous Memo.app');
+      await fs.promises.writeFile(helperPath, updateHelperScript, { mode: 0o700 });
 
-    return {
-      install: () => {
-        const child = spawn('/bin/sh', [
-          helperPath,
-          String(process.pid),
-          stagedApp,
-          targetApp,
-          backupApp,
-          workRoot,
-        ], { detached: true, stdio: 'ignore' });
-        child.unref();
-        app.quit();
-      },
-    };
+      return {
+        discard: () => fs.promises.rm(workRoot, { recursive: true, force: true }),
+        install: () => {
+          const child = spawn('/bin/sh', [
+            helperPath,
+            String(process.pid),
+            stagedApp,
+            targetApp,
+            backupApp,
+            workRoot,
+          ], { detached: true, stdio: 'ignore' });
+          child.unref();
+          app.quit();
+        },
+      };
+    } catch (error) {
+      await fs.promises.rm(workRoot, { recursive: true, force: true });
+      throw error;
+    }
   }
 }

@@ -68,6 +68,7 @@ function downloadResponse(url: URL, redirectsRemaining = 5): Promise<IncomingMes
 
 export class AsrModelService extends EventEmitter {
   private selectionGeneration = 0;
+  private removing = false;
   private downloadedBytes = 0;
   private totalBytes = WHISPER_MODEL_BYTES;
   private downloadError: string | null = null;
@@ -107,6 +108,9 @@ export class AsrModelService extends EventEmitter {
   }
 
   async selectModel(model: AsrModelId, restartStt: () => void): Promise<AsrSelectionResult> {
+    if (this.removing) {
+      return { success: false, state: this.getState(), error: 'Wait for the model removal to finish.' };
+    }
     if (model !== 'conomo' && model !== 'whisper') {
       return { success: false, state: this.getState(), error: `Unsupported speech model: ${String(model)}` };
     }
@@ -134,6 +138,31 @@ export class AsrModelService extends EventEmitter {
       logger.error('[AsrModelService] Whisper model setup failed:', error);
       this.emitState();
       return { success: false, state: this.getState(), error: message };
+    }
+  }
+
+  async removeWhisper(restartStt: () => Promise<void>): Promise<AsrState> {
+    if (this.removing || this.downloadPromise) {
+      throw new Error('Wait for the Whisper download or removal to finish.');
+    }
+    this.removing = true;
+    this.selectionGeneration += 1;
+    try {
+      if (loadSettings().asrModel === 'whisper') {
+        const settings = loadSettings();
+        settings.asrModel = 'conomo';
+        saveSettings(settings);
+        await restartStt();
+      }
+      const model = whisperModelPath();
+      await fs.promises.rm(model, { force: true });
+      await fs.promises.rm(`${model}.part`, { force: true });
+      this.downloadError = null;
+      this.downloadedBytes = 0;
+      return this.getState();
+    } finally {
+      this.removing = false;
+      this.emitState();
     }
   }
 

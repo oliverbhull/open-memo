@@ -108,6 +108,7 @@ export type WritingMode = 'as-spoken' | 'clean';
 
 export interface CleanupState {
   available: boolean;
+  installed?: boolean;
   status: 'disabled' | 'not-downloaded' | 'downloading' | 'loading' | 'ready' | 'unavailable';
   detail?: string;
   downloadedBytes?: number;
@@ -210,12 +211,14 @@ export interface ElectronAPI {
     setSaveAudio(enabled: boolean): Promise<boolean>;
     setExperimentalEmailFormatting(enabled: boolean): Promise<boolean>;
     setWritingMode(mode: WritingMode): Promise<boolean>;
+    removeCleaned(): Promise<{ writingMode: WritingMode; cleanupState: CleanupState }>;
     setStartAtLogin(enabled: boolean): Promise<boolean>;
     onCleanupStateChanged(callback: (state: CleanupState) => void): () => void;
   };
   asr: {
     getState(): Promise<AsrState>;
     selectModel(model: AsrModelId): Promise<AsrSelectionResult>;
+    removeWhisper(): Promise<AsrState>;
     onStateChanged(callback: (state: AsrState) => void): () => void;
   };
   microphone: {

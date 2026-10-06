@@ -58,14 +58,6 @@ export function isCompleteModelPack(name: ModelPackName, root: string): boolean 
   return requiredPaths(name).every(relative => fs.existsSync(path.join(root, relative)));
 }
 
-export function modelPackVersion(root: string): string {
-  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'model-pack.json'), 'utf8')) as PackManifest;
-  if (manifest.schemaVersion !== 1 || !/^[a-f0-9]{64}$/u.test(manifest.version)) {
-    throw new Error('Model pack manifest is invalid');
-  }
-  return manifest.version.slice(0, 20);
-}
-
 async function verifyModelPack(name: ModelPackName, root: string): Promise<void> {
   const manifest = JSON.parse(await fs.promises.readFile(path.join(root, 'model-pack.json'), 'utf8')) as PackManifest;
   if (manifest.schemaVersion !== 1 || manifest.name !== name || !/^[a-f0-9]{64}$/u.test(manifest.version)) {
@@ -79,7 +71,9 @@ async function verifyModelPack(name: ModelPackName, root: string): Promise<void>
     const target = path.join(root, relative);
     const stat = await fs.promises.stat(target);
     if (!stat.isFile() || stat.size !== expected.bytes) throw new Error(`${name} model pack file size mismatch: ${relative}`);
-    const digest = createHash('sha256').update(await fs.promises.readFile(target)).digest('hex');
+    const fileHash = createHash('sha256');
+    for await (const chunk of fs.createReadStream(target)) fileHash.update(chunk);
+    const digest = fileHash.digest('hex');
     if (digest !== expected.sha256) throw new Error(`${name} model pack checksum mismatch: ${relative}`);
     aggregate.update(relative).update('\0').update(String(expected.bytes)).update('\0').update(digest).update('\n');
   }
@@ -98,6 +92,7 @@ function readActivePack(name: ModelPackName): ActivePack | null {
 
 export function resolveModelPackPath(name: ModelPackName): string {
   if (!app.isPackaged) return path.join(process.cwd(), '.build', name);
+  if (name !== 'cleanup' && verifiedBundledPacks.has(name)) return bundledPackPath(name);
   const active = readActivePack(name);
   if (active) {
     const installed = path.join(packStoreRoot(), name, active.version);
@@ -107,58 +102,59 @@ export function resolveModelPackPath(name: ModelPackName): string {
   return bundledPackPath(name);
 }
 
-async function copyPack(source: string, destination: string): Promise<void> {
-  await fs.promises.cp(source, destination, {
-    recursive: true,
-    force: false,
-    errorOnExist: true,
-    verbatimSymlinks: true,
-    // APFS clone-on-write keeps first migration fast and avoids temporarily
-    // consuming another copy of multi-gigabyte model data where supported.
-    mode: fs.constants.COPYFILE_FICLONE,
+const verifiedBundledPacks = new Set<ModelPackName>();
+
+function compiledModelPath(root: string): string {
+  const compiled = path.join(root, 'compiled');
+  const models = fs.readdirSync(compiled).filter(name => name.endsWith('.mlmodelc'));
+  if (models.length !== 1) throw new Error(`Expected one compiled model in ${compiled}`);
+  return path.join(compiled, models[0]!);
+}
+
+function expectWorkerReady(command: string, args: string[], env?: NodeJS.ProcessEnv): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(command, args, { env, timeout: 120_000, maxBuffer: 64 * 1024 }, (error, stdout, stderr) => {
+      if (error || stdout.split(/\r?\n/u)[0] !== 'READY') {
+        reject(new Error(`Bundled model worker failed: ${(stderr || error?.message || stdout).trim().slice(0, 500)}`));
+      } else {
+        resolve();
+      }
+    });
+    child.stdin?.end();
   });
 }
 
-export async function installBundledModelPack(name: ModelPackName): Promise<string | null> {
-  if (!app.isPackaged) return null;
-  const source = bundledPackPath(name);
-  if (!isCompleteModelPack(name, source)) {
-    const installed = readActivePack(name);
-    if (installed) return path.join(packStoreRoot(), name, installed.version);
-    logger.warn(`[ModelPackService] No bundled or installed ${name} pack is available`);
-    return null;
-  }
-
-  const version = modelPackVersion(source);
-  const packDirectory = path.join(packStoreRoot(), name);
-  const destination = path.join(packDirectory, version);
-  await fs.promises.mkdir(packDirectory, { recursive: true });
-  if (!isCompleteModelPack(name, destination)) {
-    const staging = path.join(packDirectory, `.${version}.${process.pid}.staging`);
-    await fs.promises.rm(staging, { recursive: true, force: true });
-    try {
-      await copyPack(source, staging);
-      if (!isCompleteModelPack(name, staging)) throw new Error(`Copied ${name} pack is incomplete`);
-      await verifyModelPack(name, staging);
-      await fs.promises.rename(staging, destination);
-    } catch (error) {
-      await fs.promises.rm(staging, { recursive: true, force: true });
-      if (!isCompleteModelPack(name, destination)) throw error;
+export async function verifyBundledModelPacks(): Promise<void> {
+  if (!app.isPackaged) return;
+  for (const name of ['conomo', 'pnc'] as const) {
+    const source = bundledPackPath(name);
+    if (!isCompleteModelPack(name, source)) throw new Error(`Bundled ${name} pack is incomplete`);
+    await verifyModelPack(name, source);
+    if (name === 'conomo') {
+      await expectWorkerReady(path.join(process.resourcesPath, 'dictation', 'run-contextual-conomo'), ['--worker'], {
+        ...process.env,
+        MEMO_CONTEXTUAL_PYTHON: path.join(source, 'device-runtime', 'bin', 'python3.12'),
+        MEMO_CONTEXTUAL_BROKER: path.join(process.resourcesPath, 'dictation', 'contextual-worker.py'),
+        MEMO_CONTEXTUAL_NATIVE: path.join(process.resourcesPath, 'dictation', 'memo-conomo-contextual'),
+        MEMO_ASR_MODEL_PATH: compiledModelPath(source),
+        MEMO_ASR_TOKENIZER_PATH: path.join(source, 'tokenizer.json'),
+      });
+    } else {
+      await expectWorkerReady(path.join(source, 'memo-pnc'), [
+        '--model-path', compiledModelPath(source),
+        '--vocabulary-path', path.join(source, 'tokenizer.vocab'),
+        '--worker',
+      ]);
     }
+    verifiedBundledPacks.add(name);
   }
+}
 
-  const active: ActivePack = {
-    schemaVersion: 1,
-    name,
-    version,
-    installedAt: new Date().toISOString(),
-  };
-  const activePath = activeManifestPath(name);
-  const temporary = `${activePath}.${process.pid}.tmp`;
-  await fs.promises.writeFile(temporary, `${JSON.stringify(active, null, 2)}\n`, { mode: 0o600 });
-  await fs.promises.rename(temporary, activePath);
-  logger.info(`[ModelPackService] ${name} pack ${version} is persistent`);
-  return destination;
+export async function removeLegacyBundledModelPacks(): Promise<void> {
+  if (!app.isPackaged || !verifiedBundledPacks.has('conomo') || !verifiedBundledPacks.has('pnc')) return;
+  await Promise.all((['conomo', 'pnc'] as const).map(name =>
+    fs.promises.rm(path.join(packStoreRoot(), name), { recursive: true, force: true })));
+  logger.info('[ModelPackService] Removed legacy duplicate Conomo and punctuation packs');
 }
 
 function downloadResponse(url: URL, redirectsRemaining = 5): Promise<IncomingMessage> {
@@ -199,6 +195,11 @@ let cleanupDownload: Promise<string> | null = null;
 export function isCleanupModelPackInstalled(): boolean {
   const active = readActivePack('cleanup');
   return Boolean(active && isCompleteModelPack('cleanup', path.join(packStoreRoot(), 'cleanup', active.version)));
+}
+
+export async function removeCleanupModelPack(): Promise<void> {
+  if (cleanupDownload) throw new Error('Wait for the Cleaned download to finish.');
+  await fs.promises.rm(path.join(packStoreRoot(), 'cleanup'), { recursive: true, force: true });
 }
 
 export function installCleanupModelPack(
@@ -261,18 +262,4 @@ export function installCleanupModelPack(
     }
   })().finally(() => { cleanupDownload = null; });
   return cleanupDownload;
-}
-
-let installation: Promise<void> | null = null;
-
-export function ensurePersistentModelPacks(): Promise<void> {
-  if (!installation) {
-    installation = Promise.all((['conomo', 'pnc'] as ModelPackName[]).map(name => installBundledModelPack(name)))
-      .then(() => undefined)
-      .catch(error => {
-        installation = null;
-        throw error;
-      });
-  }
-  return installation;
 }

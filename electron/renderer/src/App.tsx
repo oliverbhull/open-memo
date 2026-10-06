@@ -200,7 +200,9 @@ function App() {
 
     // Set up error listener
     const errorCallback = (errorData: MemoSttError) => {
-      setError(errorData.message || 'An error occurred');
+      const message = errorData.message || 'Dictation could not start.';
+      setError(message);
+      setToast({ message, severity: 'error', duration: 12000 });
       logger.error('memo-stt error:', errorData);
     };
     window.electronAPI.onError(errorCallback);

@@ -125,7 +125,7 @@ export class CleanupService extends EventEmitter {
   isEnabled(): boolean { return process.platform === 'darwin'; }
 
   getState(): CleanupState {
-    return { ...this.state };
+    return { ...this.state, installed: app.isPackaged && isCleanupModelPackInstalled() };
   }
 
   start(): Promise<boolean> {

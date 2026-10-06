@@ -43,7 +43,6 @@ module.exports = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return;
   const appPath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   const shouldSign = process.env.CSC_IDENTITY_AUTO_DISCOVERY !== 'false' && process.env.MANUAL_SIGN !== '1';
-  const thinUpdate = process.env.MEMO_THIN_UPDATE === '1';
   const sttBinPath = path.join(appPath, 'Contents', 'Resources', 'dictation', 'memo-dictation');
   if (!fs.existsSync(sttBinPath)) {
     throw new Error('memo-dictation was not copied from extraResources');
@@ -68,33 +67,6 @@ module.exports = async function afterPack(context) {
   await sh('xattr', ['-cr', appPath]);
   await sh('dot_clean', ['-m', appPath]);
   console.log('✓ Extended attributes cleaned');
-
-  if (thinUpdate) {
-    if (shouldSign) {
-      const signer = process.env.CSC_NAME || process.env.CODE_SIGN_IDENTITY || 'Developer ID Application';
-      let alreadySigned = false;
-      try {
-        await sh('codesign', ['--verify', '--strict', '--verbose', bleBridge]);
-        alreadySigned = true;
-      } catch {}
-      if (!alreadySigned) {
-        await codesign([
-          '--force', '--options', 'runtime',
-          '--entitlements', path.resolve('config/entitlements.mac.plist'),
-          '--sign', signer,
-          bleBridge,
-        ]);
-      } else {
-        console.log('✓ Memo BLE bridge already carries a valid signature');
-      }
-      await sh('codesign', ['--verify', '--verbose', bleBridge]);
-      console.log('✓ Memo BLE bridge signed');
-    } else {
-      console.log('⚠ Skipping native signing for unsigned thin update');
-    }
-    console.log('✓ Thin update contains app code and helpers only');
-    return;
-  }
 
   // Verify the self-contained conomo runtime bundle before signing.
   const conomoPath = path.join(appPath, 'Contents', 'Resources', 'conomo');

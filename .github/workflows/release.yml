@@ -168,7 +168,6 @@ jobs:
       - name: Verify signed app
         run: |
           version="$(node -p "require('./package.json').version")"
-          full_update="$(node -e "const versions=require('./config/full-model-update-versions.json'); process.stdout.write(versions.includes(process.argv[1]) ? '1' : '0')" "${version}")"
           installer_mount="$(mktemp -d /tmp/memo-installer.XXXXXX)"
           hdiutil attach "dist/Open-Memo-${version}-arm64.dmg" -nobrowse -readonly -mountpoint "${installer_mount}"
           trap 'hdiutil detach "${installer_mount}" >/dev/null 2>&1 || true; rm -rf "${installer_mount}"' EXIT
@@ -176,17 +175,17 @@ jobs:
           test "$(defaults read "${installer_app}/Contents/Info" CFBundleShortVersionString)" = "${version}"
           bash scripts/shell/verify-conomo-bundle.sh "${installer_app}/Contents/Resources/conomo"
           bash scripts/shell/verify-pnc-bundle.sh "${installer_app}/Contents/Resources/pnc"
+          bash scripts/shell/verify-packaged-model-workers.sh "${installer_app}"
           test ! -e "${installer_app}/Contents/Resources/cleanup"
           codesign --verify --deep --strict --verbose=2 "${installer_app}"
           spctl --assess --type execute --verbose "${installer_app}"
           hdiutil detach "${installer_mount}"
           rm -rf "${installer_mount}"
           trap - EXIT
-          if [[ "${full_update}" != "1" ]]; then
-            test ! -e dist/mac-arm64/Memo.app/Contents/Resources/conomo
-            test ! -e dist/mac-arm64/Memo.app/Contents/Resources/pnc
-            test ! -e dist/mac-arm64/Memo.app/Contents/Resources/cleanup
-          fi
+          bash scripts/shell/verify-conomo-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/conomo
+          bash scripts/shell/verify-pnc-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/pnc
+          bash scripts/shell/verify-packaged-model-workers.sh dist/mac-arm64/Memo.app
+          test ! -e dist/mac-arm64/Memo.app/Contents/Resources/cleanup
           dictation_bin="dist/mac-arm64/Memo.app/Contents/Resources/dictation/memo-dictation"
           contextual_bin="dist/mac-arm64/Memo.app/Contents/Resources/dictation/memo-conomo-contextual"
           test -x "${dictation_bin}"

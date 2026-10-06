@@ -217,6 +217,9 @@ const electronAPI = {
     setWritingMode: (mode: WritingMode): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setWritingMode', mode);
     },
+    removeCleaned: (): Promise<{ writingMode: WritingMode; cleanupState: CleanupState }> => (
+      ipcRenderer.invoke('settings:remove-cleaned')
+    ),
     setStartAtLogin: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setStartAtLogin', enabled);
     },
@@ -231,6 +234,7 @@ const electronAPI = {
     selectModel: (model: AsrModelId): Promise<AsrSelectionResult> => (
       ipcRenderer.invoke('asr:select-model', model)
     ),
+    removeWhisper: (): Promise<AsrState> => ipcRenderer.invoke('asr:remove-whisper'),
     onStateChanged: (callback: (state: AsrState) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, state: AsrState) => callback(state);
       ipcRenderer.on('asr:state-changed', handler);
