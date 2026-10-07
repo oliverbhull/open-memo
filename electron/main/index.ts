@@ -16,7 +16,7 @@ import path from 'path';
 import os from 'os';
 import { pathToFileURL } from 'node:url';
 import { logger } from './utils/logger';
-import { normalizeTranscriptionText, stripLeadingDashSpace, stripTrailingEnter } from './services/textProcessing';
+import { formatDictationForPaste, normalizeTranscriptionText, stripLeadingDashSpace } from './services/textProcessing';
 import { runMemoExport } from './exportMemos';
 import { audioStorageService } from './services/AudioStorageService';
 import { applicationIconService } from './services/ApplicationIconService';
@@ -36,6 +36,7 @@ import { detectEmailTarget } from './services/emailFormatting';
 import { createDictationEntry } from '../shared/dictationEntry';
 import { verifyBundledModelPacks, removeLegacyBundledModelPacks, isCleanupModelPackInstalled, removeCleanupModelPack } from './services/ModelPackService';
 import { checkInputMonitoringPermission } from './services/InputMonitoringPermissionService';
+import { DEFAULT_RECORDING_HOTKEY, normalizeRecordingHotkey } from '../shared/recordingHotkey';
 import { removeLegacyWhisperModel } from './services/LegacyWhisperCleanup';
 
 const isExportMode = process.env.MEMO_EXPORT === '1';
@@ -75,6 +76,21 @@ const appUpdateService = new AppUpdateService(() => mainWindow, async () => {
   await cleanupMemoStt();
 });
 let isRecording = false;
+let isDictationProcessing = false;
+let changingRecordingHotkey = false;
+let capturingRecordingHotkey = false;
+let hotkeyCaptureTimer: NodeJS.Timeout | null = null;
+
+function cancelHotkeyCapture(): void {
+  if (!capturingRecordingHotkey) return;
+  capturingRecordingHotkey = false;
+  if (hotkeyCaptureTimer) clearTimeout(hotkeyCaptureTimer);
+  hotkeyCaptureTimer = null;
+  void memoSttService?.captureHotkey(false).catch(error => logger.warn('[Hotkey] Capture ended:', error));
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('settings:hotkeyCapture', { keys: [], complete: false, cancelled: true });
+  }
+}
 let isQuitting = false;
 let deliveryQueue: Promise<void> = Promise.resolve();
 let micDeviceRecoveryTimer: NodeJS.Timeout | null = null;
@@ -142,7 +158,10 @@ function createWindow(): void {
   });
   if (isDev) mainWindow.webContents.openDevTools();
 
+  mainWindow.on('blur', cancelHotkeyCapture);
+  mainWindow.webContents.on('before-input-event', (event) => { if (capturingRecordingHotkey) event.preventDefault(); });
   mainWindow.on('closed', () => {
+    cancelHotkeyCapture();
     setMainWindow(null);
     mainWindow = null;
   });
@@ -257,10 +276,24 @@ async function setupMemoSttService(): Promise<void> {
   const userSettings = loadUserSettings();
   const hotkey = userSettings.hotkey || 'function';
   memoSttService.setHotkey(hotkey);
+  memoSttService.setLockHotkey(userSettings.lockHotkey ?? 'function+controlleft');
+  memoSttService.on('hotkeyCapture', capture => {
+    if (!capturingRecordingHotkey) return;
+    mainWindow?.webContents.send('settings:hotkeyCapture', capture);
+    if (capture.cancelled || capture.complete) {
+      capturingRecordingHotkey = false;
+      if (hotkeyCaptureTimer) clearTimeout(hotkeyCaptureTimer);
+      hotkeyCaptureTimer = null;
+      void memoSttService?.captureHotkey(false).catch(error => logger.warn('[Hotkey] Capture ended:', error));
+    }
+  });
   
   let pendingDeliveries = 0;
   let pendingRecognition = 0;
-  const updateProcessingState = () => setProcessingState(pendingRecognition > 0 || pendingDeliveries > 0);
+  const updateProcessingState = () => {
+    isDictationProcessing = pendingRecognition > 0 || pendingDeliveries > 0;
+    setProcessingState(isDictationProcessing);
+  };
   memoSttService.on('transcription', (data: TranscriptionData) => {
     pendingRecognition = Math.max(0, pendingRecognition - 1);
     pendingDeliveries += 1;
@@ -296,29 +329,33 @@ async function setupMemoSttService(): Promise<void> {
         const rawText = resolveTranscriptionText(data);
         const normalized = normalizeTranscriptionText(stripLeadingDashSpace(rawText));
         const asSpoken = resolveCleanInput(data);
-        let formatted: string;
+        let formatted = '';
         let cleanProvenance: Record<string, unknown> | undefined;
-        if (cleanMode) {
-          const cleanup = await cleanupService.format(asSpoken, settings.vocabWords, await emailTarget ? 'email' : 'plain', senderName);
-          formatted = cleanup.text;
-          if (cleanup.reason === 'protected_input_bounds' ||
-              (cleanup.reason === 'input_bounds' && asSpoken.length > 20_000)) {
-            mainWindow?.webContents.send('audio:showToast', {
-              message: 'Dictation was too long to clean; original text retained.',
-              severity: 'warning', duration: 4000,
-            });
-          }
-          cleanProvenance = { asSpoken, candidate: cleanup.candidateText, selected: cleanup.text,
-            status: cleanup.status, reason: cleanup.reason, model: cleanup.model,
-            contract: cleanup.contract, latencyMs: cleanup.latencyMs };
-          logger.info(`[Main] Clean ${cleanup.status}${cleanup.reason ? ` (${cleanup.reason})` : ''}` +
-            `${cleanup.latencyMs === undefined ? '' : ` in ${cleanup.latencyMs.toFixed(0)} ms`}`);
-        } else {
-          formatted = !isQuitting ? await punctuationService.format(normalized) : asSpoken;
-        }
-        const afterPhrases = applyPhraseReplacements(formatted, settings.phraseReplacements);
-        const { textToPaste: textBeforeNormalization, pressEnter: pressEnterThisTime } = stripTrailingEnter(afterPhrases, settings.sayEnterToPressEnter ?? false);
-        const textToPaste = normalizeTranscriptionText(textBeforeNormalization);
+        const { textToPaste, pressEnter: pressEnterThisTime } = await formatDictationForPaste(
+          cleanMode || isQuitting ? asSpoken : normalized,
+          settings.sayEnterToPressEnter ?? false,
+          async input => {
+            if (cleanMode) {
+              const cleanup = await cleanupService.format(input, settings.vocabWords, await emailTarget ? 'email' : 'plain', senderName);
+              formatted = cleanup.text;
+              if (cleanup.reason === 'protected_input_bounds' ||
+                  (cleanup.reason === 'input_bounds' && input.length > 20_000)) {
+                mainWindow?.webContents.send('audio:showToast', {
+                  message: 'Dictation was too long to clean; original text retained.',
+                  severity: 'warning', duration: 4000,
+                });
+              }
+              cleanProvenance = { asSpoken, cleanupInput: input, candidate: cleanup.candidateText, selected: cleanup.text,
+                status: cleanup.status, reason: cleanup.reason, model: cleanup.model,
+                contract: cleanup.contract, latencyMs: cleanup.latencyMs };
+              logger.info(`[Main] Clean ${cleanup.status}${cleanup.reason ? ` (${cleanup.reason})` : ''}` +
+                `${cleanup.latencyMs === undefined ? '' : ` in ${cleanup.latencyMs.toFixed(0)} ms`}`);
+            } else {
+              formatted = !isQuitting ? await punctuationService.format(input) : input;
+            }
+            return applyPhraseReplacements(formatted, settings.phraseReplacements);
+          },
+        );
         let delivery = isQuitting ? 'shutdown' : 'empty';
         let deliveryAppContext: AppContext | undefined;
 
@@ -449,6 +486,7 @@ async function setupMemoSttService(): Promise<void> {
   memoSttService.on('status', (status: string) => {
     // Update recording state based on service status
     if (status === 'stopped' || status === 'error') {
+      cancelHotkeyCapture();
       pendingRecognition = 0;
       updateProcessingState();
       if (isRecording) {
@@ -1030,6 +1068,8 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
   const settings = loadSettings();
   const loginItemSettings = app.getLoginItemSettings();
   return {
+    hotkey: loadUserSettings().hotkey ?? DEFAULT_RECORDING_HOTKEY,
+    lockHotkey: loadUserSettings().lockHotkey ?? 'function+controlleft',
     sayEnterToPressEnter: settings.sayEnterToPressEnter ?? false,
     handsFreeMode: settings.handsFreeMode ?? false,
     saveAudio: settings.saveAudio ?? false,
@@ -1041,6 +1081,55 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
     startAtLogin: loginItemSettings.openAtLogin || false,
   };
 });
+
+async function changeRecordingShortcut(raw: unknown, kind: 'hotkey' | 'lockHotkey'): Promise<string> {
+  const hotkey = normalizeRecordingHotkey(raw);
+  if (!hotkey) throw new Error('Choose a supported recording shortcut.');
+  if (changingRecordingHotkey) throw new Error('Wait for the shortcut to finish changing.');
+  const previous = loadUserSettings();
+  const recording = kind === 'hotkey' ? hotkey : previous.hotkey ?? DEFAULT_RECORDING_HOTKEY;
+  const lock = kind === 'lockHotkey' ? hotkey : previous.lockHotkey ?? 'function+controlleft';
+  if (normalizeRecordingHotkey(recording) === normalizeRecordingHotkey(lock) ||
+      (normalizeRecordingHotkey(lock) === 'function+controlleft' && normalizeRecordingHotkey(recording) === 'function+controlright')) {
+    throw new Error('Use different shortcuts for push to talk and recording lock.');
+  }
+  if (hotkey === normalizeRecordingHotkey(previous[kind])) return hotkey;
+  if (isRecording || isDictationProcessing) throw new Error('Finish your dictation before changing a shortcut.');
+  changingRecordingHotkey = true;
+  try {
+    await memoSttService?.updateHotkeys(recording, lock);
+    saveUserSettings({ hotkey: recording, lockHotkey: lock });
+    updateMenuState();
+    return hotkey;
+  } catch (error) {
+    await memoSttService?.updateHotkeys(previous.hotkey ?? DEFAULT_RECORDING_HOTKEY, previous.lockHotkey ?? 'function+controlleft').catch(restoreError => logger.error('[Hotkey] Restore failed:', restoreError));
+    throw error;
+  } finally {
+    changingRecordingHotkey = false;
+  }
+}
+
+ipcMain.handle('settings:setRecordingHotkey', (_event, raw: unknown) => changeRecordingShortcut(raw, 'hotkey'));
+ipcMain.handle('settings:setRecordingLockHotkey', (_event, raw: unknown) => changeRecordingShortcut(raw, 'lockHotkey'));
+ipcMain.handle('settings:beginHotkeyCapture', async () => {
+  if (!mainWindow?.isFocused()) throw new Error('Keep Settings open while recording a shortcut.');
+  if (isRecording || isDictationProcessing || changingRecordingHotkey) throw new Error('Finish your dictation before recording a shortcut.');
+  if (!memoSttService || memoSttService.getStatus() !== 'running') throw new Error('The recorder is not ready. Restart Memo and try again.');
+  cancelHotkeyCapture();
+  capturingRecordingHotkey = true;
+  try {
+    await memoSttService.captureHotkey(true);
+    if (!capturingRecordingHotkey) {
+      await memoSttService.captureHotkey(false);
+      throw new Error('Shortcut recording was cancelled.');
+    }
+    hotkeyCaptureTimer = setTimeout(cancelHotkeyCapture, 60_000);
+  } catch (error) {
+    cancelHotkeyCapture();
+    throw error;
+  }
+});
+ipcMain.handle('settings:endHotkeyCapture', () => { cancelHotkeyCapture(); });
 
 ipcMain.handle('settings:setVocabWords', async (_event, vocabWords: string[]) => {
   const settings = loadSettings();

@@ -1,4 +1,5 @@
 import type { MemoEntry } from './memo-entry';
+import type { RecordingHotkeyCapture } from './recordingHotkey';
 
 export interface AppContext {
   appName: string;
@@ -167,6 +168,8 @@ export interface ElectronAPI {
   markUserOnboarded(userName: string): Promise<void>;
   interface: {
     getSettings(): Promise<{
+      hotkey: string;
+      lockHotkey: string;
       sayEnterToPressEnter: boolean;
       handsFreeMode: boolean;
       saveAudio: boolean;
@@ -181,6 +184,11 @@ export interface ElectronAPI {
     setPhraseReplacements(rules: PhraseReplacementRule[]): Promise<boolean>;
     setSayEnterToPressEnter(enabled: boolean): Promise<boolean>;
     setHandsFreeMode(enabled: boolean): Promise<boolean>;
+    setRecordingHotkey(hotkey: string): Promise<string>;
+    setRecordingLockHotkey(hotkey: string): Promise<string>;
+    beginHotkeyCapture(): Promise<void>;
+    endHotkeyCapture(): Promise<void>;
+    onHotkeyCapture(callback: (capture: RecordingHotkeyCapture) => void): () => void;
     setSaveAudio(enabled: boolean): Promise<boolean>;
     setExperimentalEmailFormatting(enabled: boolean): Promise<boolean>;
     setWritingMode(mode: WritingMode): Promise<boolean>;

@@ -17,6 +17,7 @@ export interface StoreSchema {
   userName: string | null;
   onboardedUsers: string[];
   hotkey: string | null;
+  lockHotkey: string | null;
   _migrationCompleted: boolean;
   _optionalCleanupMigrationCompleted: boolean;
 }
@@ -38,6 +39,7 @@ export const storeDefaults: StoreSchema = {
   userName: null,
   onboardedUsers: [],
   hotkey: null,
+  lockHotkey: null,
   _migrationCompleted: false,
   _optionalCleanupMigrationCompleted: false,
 };

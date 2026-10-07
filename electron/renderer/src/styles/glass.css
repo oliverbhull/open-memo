@@ -5,7 +5,7 @@
 }
 
 :root {
-  --primary: #C26D50;
+  --primary: #dc8e74;
 }
 
 /* Checkbox styling to use primary color */
@@ -75,6 +75,7 @@ body {
 /* Title bar */
 .title-bar {
   height: 32px;
+  flex-shrink: 0;
   background: rgba(6, 6, 10, 0.7);
   -webkit-app-region: drag;
   display: flex;
@@ -95,6 +96,14 @@ body {
 }
 
 .settings-icon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
   cursor: pointer;
   opacity: 0.75;
   padding: 4px;
@@ -103,6 +112,12 @@ body {
 .settings-icon:hover {
   opacity: 1;
 }
+
+.app-back-button { display: flex; align-items: center; gap: 4px; padding: 4px 6px; border: 0; border-radius: 6px; background: transparent; color: #c5c5c5; font: inherit; font-size: 12px; cursor: pointer; }
+.app-back-button:hover { background: #ffffff12; color: #ededed; }
+.app-title-bar button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.app-feed-view { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.app-feed-view[hidden] { display: none; }
 
 /* Empty state */
 .empty-state {

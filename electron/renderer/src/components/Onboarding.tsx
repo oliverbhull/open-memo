@@ -3,6 +3,7 @@ import type { DictationReadiness, TranscriptionData } from '../../../shared/elec
 import { GlassContainer } from './GlassContainer';
 import { useTheme } from '../context/ThemeContext';
 import { KeyboardKey } from './KeyboardKey';
+import { recordingHotkeyLabel } from '../../../shared/recordingHotkey';
 import titleLogo from '../assets/title.png';
 import './Onboarding.css';
 
@@ -31,6 +32,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   const { primary } = useTheme();
   const [step, setStepState] = useState<OnboardingStep>(initialStep);
   const [name, setName] = useState('');
+  const [hotkeyLabel, setHotkeyLabel] = useState('Fn');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [micGranted, setMicGranted] = useState(false);
@@ -55,6 +57,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
   useEffect(() => {
     void window.electronAPI.getUserName().then(savedName => { if (savedName) setName(savedName); });
+    void window.electronAPI.interface.getSettings().then(settings => setHotkeyLabel(recordingHotkeyLabel(settings.hotkey))).catch(() => {});
     return () => micCleanupRef.current?.();
   }, []);
 
@@ -191,9 +194,9 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
     {step === 'accessibility' && <div className="onboarding-step"><div className="onboarding-icon-container"><PermissionIcon kind="typing"/></div><p className="onboarding-description">Allow Memo to type your words into other apps.</p>{accessibilityGranted ? <Success>Typing access enabled</Success> : <p className="onboarding-hint">Turn on Memo in Privacy &amp; Security → Accessibility.</p>}{!accessibilityGranted ? <button className="onboarding-button primary" onClick={() => void requestAccessibility()} disabled={busy} style={buttonStyle}>Enable Typing Access</button> : <button className="onboarding-button primary" onClick={() => setStep('inputMonitoring')} style={buttonStyle}>Continue</button>}</div>}
 
-    {step === 'inputMonitoring' && <div className="onboarding-step"><div className="onboarding-icon-container"><PermissionIcon kind="keyboard"/></div><p className="onboarding-description">Allow the Fn shortcut to work anywhere.</p>{inputMonitoringGranted ? <Success>Keyboard shortcut enabled</Success> : <p className="onboarding-hint">Memo only listens for your chosen dictation shortcut.</p>}{!inputMonitoringGranted ? <button className="onboarding-button primary" onClick={() => void requestInputMonitoring()} disabled={busy} style={buttonStyle}>Enable Keyboard Shortcut</button> : <button className="onboarding-button primary" onClick={() => setStep('ready')} style={buttonStyle}>Try Memo</button>}</div>}
+    {step === 'inputMonitoring' && <div className="onboarding-step"><div className="onboarding-icon-container"><PermissionIcon kind="keyboard"/></div><p className="onboarding-description">Allow your recording shortcut to work anywhere.</p>{inputMonitoringGranted ? <Success>Keyboard shortcut enabled</Success> : <p className="onboarding-hint">Memo only listens for your chosen dictation shortcut.</p>}{!inputMonitoringGranted ? <button className="onboarding-button primary" onClick={() => void requestInputMonitoring()} disabled={busy} style={buttonStyle}>Enable Keyboard Shortcut</button> : <button className="onboarding-button primary" onClick={() => setStep('ready')} style={buttonStyle}>Try Memo</button>}</div>}
 
-    {step === 'ready' && <div className="onboarding-step"><div className="onboarding-icon-container"><PermissionIcon kind="keyboard"/></div>{busy ? <p className="onboarding-description">Getting Memo ready…</p> : readiness?.ready ? <><p className="onboarding-description">Hold <KeyboardKey label="Fn" size="small"/>, say something, then release.</p><input className="onboarding-input" type="text" placeholder="Your words will appear here" value={tryItText} onChange={event => setTryItText(event.target.value)} autoFocus/>{testSucceeded ? <Success>Memo is working</Success> : <p className="onboarding-hint">This verifies your microphone, shortcut, and typing access together.</p>}</> : null}{error && <><p className="onboarding-hint">{error}</p>{typingBlocked ? <button className="onboarding-button secondary" onClick={() => void window.electronAPI.openAutomationPreferences()}>Review Typing Access</button> : <button className="onboarding-button secondary" onClick={() => { setError(null); setPrepareAttempt(value => value + 1); }}>Try Again</button>}</>}{testSucceeded && <button className="onboarding-button primary" onClick={() => void complete()} style={buttonStyle}>Start using Memo</button>}</div>}
+    {step === 'ready' && <div className="onboarding-step"><div className="onboarding-icon-container"><PermissionIcon kind="keyboard"/></div>{busy ? <p className="onboarding-description">Getting Memo ready…</p> : readiness?.ready ? <><p className="onboarding-description">Hold <KeyboardKey label={hotkeyLabel} size="small"/>, say something, then release.</p><input className="onboarding-input" type="text" placeholder="Your words will appear here" value={tryItText} onChange={event => setTryItText(event.target.value)} autoFocus/>{testSucceeded ? <Success>Memo is working</Success> : <p className="onboarding-hint">This verifies your microphone, shortcut, and typing access together.</p>}</> : null}{error && <><p className="onboarding-hint">{error}</p>{typingBlocked ? <button className="onboarding-button secondary" onClick={() => void window.electronAPI.openAutomationPreferences()}>Review Typing Access</button> : <button className="onboarding-button secondary" onClick={() => { setError(null); setPrepareAttempt(value => value + 1); }}>Try Again</button>}</>}{testSucceeded && <button className="onboarding-button primary" onClick={() => void complete()} style={buttonStyle}>Start using Memo</button>}</div>}
 
     <div className="onboarding-status-tracker">{steps.map((_, index) => <div key={index} className={`onboarding-status-step ${index + 1 === stepNumber ? 'active' : ''}`} style={{ color: index + 1 <= stepNumber ? primary : 'rgba(255,255,255,.5)' }}><div className="onboarding-status-dot" style={index + 1 <= stepNumber ? { backgroundColor: primary, borderColor: primary } : {}}/>{index < steps.length - 1 && <div className={`onboarding-status-line ${index + 1 < stepNumber ? 'completed' : ''}`} style={index + 1 < stepNumber ? { backgroundColor: primary } : {}}/>}</div>)}</div>
   </div></div></GlassContainer>;

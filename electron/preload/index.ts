@@ -13,6 +13,7 @@ import type {
   WritingMode,
 } from '../shared/electron-api';
 import type { MemoEntry } from '../shared/memo-entry';
+import type { RecordingHotkeyCapture } from '../shared/recordingHotkey';
 
 // Store callback references for proper cleanup
 const transcriptionCallbacks = new Set<(data: TranscriptionData) => void>();
@@ -183,6 +184,8 @@ const electronAPI = {
 
   interface: {
     getSettings: (): Promise<{
+      hotkey: string;
+      lockHotkey: string;
       sayEnterToPressEnter: boolean;
       handsFreeMode: boolean;
       saveAudio: boolean;
@@ -206,6 +209,17 @@ const electronAPI = {
     },
     setHandsFreeMode: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setHandsFreeMode', enabled);
+    },
+    setRecordingHotkey: (hotkey: string): Promise<string> => {
+      return ipcRenderer.invoke('settings:setRecordingHotkey', hotkey);
+    },
+    setRecordingLockHotkey: (hotkey: string): Promise<string> => ipcRenderer.invoke('settings:setRecordingLockHotkey', hotkey),
+    beginHotkeyCapture: (): Promise<void> => ipcRenderer.invoke('settings:beginHotkeyCapture'),
+    endHotkeyCapture: (): Promise<void> => ipcRenderer.invoke('settings:endHotkeyCapture'),
+    onHotkeyCapture: (callback: (capture: RecordingHotkeyCapture) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, capture: RecordingHotkeyCapture) => callback(capture);
+      ipcRenderer.on('settings:hotkeyCapture', listener);
+      return () => ipcRenderer.removeListener('settings:hotkeyCapture', listener);
     },
     setSaveAudio: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setSaveAudio', enabled);

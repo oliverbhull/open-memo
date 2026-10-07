@@ -5,6 +5,7 @@ import path from 'node:path';
 import Store from 'electron-store';
 import { StoreSchema, storeDefaults } from './StoreSchema';
 import { clampPhraseReplacementRulesFromInput } from './phraseReplacement';
+import { DEFAULT_RECORDING_HOTKEY, normalizeRecordingHotkey } from '../../shared/recordingHotkey';
 import type {
   PhraseReplacementRule,
   AsrModelId,
@@ -28,6 +29,7 @@ export interface UserSettings {
   userName?: string;
   onboardedUsers?: string[];
   hotkey?: string;
+  lockHotkey?: string;
 }
 
 function boundedString(raw: unknown, maxLength = 200): string | null {
@@ -89,19 +91,29 @@ export function saveSettings(next: Settings): void {
 
 export function loadUserSettings(): UserSettings {
   const userName = store.get('userName');
-  const hotkey = store.get('hotkey');
+  const hotkey = normalizeRecordingHotkey(store.get('hotkey')) ?? DEFAULT_RECORDING_HOTKEY;
   const onboardedUsers = stringArray(store.get('onboardedUsers'));
   return {
     ...(userName ? { userName } : {}),
     ...(hotkey ? { hotkey } : {}),
+    lockHotkey: normalizeRecordingHotkey(store.get('lockHotkey')) ?? 'function+controlleft',
     ...(onboardedUsers.length > 0 ? { onboardedUsers } : {}),
   };
 }
 
 export function saveUserSettings(next: UserSettings): void {
   if (next.userName !== undefined) store.set('userName', boundedString(next.userName, 100));
-  if (next.hotkey !== undefined) store.set('hotkey', boundedString(next.hotkey, 100));
+  if (next.hotkey !== undefined) {
+    const hotkey = normalizeRecordingHotkey(next.hotkey);
+    if (!hotkey) throw new Error('Choose a supported recording key.');
+    store.set('hotkey', hotkey);
+  }
   if (next.onboardedUsers !== undefined) store.set('onboardedUsers', stringArray(next.onboardedUsers));
+  if (next.lockHotkey !== undefined) {
+    const hotkey = normalizeRecordingHotkey(next.lockHotkey);
+    if (!hotkey) throw new Error('Choose a supported recording lock shortcut.');
+    store.set('lockHotkey', hotkey);
+  }
 }
 
 function migrateSettingsJson(raw: Record<string, unknown>): void {
@@ -146,7 +158,9 @@ export function migrateToElectronStore(): void {
     migrateJsonFile(path.join(os.homedir(), '.memo-web-settings.json'), (raw) => {
       saveUserSettings({
         userName: typeof raw.userName === 'string' ? raw.userName : undefined,
-        hotkey: typeof raw.hotkey === 'string' ? raw.hotkey : undefined,
+        hotkey: typeof raw.hotkey === 'string'
+          ? normalizeRecordingHotkey(raw.hotkey) ?? DEFAULT_RECORDING_HOTKEY
+          : undefined,
         onboardedUsers: stringArray(raw.onboardedUsers),
       });
     });

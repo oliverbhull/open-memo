@@ -74,7 +74,7 @@
 }
 
 .onboarding-status-step.active {
-  color: var(--primary, #C26D50);
+  color: var(--primary, #dc8e74);
 }
 
 .onboarding-status-line {
@@ -209,15 +209,15 @@
 }
 
 .onboarding-button.primary {
-  background: var(--primary, #C26D50) !important;
-  border-color: var(--primary, #C26D50) !important;
+  background: var(--primary, #dc8e74) !important;
+  border-color: var(--primary, #dc8e74) !important;
   color: rgba(255, 255, 255, 0.95);
   font-weight: 600;
 }
 
 .onboarding-button.primary:hover:not(:disabled) {
-  background: var(--primary, #C26D50);
-  border-color: var(--primary, #C26D50);
+  background: var(--primary, #dc8e74);
+  border-color: var(--primary, #dc8e74);
   opacity: 0.9;
   filter: brightness(1.1);
   transform: translateY(-1px);
