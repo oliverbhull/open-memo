@@ -4,15 +4,10 @@ import type { MemoEntry } from '../../../shared/memo-entry';
 import { storageService } from '../services/StorageService';
 import { useTheme } from '../context/ThemeContext';
 import { AppIcon } from './AppIcon';
+import { groupApplicationUsage, type AppUsage } from '../utils/applicationUsage';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-interface AppUsage {
-  appName: string;
-  bundleId?: string;
-  words: number;
-}
 
 function countWords(text: string): number {
   const normalized = text.trim();
@@ -67,7 +62,7 @@ export const ActivityInsights: React.FC = () => {
     const weekStart = today - 6 * DAY_MS;
     const heatStart = today - 27 * DAY_MS;
     const heat = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
-    const apps = new Map<string, AppUsage>();
+    const appRecords: AppUsage[] = [];
     let weekWords = 0;
     let weekMoments = 0;
     let speakingSeconds = 0;
@@ -87,16 +82,14 @@ export const ActivityInsights: React.FC = () => {
 
       const app = appContextFor(entry);
       if (!app) return;
-      const key = app.bundleId || app.appName.toLowerCase();
-      const existing = apps.get(key);
-      apps.set(key, {
+      appRecords.push({
         appName: app.appName,
         bundleId: app.bundleId,
-        words: (existing?.words ?? 0) + words,
+        words,
       });
     });
 
-    const allApps = [...apps.values()];
+    const allApps = groupApplicationUsage(appRecords);
     const topApps = allApps.sort((left, right) => right.words - left.words).slice(0, 4);
     const appWords = allApps.reduce((sum, app) => sum + app.words, 0);
     const heatMax = Math.max(1, ...heat.flat());
@@ -140,7 +133,7 @@ export const ActivityInsights: React.FC = () => {
         ) : activity.topApps.map((app) => {
           const percent = activity.appWords > 0 ? Math.round((app.words / activity.appWords) * 100) : 0;
           return (
-            <div className="activity-insights__app" key={app.bundleId || app.appName}>
+            <div className="activity-insights__app" key={app.key}>
               <AppIcon appName={app.appName} bundleId={app.bundleId} size={22} />
               <span className="activity-insights__app-name">{app.appName}</span>
               <span className="activity-insights__app-track"><i style={{ width: `${percent}%` }} /></span>

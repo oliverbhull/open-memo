@@ -43,26 +43,22 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 3.5px;
-      width: 80px;
-      height: 28px;
+      gap: 2px;
+      width: 46px;
+      height: 34px;
     }
 
     .bar {
       width: 3px;
-      height: 1.5px;
+      flex: 0 0 3px;
+      height: 3px;
       background: var(--primary-color);
-      border-radius: 2px;
+      border-radius: 999px;
       transform-origin: center center;
-      transition: height 50ms linear;
-    }
-
-    body.waveform-live .bar {
-      transition: none;
     }
 
     .idle .bar {
-      height: 1.5px !important;
+      height: 3px !important;
     }
 
   </style>
@@ -77,139 +73,132 @@
     <div class="bar"></div>
     <div class="bar"></div>
     <div class="bar"></div>
+    <div class="bar"></div>
+    <div class="bar"></div>
   </div>
 
   <script>
-    // Waveform calibration: expects 7 values in 0–1 from memo-stt (BLE or system mic).
-    const body = document.body;
+    // Seven normalized meter values from the dictation sidecar.
     const waveform = document.getElementById("waveform");
     const bars = Array.from(document.querySelectorAll(".bar"));
+    const MIN_HEIGHT = 3;
+    const MAX_HEIGHT = 32;
+    const OPEN_THRESHOLD = 0.07;
+    const CLOSE_THRESHOLD = 0.04;
+    const ATTACK_MS = 30;
+    const RELEASE_MS = 80;
+    const STALE_MS = 250;
+    const TRAIL_MS = 260;
+    const BAR_DELAY_MS = TRAIL_MS / (bars.length - 1);
 
-    let audioLevels = null;
-    let lastAudioUpdate = 0;
     let isRecording = false;
     let primaryColor = "#C26D50";
-    let animationFrameId = null;
-    let tickFrameId = null;
-    let isIdle = true;
+    let frameId = null;
+    let lastFrame = 0;
+    let lastAudioUpdate = 0;
+    let gateOpen = false;
+    let inputLevel = 0;
+    const history = [];
+    const displayed = bars.map(() => 0);
+    // Shorter outer bars soften the overall silhouette into a rounded contour.
+    const contour = bars.map((_, index) => {
+      const position = (index / (bars.length - 1)) * 2 - 1;
+      return 0.42 + 0.58 * Math.sqrt(Math.max(0, 1 - position * position));
+    });
 
-    const IDLE_HEIGHT = 2;
-    const MIN_HEIGHT = 2;
-    const MAX_HEIGHT = 20;
-    const HEIGHT_RANGE = MAX_HEIGHT - MIN_HEIGHT;
-    const WAVEFORM_SCALE = 1.0;
-    const WEIGHTS = [0.45, 0.65, 0.85, 1.0, 0.85, 0.65, 0.45];
-
-    function resetBarsToIdle() {
+    function resetBars() {
+      gateOpen = false;
+      inputLevel = 0;
+      history.length = 0;
+      history.push({ time: performance.now(), level: 0 });
+      displayed.fill(0);
       waveform.classList.add("idle");
-      isIdle = true;
-      for (let i = 0; i < bars.length; i++) {
-        bars[i].style.height = `${IDLE_HEIGHT}px`;
+      bars.forEach((bar) => { bar.style.height = `${MIN_HEIGHT}px`; });
+    }
+
+    function levelAt(time) {
+      if (time < history[0].time) return 0;
+      for (let index = 1; index < history.length; index++) {
+        const right = history[index];
+        if (right.time < time) continue;
+        const left = history[index - 1];
+        const span = right.time - left.time;
+        const mix = span > 0 ? (time - left.time) / span : 1;
+        return left.level + (right.level - left.level) * mix;
       }
+      return history[history.length - 1].level;
     }
 
-    const TRANSFORM_CACHE = new Map();
-    function transformLevel(level) {
-      if (level < 0.05) return 0;
-      const scaled = Math.max(0, Math.min(1, level * WAVEFORM_SCALE));
-      const rounded = Math.round(scaled * 100) / 100;
-      if (TRANSFORM_CACHE.has(rounded)) return TRANSFORM_CACHE.get(rounded);
-      const result = Math.pow(scaled, 0.85);
-      TRANSFORM_CACHE.set(rounded, result);
-      return result;
-    }
-
-    function applyBarHeights(levels) {
-      for (let i = 0; i < bars.length; i++) {
-        const raw = levels[i] ?? 0;
-        const t = transformLevel(raw);
-        const weighted = t * WEIGHTS[i];
-        const clamped = Math.min(1, weighted);
-        const height = MIN_HEIGHT + clamped * HEIGHT_RANGE;
-        bars[i].style.height = `${height}px`;
-      }
-    }
-
-    function updateBars(levels) {
-      if (!levels || levels.length === 0) {
-        if (!isIdle) resetBarsToIdle();
+    function tick(now) {
+      if (!isRecording) {
+        frameId = null;
         return;
       }
-      if (isIdle) {
-        waveform.classList.remove("idle");
-        isIdle = false;
+      const elapsed = Math.max(0, Math.min(64, now - lastFrame));
+      lastFrame = now;
+      if (Date.now() - lastAudioUpdate > STALE_MS) {
+        gateOpen = false;
+        inputLevel = 0;
       }
-      if (body.classList.contains("waveform-live")) {
-        if (animationFrameId !== null) {
-          cancelAnimationFrame(animationFrameId);
-          animationFrameId = null;
-        }
-        applyBarHeights(levels);
-      } else {
-        if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
-        animationFrameId = requestAnimationFrame(() => {
-          applyBarHeights(levels);
-          animationFrameId = null;
-        });
-      }
-      lastAudioUpdate = Date.now();
+      history.push({ time: now, level: inputLevel });
+      // Keep one sample before the oldest delayed bar for interpolation.
+      while (history.length > 2 && history[1].time < now - TRAIL_MS - 64) history.shift();
+      let moving = false;
+      bars.forEach((bar, index) => {
+        const current = displayed[index];
+        // Each syllable enters on the left and reaches the right 260ms later.
+        const speechTime = now - index * BAR_DELAY_MS;
+        const envelope = levelAt(speechTime);
+        // Negative spatial phases carry the taller crests left to right even
+        // during sustained speech. Multiplying by the envelope keeps pauses still.
+        const variation = 0.5
+          + 0.35 * Math.sin(speechTime * 0.012 - index * 0.85)
+          + 0.15 * Math.sin(speechTime * 0.019 - index * 1.7);
+        const texture = 0.08 + 0.92 * Math.pow(variation, 1.7);
+        const target = envelope * texture * contour[index];
+        const timeConstant = target > current ? ATTACK_MS : RELEASE_MS;
+        let next = current + (target - current) * (1 - Math.exp(-elapsed / timeConstant));
+        if (target === 0 && next < 0.01) next = 0;
+        displayed[index] = next;
+        moving ||= next > 0;
+        bar.style.height = `${MIN_HEIGHT + next * (MAX_HEIGHT - MIN_HEIGHT)}px`;
+      });
+      waveform.classList.toggle("idle", !moving);
+      frameId = requestAnimationFrame(tick);
     }
-
-    function tick() {
-      const now = Date.now();
-      if (audioLevels && now - lastAudioUpdate > 250) {
-        audioLevels = null;
-        if (!isIdle) resetBarsToIdle();
-      }
-      if (isRecording) {
-        tickFrameId = requestAnimationFrame(tick);
-      } else {
-        tickFrameId = null;
-      }
-    }
-
-    function startTickLoop() {
-      if (tickFrameId === null && isRecording) {
-        tickFrameId = requestAnimationFrame(tick);
-      }
-    }
-
-    function stopTickLoop() {
-      if (tickFrameId !== null) {
-        cancelAnimationFrame(tickFrameId);
-        tickFrameId = null;
-      }
-    }
-
-    // ── IPC listeners ──────────────────────────────────
 
     window.memoOverlay.onAudioLevels((levels) => {
-      audioLevels = levels;
-      if (levels && levels.length > 0) body.classList.add("waveform-live");
-      updateBars(levels);
+      // Late microphone callbacks cannot restart the animation after recording.
+      if (!isRecording) return;
+      const safeLevels = Array.from({ length: 7 }, (_, index) => {
+        const value = Array.isArray(levels) ? levels[index] : 0;
+        return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+      });
+      lastAudioUpdate = Date.now();
+      const peak = Math.max(...safeLevels);
+      // Separate open/close thresholds prevent flicker around the noise floor.
+      gateOpen = peak >= (gateOpen ? CLOSE_THRESHOLD : OPEN_THRESHOLD);
+      // Lift speech above the gate for more visible motion without lifting noise.
+      const speech = Math.max(0, (peak - CLOSE_THRESHOLD) / (1 - CLOSE_THRESHOLD));
+      inputLevel = gateOpen ? Math.min(1, Math.pow(speech, 0.65) * 1.1) : 0;
     });
 
     window.memoOverlay.onStatus((status) => {
       const wasRecording = isRecording;
       isRecording = status.isRecording;
-
       if (status.primaryColor && status.primaryColor !== primaryColor) {
         primaryColor = status.primaryColor;
         document.documentElement.style.setProperty("--primary-color", primaryColor);
       }
-
-      if (isRecording) {
-        body.classList.add("waveform-live");
-        if (isIdle) {
-          waveform.classList.remove("idle");
-          isIdle = false;
-        }
-        if (!wasRecording) startTickLoop();
-      } else {
-        body.classList.remove("waveform-live");
-        resetBarsToIdle();
-        audioLevels = null;
-        if (wasRecording) stopTickLoop();
+      if (isRecording && !wasRecording) {
+        resetBars();
+        lastAudioUpdate = Date.now();
+        lastFrame = performance.now();
+        frameId = requestAnimationFrame(tick);
+      } else if (!isRecording) {
+        if (frameId !== null) cancelAnimationFrame(frameId);
+        frameId = null;
+        resetBars();
       }
     });
 
