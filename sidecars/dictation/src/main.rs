@@ -13,6 +13,8 @@ use std::sync::{
 };
 use std::time::Instant;
 mod app_detection;
+mod audio_levels;
+use audio_levels::calculate_audio_levels;
 mod mrec_batch;
 mod opus_decoder;
 mod parent_watchdog;
@@ -208,31 +210,6 @@ fn join_segments(parts: &[String]) -> String {
         }
     }
     result
-}
-
-// Calculate audio levels for waveform visualization
-// Returns 7 normalized levels (0.0-1.0) for the 7 bars
-fn calculate_audio_levels(samples: &[i16]) -> Vec<f32> {
-    if samples.is_empty() {
-        return vec![0.0; 7];
-    }
-
-    // Calculate RMS (Root Mean Square) for audio level
-    let sum_squares: i64 = samples.iter().map(|&s| (s as i64).pow(2)).sum();
-    let rms = (sum_squares as f32 / samples.len() as f32).sqrt();
-
-    // Normalize to 0-1 range (i16 max is 32767)
-    // Use lower threshold and gain boost for better reactivity (similar to memo-desktop system mic)
-    const NORMALIZATION_THRESHOLD: f32 = 15000.0;
-    const GAIN_BOOST: f32 = 2.0;
-    let normalized = ((rms / NORMALIZATION_THRESHOLD) * GAIN_BOOST).min(1.0);
-
-    // Apply exponential scaling for better visual response
-    let scaled = normalized.powf(0.4);
-
-    // Create 7 bands with symmetric weighting (center bars higher, edges taper down)
-    let weights = vec![0.6, 0.8, 0.95, 1.0, 0.95, 0.8, 0.6];
-    weights.into_iter().map(|w| (scaled * w).min(1.0)).collect()
 }
 
 // Default trigger key (can be overridden via --hotkey argument)
