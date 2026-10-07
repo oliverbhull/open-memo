@@ -173,6 +173,7 @@
         "to": "dictation",
         "filter": [
           "memo-dictation",
+          "THIRD_PARTY_NOTICES.txt",
           "memo-conomo-contextual",
           "run-contextual-conomo",
           "contextual-worker.py"

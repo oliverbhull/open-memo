@@ -15,6 +15,7 @@ CARGO_TARGET_DIR="${TARGET_DIR}" cargo build \
   --manifest-path "${CRATE_DIR}/Cargo.toml" \
   --locked --release --bin memo-dictation
 cp "${TARGET_DIR}/release/memo-dictation" "${OUTPUT}"
+cp "${CRATE_DIR}/THIRD_PARTY_NOTICES.txt" "${OUTPUT_DIR}/THIRD_PARTY_NOTICES.txt"
 chmod 755 "${OUTPUT}"
 
 xcrun swiftc -O -framework Foundation -framework CoreML -framework Accelerate \

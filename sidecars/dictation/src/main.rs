@@ -14,7 +14,7 @@ use std::sync::{
 use std::time::Instant;
 mod app_detection;
 mod audio_levels;
-use audio_levels::calculate_audio_levels;
+use audio_levels::calculate_speech_audio_levels;
 mod mrec_batch;
 mod opus_decoder;
 mod parent_watchdog;
@@ -317,9 +317,9 @@ fn extend_buffer_mono_u16(buf: &mut Vec<i16>, data: &[u16], channels: usize) {
     }
 }
 
-fn audio_levels_interleaved_i16(data: &[i16], ch: usize) -> Vec<f32> {
+fn audio_levels_interleaved_i16(data: &[i16], ch: usize, sample_rate: u32) -> Vec<f32> {
     if ch <= 1 {
-        return calculate_audio_levels(data);
+        return calculate_speech_audio_levels(data, sample_rate);
     }
     let mono: Vec<i16> = data
         .chunks_exact(ch)
@@ -328,16 +328,16 @@ fn audio_levels_interleaved_i16(data: &[i16], ch: usize) -> Vec<f32> {
             (s / ch as i32) as i16
         })
         .collect();
-    calculate_audio_levels(&mono)
+    calculate_speech_audio_levels(&mono, sample_rate)
 }
 
-fn audio_levels_interleaved_f32(data: &[f32], ch: usize) -> Vec<f32> {
+fn audio_levels_interleaved_f32(data: &[f32], ch: usize, sample_rate: u32) -> Vec<f32> {
     if ch <= 1 {
         let mono: Vec<i16> = data
             .iter()
             .map(|&s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
             .collect();
-        return calculate_audio_levels(&mono);
+        return calculate_speech_audio_levels(&mono, sample_rate);
     }
     let mono: Vec<i16> = data
         .chunks_exact(ch)
@@ -346,13 +346,13 @@ fn audio_levels_interleaved_f32(data: &[f32], ch: usize) -> Vec<f32> {
             (acc * 32767.0) as i16
         })
         .collect();
-    calculate_audio_levels(&mono)
+    calculate_speech_audio_levels(&mono, sample_rate)
 }
 
-fn audio_levels_interleaved_u16(data: &[u16], ch: usize) -> Vec<f32> {
+fn audio_levels_interleaved_u16(data: &[u16], ch: usize, sample_rate: u32) -> Vec<f32> {
     if ch <= 1 {
         let mono: Vec<i16> = data.iter().map(|&s| ((s as i32) - 32768) as i16).collect();
-        return calculate_audio_levels(&mono);
+        return calculate_speech_audio_levels(&mono, sample_rate);
     }
     let mono: Vec<i16> = data
         .chunks_exact(ch)
@@ -361,7 +361,7 @@ fn audio_levels_interleaved_u16(data: &[u16], ch: usize) -> Vec<f32> {
             (s / ch as i32) as i16
         })
         .collect();
-    calculate_audio_levels(&mono)
+    calculate_speech_audio_levels(&mono, sample_rate)
 }
 
 // Parse hotkey from string to Key enum
@@ -737,12 +737,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 buf.pop_front();
                             }
                         }
+                        let levels = calculate_speech_audio_levels(&mono_frame, sample_rate);
                         if is_recording_vad.load(Ordering::Acquire) {
                             audio_buffer_vad
                                 .lock()
                                 .unwrap()
                                 .extend_from_slice(&mono_frame);
-                            let levels = calculate_audio_levels(&mono_frame);
                             let mut last_sent = last_audio_level_sent_clone.lock().unwrap();
                             if should_emit_audio_levels_throttled(
                                 &mut *last_sent,
@@ -768,12 +768,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 buf.pop_front();
                             }
                         }
+                        let levels = calculate_speech_audio_levels(&mono_frame, sample_rate);
                         if is_recording_vad.load(Ordering::Acquire) {
                             audio_buffer_vad
                                 .lock()
                                 .unwrap()
                                 .extend_from_slice(&mono_frame);
-                            let levels = calculate_audio_levels(&mono_frame);
                             let mut last_sent = last_audio_level_sent_clone.lock().unwrap();
                             if should_emit_audio_levels_throttled(
                                 &mut *last_sent,
@@ -799,12 +799,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 buf.pop_front();
                             }
                         }
+                        let levels = calculate_speech_audio_levels(&mono_frame, sample_rate);
                         if is_recording_vad.load(Ordering::Acquire) {
                             audio_buffer_vad
                                 .lock()
                                 .unwrap()
                                 .extend_from_slice(&mono_frame);
-                            let levels = calculate_audio_levels(&mono_frame);
                             let mut last_sent = last_audio_level_sent_clone.lock().unwrap();
                             if should_emit_audio_levels_throttled(
                                 &mut *last_sent,
@@ -1272,7 +1272,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     extend_buffer_mono_i16(&mut *b, data, stream_ch);
 
                                     if is_recording_for_audio.load(Ordering::Acquire) {
-                                        let levels = audio_levels_interleaved_i16(data, stream_ch);
+                                        let levels = audio_levels_interleaved_i16(
+                                            data,
+                                            stream_ch,
+                                            sample_rate,
+                                        );
                                         let mut last_sent =
                                             last_audio_level_sent_clone.lock().unwrap();
                                         if should_emit_audio_levels_throttled(
@@ -1294,7 +1298,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     extend_buffer_mono_f32(&mut *buf, data, stream_ch);
 
                                     if is_recording_for_audio.load(Ordering::Acquire) {
-                                        let levels = audio_levels_interleaved_f32(data, stream_ch);
+                                        let levels = audio_levels_interleaved_f32(
+                                            data,
+                                            stream_ch,
+                                            sample_rate,
+                                        );
                                         let mut last_sent =
                                             last_audio_level_sent_clone.lock().unwrap();
                                         if should_emit_audio_levels_throttled(
@@ -1316,7 +1324,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     extend_buffer_mono_u16(&mut *buf, data, stream_ch);
 
                                     if is_recording_for_audio.load(Ordering::Acquire) {
-                                        let levels = audio_levels_interleaved_u16(data, stream_ch);
+                                        let levels = audio_levels_interleaved_u16(
+                                            data,
+                                            stream_ch,
+                                            sample_rate,
+                                        );
                                         let mut last_sent =
                                             last_audio_level_sent_clone.lock().unwrap();
                                         if should_emit_audio_levels_throttled(
@@ -1722,8 +1734,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             extend_buffer_mono_i16(&mut *b, data, stream_ch);
 
                                             if is_recording_for_audio_lock.load(Ordering::Acquire) {
-                                                let levels =
-                                                    audio_levels_interleaved_i16(data, stream_ch);
+                                                let levels = audio_levels_interleaved_i16(
+                                                    data,
+                                                    stream_ch,
+                                                    sample_rate,
+                                                );
                                                 let mut last_sent =
                                                     last_audio_level_sent_lock_clone
                                                         .lock()
@@ -1747,8 +1762,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             extend_buffer_mono_f32(&mut *buf, data, stream_ch);
 
                                             if is_recording_for_audio_lock.load(Ordering::Acquire) {
-                                                let levels =
-                                                    audio_levels_interleaved_f32(data, stream_ch);
+                                                let levels = audio_levels_interleaved_f32(
+                                                    data,
+                                                    stream_ch,
+                                                    sample_rate,
+                                                );
                                                 let mut last_sent =
                                                     last_audio_level_sent_lock_clone
                                                         .lock()
@@ -1772,8 +1790,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             extend_buffer_mono_u16(&mut *buf, data, stream_ch);
 
                                             if is_recording_for_audio_lock.load(Ordering::Acquire) {
-                                                let levels =
-                                                    audio_levels_interleaved_u16(data, stream_ch);
+                                                let levels = audio_levels_interleaved_u16(
+                                                    data,
+                                                    stream_ch,
+                                                    sample_rate,
+                                                );
                                                 let mut last_sent =
                                                     last_audio_level_sent_lock_clone
                                                         .lock()
