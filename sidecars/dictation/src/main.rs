@@ -12,9 +12,11 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::time::Instant;
+mod recording_hotkey;
+use recording_hotkey::{parse_shortcut, ShortcutListener, ShortcutAction};
 mod app_detection;
 mod audio_levels;
-use audio_levels::calculate_audio_levels;
+use audio_levels::calculate_speech_audio_levels;
 mod mrec_batch;
 mod opus_decoder;
 mod parent_watchdog;
@@ -317,9 +319,9 @@ fn extend_buffer_mono_u16(buf: &mut Vec<i16>, data: &[u16], channels: usize) {
     }
 }
 
-fn audio_levels_interleaved_i16(data: &[i16], ch: usize) -> Vec<f32> {
+fn audio_levels_interleaved_i16(data: &[i16], ch: usize, sample_rate: u32) -> Vec<f32> {
     if ch <= 1 {
-        return calculate_audio_levels(data);
+        return calculate_speech_audio_levels(data, sample_rate);
     }
     let mono: Vec<i16> = data
         .chunks_exact(ch)
@@ -328,16 +330,16 @@ fn audio_levels_interleaved_i16(data: &[i16], ch: usize) -> Vec<f32> {
             (s / ch as i32) as i16
         })
         .collect();
-    calculate_audio_levels(&mono)
+    calculate_speech_audio_levels(&mono, sample_rate)
 }
 
-fn audio_levels_interleaved_f32(data: &[f32], ch: usize) -> Vec<f32> {
+fn audio_levels_interleaved_f32(data: &[f32], ch: usize, sample_rate: u32) -> Vec<f32> {
     if ch <= 1 {
         let mono: Vec<i16> = data
             .iter()
             .map(|&s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
             .collect();
-        return calculate_audio_levels(&mono);
+        return calculate_speech_audio_levels(&mono, sample_rate);
     }
     let mono: Vec<i16> = data
         .chunks_exact(ch)
@@ -346,13 +348,13 @@ fn audio_levels_interleaved_f32(data: &[f32], ch: usize) -> Vec<f32> {
             (acc * 32767.0) as i16
         })
         .collect();
-    calculate_audio_levels(&mono)
+    calculate_speech_audio_levels(&mono, sample_rate)
 }
 
-fn audio_levels_interleaved_u16(data: &[u16], ch: usize) -> Vec<f32> {
+fn audio_levels_interleaved_u16(data: &[u16], ch: usize, sample_rate: u32) -> Vec<f32> {
     if ch <= 1 {
         let mono: Vec<i16> = data.iter().map(|&s| ((s as i32) - 32768) as i16).collect();
-        return calculate_audio_levels(&mono);
+        return calculate_speech_audio_levels(&mono, sample_rate);
     }
     let mono: Vec<i16> = data
         .chunks_exact(ch)
@@ -361,35 +363,7 @@ fn audio_levels_interleaved_u16(data: &[u16], ch: usize) -> Vec<f32> {
             (s / ch as i32) as i16
         })
         .collect();
-    calculate_audio_levels(&mono)
-}
-
-// Parse hotkey from string to Key enum
-fn parse_hotkey(key_str: &str) -> Option<Key> {
-    match key_str.to_lowercase().as_str() {
-        "function" | "fn" => Some(Key::Function),
-        "f1" => Some(Key::F1),
-        "f2" => Some(Key::F2),
-        "f3" => Some(Key::F3),
-        "f4" => Some(Key::F4),
-        "f5" => Some(Key::F5),
-        "f6" => Some(Key::F6),
-        "f7" => Some(Key::F7),
-        "f8" => Some(Key::F8),
-        "f9" => Some(Key::F9),
-        "f10" => Some(Key::F10),
-        "f11" => Some(Key::F11),
-        "f12" => Some(Key::F12),
-        "space" => Some(Key::Space),
-        "controlleft" | "ctrl" => Some(Key::ControlLeft),
-        "controlright" => Some(Key::ControlRight),
-        "altleft" | "altright" | "alt" => Some(Key::Alt),
-        "metaleft" | "cmd" | "command" => Some(Key::MetaLeft),
-        "metaright" => Some(Key::MetaRight),
-        "shiftleft" | "shift" => Some(Key::ShiftLeft),
-        "shiftright" => Some(Key::ShiftRight),
-        _ => None,
-    }
+    calculate_speech_audio_levels(&mono, sample_rate)
 }
 
 // Message types for the channel
@@ -563,13 +537,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Parse the configured hotkey.
     let args: Vec<String> = std::env::args().collect();
-    let mut trigger_key = DEFAULT_TRIGGER_KEY;
+    let mut trigger_keys = vec![DEFAULT_TRIGGER_KEY];
+    let mut lock_keys = vec![Key::Function, Key::ControlLeft];
 
     for i in 0..args.len() {
         if args[i] == "--hotkey" && i + 1 < args.len() {
-            if let Some(key) = parse_hotkey(&args[i + 1]) {
-                trigger_key = key;
-                println!("Using hotkey: {:?}", trigger_key);
+            if let Some(keys) = parse_shortcut(&args[i + 1]) {
+                trigger_keys = keys;
+                println!("Using hotkey: {:?}", trigger_keys);
             } else {
                 eprintln!(
                     "Warning: Unknown hotkey '{}', using default (Function)",
@@ -579,6 +554,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    for i in 0..args.len().saturating_sub(1) {
+        if args[i] == "--lock-hotkey" {
+            if let Some(keys) = parse_shortcut(&args[i + 1]) { lock_keys = keys; }
+        }
+    }
+    let mut listener = ShortcutListener::new(trigger_keys.clone());
+    listener.set_shortcuts(trigger_keys, lock_keys);
+    let shortcut_listener = Arc::new(Mutex::new(listener));
+    let capture_mode = Arc::new(AtomicBool::new(false));
     require_input_monitoring()?;
 
     // Resolve input device and stream config BEFORE creating the STT engine so input_sample_rate matches
@@ -737,12 +721,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 buf.pop_front();
                             }
                         }
+                        let levels = calculate_speech_audio_levels(&mono_frame, sample_rate);
                         if is_recording_vad.load(Ordering::Acquire) {
                             audio_buffer_vad
                                 .lock()
                                 .unwrap()
                                 .extend_from_slice(&mono_frame);
-                            let levels = calculate_audio_levels(&mono_frame);
                             let mut last_sent = last_audio_level_sent_clone.lock().unwrap();
                             if should_emit_audio_levels_throttled(
                                 &mut *last_sent,
@@ -768,12 +752,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 buf.pop_front();
                             }
                         }
+                        let levels = calculate_speech_audio_levels(&mono_frame, sample_rate);
                         if is_recording_vad.load(Ordering::Acquire) {
                             audio_buffer_vad
                                 .lock()
                                 .unwrap()
                                 .extend_from_slice(&mono_frame);
-                            let levels = calculate_audio_levels(&mono_frame);
                             let mut last_sent = last_audio_level_sent_clone.lock().unwrap();
                             if should_emit_audio_levels_throttled(
                                 &mut *last_sent,
@@ -799,12 +783,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 buf.pop_front();
                             }
                         }
+                        let levels = calculate_speech_audio_levels(&mono_frame, sample_rate);
                         if is_recording_vad.load(Ordering::Acquire) {
                             audio_buffer_vad
                                 .lock()
                                 .unwrap()
                                 .extend_from_slice(&mono_frame);
-                            let levels = calculate_audio_levels(&mono_frame);
                             let mut last_sent = last_audio_level_sent_clone.lock().unwrap();
                             if should_emit_audio_levels_throttled(
                                 &mut *last_sent,
@@ -860,6 +844,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Thread 2: optional VAD polling — RMS, state machine, send StartRecording/StopRecording
         if use_vad_trigger {
+            let capture_mode_vad = capture_mode.clone();
             std::thread::spawn(move || {
                 let mut state = "idle"; // "idle" | "speech"
                 let mut speech_above_ms: u64 = 0;
@@ -868,6 +853,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 loop {
                     std::thread::sleep(poll_duration);
+                    if capture_mode_vad.load(Ordering::Acquire) {
+                        state = "idle"; speech_above_ms = 0; silence_below_ms = 0; continue;
+                    }
                     let rms = {
                         let buf = vad_buffer_for_poll.lock().unwrap();
                         let len = buf.len();
@@ -915,58 +903,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     {
-        // System mode: keyboard hotkey trigger
-        let trigger_pressed = Arc::new(AtomicBool::new(false));
-        let control_pressed = Arc::new(AtomicBool::new(false));
-        let lock_toggle_processed = Arc::new(AtomicBool::new(false));
-
-        let trigger_pressed_clone = trigger_pressed.clone();
-        let control_pressed_clone = control_pressed.clone();
-        let lock_toggle_processed_clone = lock_toggle_processed.clone();
+        let listener_keyboard = shortcut_listener.clone();
+        let capture_mode_keyboard = capture_mode.clone();
         let is_locked_listener = is_locked.clone();
-
-        let trigger_key_for_listener = trigger_key;
         let tx_keyboard = tx.clone();
         std::thread::spawn(move || {
-            let listener_result = listen(move |event: Event| match event.event_type {
-                EventType::KeyPress(key) if key == trigger_key_for_listener => {
-                    trigger_pressed_clone.store(true, Ordering::Release);
-
-                    if control_pressed_clone.load(Ordering::Acquire) {
-                        if !lock_toggle_processed_clone.swap(true, Ordering::Acquire) {
-                            let _ = tx_keyboard.send(KeyEvent::ToggleLock);
-                        }
-                    } else {
-                        let _ = tx_keyboard.send(KeyEvent::StartRecording(TriggerSource::Manual));
+            let listener_result = listen(move |event: Event| {
+                let (key, down) = match event.event_type {
+                    EventType::KeyPress(key) => (key, true),
+                    EventType::KeyRelease(key) => (key, false),
+                    _ => return,
+                };
+                let action = listener_keyboard.lock().unwrap().event(key, down, is_locked_listener.load(Ordering::Acquire));
+                match action {
+                    Some(ShortcutAction::Start) => { let _ = tx_keyboard.send(KeyEvent::StartRecording(TriggerSource::Manual)); }
+                    Some(ShortcutAction::Stop) => { let _ = tx_keyboard.send(KeyEvent::StopRecording(TriggerSource::Manual)); }
+                    Some(ShortcutAction::ToggleLock) => { let _ = tx_keyboard.send(KeyEvent::ToggleLock); }
+                    Some(ShortcutAction::Capture { keys, complete }) => println_ui_flush!("HOTKEY_CAPTURE:{}", json!({"keys": keys, "complete": complete})),
+                    Some(ShortcutAction::CancelCapture) => {
+                        capture_mode_keyboard.store(false, Ordering::Release);
+                        println_ui_flush!("HOTKEY_CAPTURE:{}", json!({"keys": [], "complete": false, "cancelled": true}));
                     }
+                    Some(ShortcutAction::UnsupportedCapture) => println_ui_flush!("HOTKEY_CAPTURE:{}", json!({"keys": [], "complete": false, "error": "That key combination is not supported. Try another."})),
+                    None => {}
                 }
-                EventType::KeyRelease(key) if key == trigger_key_for_listener => {
-                    trigger_pressed_clone.store(false, Ordering::Release);
-                    lock_toggle_processed_clone.store(false, Ordering::Release);
-
-                    if !is_locked_listener.load(Ordering::Acquire) {
-                        let _ = tx_keyboard.send(KeyEvent::StopRecording(TriggerSource::Manual));
-                    }
-                }
-                EventType::KeyPress(Key::ControlLeft) | EventType::KeyPress(Key::ControlRight) => {
-                    control_pressed_clone.store(true, Ordering::Release);
-
-                    if trigger_pressed_clone.load(Ordering::Acquire) {
-                        if !lock_toggle_processed_clone.swap(true, Ordering::Acquire) {
-                            let _ = tx_keyboard.send(KeyEvent::ToggleLock);
-                        }
-                    }
-                }
-                EventType::KeyRelease(Key::ControlLeft)
-                | EventType::KeyRelease(Key::ControlRight) => {
-                    control_pressed_clone.store(false, Ordering::Release);
-                    lock_toggle_processed_clone.store(false, Ordering::Release);
-                }
-                _ => {}
             });
-            if let Err(error) = listener_result {
-                println_ui_flush!("HOTKEY_ERROR:{:?}", error);
-            }
+            if let Err(error) = listener_result { println_ui_flush!("HOTKEY_ERROR:{:?}", error); }
         });
 
         if hands_free_mode {
@@ -1046,11 +1008,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn thread to read commands from stdin
     let vocabulary_clone = vocabulary.clone();
     let engine_for_vocab = engine.clone();
+    let shortcut_commands = shortcut_listener.clone();
+    let capture_commands = capture_mode.clone();
     std::thread::spawn(move || {
         use std::io::{self, BufRead};
         let stdin = io::stdin();
         for line in stdin.lock().lines() {
             if let Ok(cmd) = line {
+                if let Some(value) = cmd.strip_prefix("HOTKEY_CAPTURE:") {
+                    let enabled = value == "1";
+                    shortcut_commands.lock().unwrap().set_capture(enabled);
+                    capture_commands.store(enabled, Ordering::Release);
+                    println_ui_flush!("HOTKEY_CAPTURE_READY:{}", if enabled { "1" } else { "0" });
+                    continue;
+                }
+                if let Some(value) = cmd.strip_prefix("HOTKEY_SET:") {
+                    if let Ok(config) = serde_json::from_str::<serde_json::Value>(value) {
+                        let recording = config.get("recording").and_then(|v| v.as_str()).and_then(parse_shortcut);
+                        let lock = config.get("lock").and_then(|v| v.as_str()).and_then(parse_shortcut);
+                        if let (Some(recording), Some(lock)) = (recording, lock) {
+                            shortcut_commands.lock().unwrap().set_shortcuts(recording, lock);
+                            println_ui_flush!("HOTKEY_CONFIGURED");
+                        }
+                    }
+                    continue;
+                }
                 if let Some(value) = cmd.strip_prefix("VOCAB:") {
                     if let Ok(vocab_json) = serde_json::from_str::<serde_json::Value>(value.trim())
                     {
@@ -1272,7 +1254,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     extend_buffer_mono_i16(&mut *b, data, stream_ch);
 
                                     if is_recording_for_audio.load(Ordering::Acquire) {
-                                        let levels = audio_levels_interleaved_i16(data, stream_ch);
+                                        let levels = audio_levels_interleaved_i16(
+                                            data,
+                                            stream_ch,
+                                            sample_rate,
+                                        );
                                         let mut last_sent =
                                             last_audio_level_sent_clone.lock().unwrap();
                                         if should_emit_audio_levels_throttled(
@@ -1294,7 +1280,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     extend_buffer_mono_f32(&mut *buf, data, stream_ch);
 
                                     if is_recording_for_audio.load(Ordering::Acquire) {
-                                        let levels = audio_levels_interleaved_f32(data, stream_ch);
+                                        let levels = audio_levels_interleaved_f32(
+                                            data,
+                                            stream_ch,
+                                            sample_rate,
+                                        );
                                         let mut last_sent =
                                             last_audio_level_sent_clone.lock().unwrap();
                                         if should_emit_audio_levels_throttled(
@@ -1316,7 +1306,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     extend_buffer_mono_u16(&mut *buf, data, stream_ch);
 
                                     if is_recording_for_audio.load(Ordering::Acquire) {
-                                        let levels = audio_levels_interleaved_u16(data, stream_ch);
+                                        let levels = audio_levels_interleaved_u16(
+                                            data,
+                                            stream_ch,
+                                            sample_rate,
+                                        );
                                         let mut last_sent =
                                             last_audio_level_sent_clone.lock().unwrap();
                                         if should_emit_audio_levels_throttled(
@@ -1722,8 +1716,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             extend_buffer_mono_i16(&mut *b, data, stream_ch);
 
                                             if is_recording_for_audio_lock.load(Ordering::Acquire) {
-                                                let levels =
-                                                    audio_levels_interleaved_i16(data, stream_ch);
+                                                let levels = audio_levels_interleaved_i16(
+                                                    data,
+                                                    stream_ch,
+                                                    sample_rate,
+                                                );
                                                 let mut last_sent =
                                                     last_audio_level_sent_lock_clone
                                                         .lock()
@@ -1747,8 +1744,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             extend_buffer_mono_f32(&mut *buf, data, stream_ch);
 
                                             if is_recording_for_audio_lock.load(Ordering::Acquire) {
-                                                let levels =
-                                                    audio_levels_interleaved_f32(data, stream_ch);
+                                                let levels = audio_levels_interleaved_f32(
+                                                    data,
+                                                    stream_ch,
+                                                    sample_rate,
+                                                );
                                                 let mut last_sent =
                                                     last_audio_level_sent_lock_clone
                                                         .lock()
@@ -1772,8 +1772,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             extend_buffer_mono_u16(&mut *buf, data, stream_ch);
 
                                             if is_recording_for_audio_lock.load(Ordering::Acquire) {
-                                                let levels =
-                                                    audio_levels_interleaved_u16(data, stream_ch);
+                                                let levels = audio_levels_interleaved_u16(
+                                                    data,
+                                                    stream_ch,
+                                                    sample_rate,
+                                                );
                                                 let mut last_sent =
                                                     last_audio_level_sent_lock_clone
                                                         .lock()

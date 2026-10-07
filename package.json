@@ -1,6 +1,6 @@
 {
   "name": "open-memo",
-  "version": "0.8.21",
+  "version": "0.8.22",
   "description": "Open-source push-to-talk dictation for macOS",
   "homepage": "https://github.com/oliverbhull/open-memo",
   "main": "dist/main.cjs",
@@ -173,6 +173,7 @@
         "to": "dictation",
         "filter": [
           "memo-dictation",
+          "THIRD_PARTY_NOTICES.txt",
           "memo-conomo-contextual",
           "run-contextual-conomo",
           "contextual-worker.py"

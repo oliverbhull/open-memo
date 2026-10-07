@@ -2,6 +2,8 @@
  * Color utility functions for converting between hex and HSL color spaces
  */
 
+export const DEFAULT_ACCENT_COLOR = '#dc8e74';
+
 /**
  * Converts a hex color string to HSL values
  * @param hex - Hex color string (e.g., "#FF0000" or "#F00")
@@ -51,6 +53,8 @@ export function hexToHsl(hex: string): [number, number, number] {
  * @returns Hex color string (e.g., "#FF0000")
  */
 export function hslToHex(h: number, s: number, l: number): string {
+  // Hue is circular: 360° is the same red as 0°, not an unhandled sector.
+  h = ((h % 360) + 360) % 360;
   s /= 100;
   l /= 100;
   
@@ -83,4 +87,20 @@ export function hslToHex(h: number, s: number, l: number): string {
   }).join('')}`;
 }
 
+/** Keep accents readable on dark surfaces without repeatedly brightening saved colors. */
+export function brightenAccentColor(color: string): string {
+  if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(color)) return DEFAULT_ACCENT_COLOR;
+  const [hue, saturation, lightness] = hexToHsl(color);
+  const [defaultHue] = hexToHsl(DEFAULT_ACCENT_COLOR);
+  return hslToHex(
+    saturation === 0 ? defaultHue : hue,
+    Math.max(60, saturation),
+    lightness === 100 ? 66 : Math.max(66, lightness),
+  );
+}
 
+/** Pick a hue in the brighter accent range, recovering from gray/black/white. */
+export function accentColorAtHue(hue: number, currentColor: string): string {
+  const [, saturation, lightness] = hexToHsl(brightenAccentColor(currentColor));
+  return hslToHex(hue, saturation, lightness);
+}

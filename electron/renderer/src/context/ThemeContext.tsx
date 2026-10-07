@@ -1,4 +1,5 @@
 import React from 'react';
+import { brightenAccentColor, DEFAULT_ACCENT_COLOR } from '../utils/colorUtils';
 
 type ThemeContextValue = {
   primary: string;
@@ -14,7 +15,7 @@ function applyPrimary(color: string) {
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [primary, setPrimaryState] = React.useState<string>(() => {
     const stored = localStorage.getItem('primary');
-    return stored || '#C26D50'; // Default to Terracotta
+    return brightenAccentColor(stored || DEFAULT_ACCENT_COLOR);
   });
 
   React.useEffect(() => {
@@ -24,7 +25,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const value: ThemeContextValue = {
     primary,
-    setPrimary: (c) => setPrimaryState(c),
+    setPrimary: (c) => setPrimaryState(brightenAccentColor(c)),
   };
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
@@ -35,4 +36,3 @@ export function useTheme() {
   if (!ctx) throw new Error('useTheme must be used within ThemeProvider');
   return ctx;
 }
-

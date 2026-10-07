@@ -2,6 +2,7 @@ import { app, Menu, Tray, nativeImage, clipboard } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { loadSettings, store as persistentStore } from './SettingsService.js';
+import { recordingHotkeyLabel } from '../../shared/recordingHotkey';
 import { BrowserWindow } from 'electron';
 import type { MemoSttService } from './MemoSttService';
 import { audioInputService } from './AudioInputService';
@@ -248,7 +249,7 @@ export function updateMenuState() {
       ? 'Recording…'
       : s.handsFreeMode
         ? 'Speak to dictate'
-        : 'Hold Fn to dictate';
+        : `Hold ${recordingHotkeyLabel(persistentStore.get('hotkey'))} to dictate`;
   // Update tray icon based on state
   // Priority: Processing > Recording > Base
   try {

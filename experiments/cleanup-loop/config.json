@@ -1,0 +1,14 @@
+{
+  "model": "lfm-1.2b",
+  "quantization_bits": 8,
+  "training_rows": 128,
+  "validation_rows": 24,
+  "iterations": 20,
+  "batch_size": 1,
+  "adapter_layers": 4,
+  "learning_rate": 0.0001,
+  "max_sequence_length": 1024,
+  "seed": 42,
+  "max_output_tokens": 1024,
+  "evaluation_limit": 40
+}

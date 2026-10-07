@@ -12,34 +12,28 @@ import type { DeviceSyncStatus, MemoSttError, TranscriptionData } from '../../sh
 import './styles/glass.css';
 
 // Settings Icon Component
-const SettingsIcon: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
+const SettingsIcon: React.FC<{ onOpen: () => void; buttonRef: React.Ref<HTMLButtonElement> }> = ({ onOpen, buttonRef }) => {
   const { primary } = useTheme();
 
   return (
       <button
+        ref={buttonRef}
         onClick={onOpen}
         title="Settings"
+        aria-label="Open settings"
         className="settings-icon"
-        style={{
-          padding: '2px',
-          background: 'transparent',
-          border: 'none',
-          color: primary,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
+        style={{ color: primary }}
       >
         <svg
-          width="12"
-          height="12"
+          width="14"
+          height="14"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -55,6 +49,13 @@ function App() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsWasOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (settingsWasOpenRef.current && !showSettings) settingsButtonRef.current?.focus();
+    settingsWasOpenRef.current = showSettings;
+  }, [showSettings]);
   
   // Track if listeners are registered to prevent duplicates (especially in StrictMode)
   const listenersRegisteredRef = useRef(false);
@@ -299,13 +300,21 @@ function App() {
     <ThemeProvider>
       <ErrorBoundary>
         <GlassContainer>
-          <div className="title-bar" style={{ paddingLeft: '78px' }}>
+          <div className="title-bar app-title-bar" style={{ paddingLeft: '78px' }}
+            onKeyDown={event => { if (showSettings && event.key === 'Escape') setShowSettings(false); }}>
             <div className="title-bar-right">
-              <SettingsIcon onOpen={() => setShowSettings(true)} />
+              {showSettings ? <button type="button" className="app-back-button" aria-label="Back to feed"
+                onClick={() => setShowSettings(false)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="m14 6-6 6 6 6" />
+                </svg>
+                <span>Back</span>
+              </button> : <SettingsIcon buttonRef={settingsButtonRef} onOpen={() => setShowSettings(true)} />}
             </div>
           </div>
           {showSettings && <Settings onClose={() => setShowSettings(false)} />}
           
+          <div className="app-feed-view" hidden={showSettings}>
           {displayError && (
             <div className="error-message">
               {displayError}
@@ -341,6 +350,7 @@ function App() {
               loading={loadingMore}
             />
           )}
+          </div>
 
         </GlassContainer>
         

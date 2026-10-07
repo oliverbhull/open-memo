@@ -9,6 +9,7 @@ import { resolveModelPackPath } from './ModelPackService';
 import { resolveTranscriptionText, resolveCleanInput } from '../../shared/transcription';
 import { normalizeTranscriptionText } from './textProcessing';
 import type { DictationReadiness, TranscriptionData as SharedTranscriptionData } from '../../shared/electron-api';
+import type { RecordingHotkeyCapture } from '../../shared/recordingHotkey';
 
 export interface AppContext {
   appName: string;
@@ -39,6 +40,7 @@ export class MemoSttService extends EventEmitter {
   private status: MemoSttStatus = 'stopped';
   private buffer: string = '';
   private hotkey: string = 'function';
+  private lockHotkey: string = 'function+controlleft';
   private restartAttempts: number = 0;
   private restartTimeout: NodeJS.Timeout | null = null;
   private readonly closedChildren = new WeakSet<ChildProcess>();
@@ -70,6 +72,38 @@ export class MemoSttService extends EventEmitter {
 
   setHotkey(hotkey: string): void {
     this.hotkey = hotkey;
+  }
+
+  setLockHotkey(hotkey: string): void { this.lockHotkey = hotkey; }
+
+  private async hotkeyCommand(command: string, acknowledgement: string): Promise<void> {
+    if (this.status !== 'running') throw new Error('The recorder is not ready. Restart Memo and try again.');
+    await new Promise<void>((resolve, reject) => {
+      const finish = (error?: Error) => {
+        clearTimeout(timer);
+        this.removeListener('hotkeyAcknowledgement', onAck);
+        this.removeListener('status', onStatus);
+        error ? reject(error) : resolve();
+      };
+      const onAck = (line: string) => { if (line === acknowledgement) finish(); };
+      const onStatus = (status: string) => { if (status !== 'running') finish(new Error('The recorder stopped. Try again.')); };
+      const timer = setTimeout(() => finish(new Error('The keyboard listener did not respond. Restart Memo and try again.')), 3000);
+      this.on('hotkeyAcknowledgement', onAck);
+      this.on('status', onStatus);
+      this.sendCommand(command);
+    });
+  }
+
+  async captureHotkey(enabled: boolean): Promise<void> {
+    await this.hotkeyCommand(`HOTKEY_CAPTURE:${enabled ? 1 : 0}`, `HOTKEY_CAPTURE_READY:${enabled ? 1 : 0}`);
+  }
+
+  async updateHotkeys(recording: string, lock: string): Promise<void> {
+    if (this.status === 'running') {
+      await this.hotkeyCommand(`HOTKEY_SET:${JSON.stringify({ recording, lock })}`, 'HOTKEY_CONFIGURED');
+    }
+    this.hotkey = recording;
+    this.lockHotkey = lock;
   }
 
   getReadiness(): DictationReadiness {
@@ -235,7 +269,7 @@ export class MemoSttService extends EventEmitter {
         if (!fs.existsSync(command)) {
           throw new Error(`Memo dictation binary not found at ${command}. Run npm run build:dictation first.`);
         }
-        args = ['--hotkey', this.hotkey];
+        args = ['--hotkey', this.hotkey, '--lock-hotkey', this.lockHotkey];
       } else {
         // Production: use bundled binary
         const prodPath = path.join(process.resourcesPath, 'dictation', 'memo-dictation');
@@ -289,7 +323,7 @@ export class MemoSttService extends EventEmitter {
         }
         
         command = binaryPath;
-        args = ['--hotkey', this.hotkey];
+        args = ['--hotkey', this.hotkey, '--lock-hotkey', this.lockHotkey];
       }
 
       const settings = loadSettings();
@@ -645,6 +679,15 @@ export class MemoSttService extends EventEmitter {
   }
 
   private async processLine(line: string): Promise<void> {
+    if (line === 'HOTKEY_CONFIGURED' || line.startsWith('HOTKEY_CAPTURE_READY:')) {
+      this.emit('hotkeyAcknowledgement', line);
+      return;
+    }
+    if (line.startsWith('HOTKEY_CAPTURE:')) {
+      const captured = JSON.parse(line.slice('HOTKEY_CAPTURE:'.length)) as RecordingHotkeyCapture;
+      if (Array.isArray(captured.keys) && typeof captured.complete === 'boolean') this.emit('hotkeyCapture', captured);
+      return;
+    }
     if (line === 'HOTKEY_READY') {
       logger.info('[MemoSttService] Hotkey listener authorized');
       this.updateReadiness({ hotkey: true });

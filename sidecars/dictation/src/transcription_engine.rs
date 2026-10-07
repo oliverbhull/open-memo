@@ -285,7 +285,7 @@ impl Drop for WorkerEngine {
     }
 }
 
-struct StreamingResampler {
+pub(crate) struct StreamingResampler {
     from_rate: u32,
     to_rate: u32,
     buffer: Vec<i16>,
@@ -293,7 +293,7 @@ struct StreamingResampler {
 }
 
 impl StreamingResampler {
-    fn new(from_rate: u32, to_rate: u32) -> Self {
+    pub(crate) fn new(from_rate: u32, to_rate: u32) -> Self {
         Self {
             from_rate,
             to_rate,
@@ -307,7 +307,7 @@ impl StreamingResampler {
         self.position = 0.0;
     }
 
-    fn push(&mut self, samples: &[i16], finish: bool) -> Vec<i16> {
+    pub(crate) fn push(&mut self, samples: &[i16], finish: bool) -> Vec<i16> {
         if self.from_rate == self.to_rate {
             return samples.to_vec();
         }

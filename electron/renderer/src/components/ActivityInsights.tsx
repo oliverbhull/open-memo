@@ -46,13 +46,14 @@ export const ActivityInsights: React.FC = () => {
   const { primary } = useTheme();
   const [entries, setEntries] = useState<MemoEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void storageService.init()
       .then(() => storageService.getAllActiveEntries())
       .then((loaded) => { if (!cancelled) setEntries(loaded); })
-      .catch((error) => { console.error('[ActivityInsights] Failed to load entries:', error); })
+      .catch((error) => { console.error('[ActivityInsights] Failed to load entries:', error); if (!cancelled) setLoadError(true); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
@@ -102,19 +103,22 @@ export const ActivityInsights: React.FC = () => {
     <div className="activity-insights" style={{ '--activity-primary': primary } as React.CSSProperties}>
       <div className="activity-insights__header">
         <div>
-          <strong>Last 7 Days</strong>
+          <strong>Words dictated</strong>
+          <span>Last 7 days</span>
         </div>
         <div className="activity-insights__total">
-          <strong>{loading ? '…' : activity.weekWords.toLocaleString()}</strong>
+          <strong>{loading ? '…' : loadError ? '—' : activity.weekWords.toLocaleString()}</strong>
           <span>words</span>
         </div>
       </div>
 
+      {loadError && <p role="status" className="settings-error">Activity could not be loaded. Reopen settings to try again.</p>}
+      <div className="activity-insights__subhead"><span>Weekday × hour</span><span>Last 4 weeks</span></div>
       <div className="activity-insights__hours" aria-hidden="true">
         <span />
         {[0, 6, 12, 18].map((hour) => <span key={hour} style={{ gridColumn: hour + 2 }}>{hour === 0 ? '12am' : hour === 6 ? '6am' : hour === 12 ? '12pm' : '6pm'}</span>)}
       </div>
-      <div className="activity-insights__heatmap" aria-label="Words captured by weekday and hour over the last four weeks">
+      <div className="activity-insights__heatmap" role="img" aria-label={loading ? "Loading dictation activity" : loadError ? "Activity unavailable" : `Words captured by weekday and hour over the last four weeks. ${activity.heat.flat().reduce((sum, words) => sum + words, 0).toLocaleString()} words total. Brighter squares indicate more words.`}>
         {DAY_LABELS.flatMap((day, dayIndex) => [
           <span className="activity-insights__day" key={`${day}-label`}>{day}</span>,
           ...(activity.heat[dayIndex] ?? []).map((words, hour) => {
@@ -124,12 +128,14 @@ export const ActivityInsights: React.FC = () => {
         ])}
       </div>
 
-      <div className="activity-insights__subhead activity-insights__apps-heading">
-        <strong>Applications</strong><span>Share of words</span>
+      <div className="activity-insights__legend" aria-hidden="true">
+        <span>Less</span>{[0, 1, 2, 3, 4].map(level => <i key={level} className="activity-insights__cell" data-level={level} />)}<span>More</span>
       </div>
+      <details className="activity-insights__applications" open>
+      <summary><strong>Applications</strong><span>Word share · last 7 days</span></summary>
       <div className="activity-insights__apps">
         {activity.topApps.length === 0 ? (
-          <span className="activity-insights__empty">Application usage will appear here.</span>
+          <span className="activity-insights__empty">Application usage will appear as you dictate.</span>
         ) : activity.topApps.map((app) => {
           const percent = activity.appWords > 0 ? Math.round((app.words / activity.appWords) * 100) : 0;
           return (
@@ -142,8 +148,9 @@ export const ActivityInsights: React.FC = () => {
           );
         })}
       </div>
+      </details>
       <div className="activity-insights__footer">
-        <span>{activity.weekMoments.toLocaleString()} voice moments</span>
+        <span>{loading ? '…' : loadError ? '—' : activity.weekMoments.toLocaleString()} voice moments</span>
         <span>{speakingMinutes > 0 ? `${speakingMinutes.toLocaleString()} min speaking` : 'Calculated locally'}</span>
       </div>
     </div>

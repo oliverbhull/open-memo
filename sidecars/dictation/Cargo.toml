@@ -16,6 +16,9 @@ path = "src/lib.rs"
 name = "memo-dictation"
 path = "src/main.rs"
 
+[dependencies]
+webrtc-vad = "0.4.0"
+
 [dependencies.anyhow]
 version = "1.0"
 
