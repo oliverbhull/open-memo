@@ -120,6 +120,7 @@ docs/*
 !docs/production-audit.md
 !docs/cleanup-production-candidate.md
 !docs/experimental-email-formatting.md
+!docs/browser-context.md
 !docs/faithful-dictation.md
 !docs/clean-v1/
 .env.example

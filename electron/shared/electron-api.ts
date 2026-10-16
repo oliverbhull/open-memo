@@ -6,9 +6,18 @@ export interface AppUpdateStatus {
 import type { MemoEntry } from './memo-entry';
 import type { RecordingHotkeyCapture } from './recordingHotkey';
 
+export interface EmailReplyContext {
+  source: 'accessibility';
+  subject?: string;
+  replyTo?: string[];
+  threadUrl: string;
+}
+
 export interface AppContext {
   appName: string;
   windowTitle: string;
+  websiteDomain?: string;
+  emailReply?: EmailReplyContext;
   bundleId?: string;
 }
 
@@ -216,8 +225,9 @@ export interface ElectronAPI {
     delete(entryId: string): Promise<{ success: boolean; error?: string }>;
     openFolder(): Promise<{ success: boolean; error?: string }>;
   };
+  openEmailThread(url: string): Promise<void>;
   appIcons: {
-    get(appName: string, bundleId?: string): Promise<string | null>;
+    get(appName: string, bundleId?: string, websiteDomain?: string): Promise<string | null>;
   };
   onOpenSettings(callback: () => void): () => void;
   exportJson(document: TranscriptionExportDocument): Promise<{

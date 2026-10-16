@@ -31,6 +31,8 @@ import { resolveApplicationContext } from './services/applicationContext';
 import { AppUpdateService } from './services/AppUpdateService';
 import { PunctuationService } from './services/PunctuationService';
 import { CleanupService } from './services/CleanupService';
+import { gmailThreadUrl } from '../shared/emailContext';
+import { captureBrowserReply } from './services/BrowserContextService';
 import { pasteIntoFocusedTarget } from './services/checkedPaste';
 import { detectEmailTarget } from './services/emailFormatting';
 import { createDictationEntry } from '../shared/dictationEntry';
@@ -383,7 +385,7 @@ async function setupMemoSttService(): Promise<void> {
                     appContext: { appName: 'Memo', windowTitle: 'Memo' },
                   };
                 })()
-              : pasteIntoFocusedTarget(pressEnterThisTime);
+              : pasteIntoFocusedTarget(pressEnterThisTime, await captureBrowserReply());
             delivery = outcome.status;
             deliveryAppContext = outcome.appContext;
             const pasted = outcome.status === 'pasted';
@@ -1285,8 +1287,14 @@ ipcMain.handle('audio:openFolder', async () => {
   }
 });
 
-ipcMain.handle('app-icon:get', (_event, appName: string, bundleId?: string) => {
-  return applicationIconService.getIconDataUrl(appName, bundleId);
+ipcMain.handle('email:openThread', async (_event, url: unknown) => {
+  const threadUrl = gmailThreadUrl(url);
+  if (!threadUrl) throw new Error('Invalid Gmail thread URL');
+  await shell.openExternal(threadUrl);
+});
+
+ipcMain.handle('app-icon:get', (_event, appName: string, bundleId?: string, websiteDomain?: string) => {
+  return applicationIconService.getIconDataUrl(appName, bundleId, websiteDomain);
 });
 
 ipcMain.handle('export:json', async (_event, document: unknown) => {

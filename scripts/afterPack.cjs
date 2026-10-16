@@ -63,6 +63,11 @@ module.exports = async function afterPack(context) {
   fs.chmodSync(bleBridge, 0o755);
   console.log(`✓ Memo BLE bridge verified (${fs.statSync(bleBridge).size} bytes)`);
 
+  const browserContext = path.join(appPath, 'Contents', 'Resources', 'browser-context', 'memo-browser-context');
+  if (!fs.existsSync(browserContext)) throw new Error('Memo browser context helper was not copied from extraResources');
+  fs.chmodSync(browserContext, 0o755);
+  console.log('✓ Memo browser context helper verified');
+
   // A release must fail if bundle metadata cannot be cleaned before signing.
   await sh('xattr', ['-cr', appPath]);
   await sh('dot_clean', ['-m', appPath]);

@@ -82,6 +82,8 @@ function formatEntry(entry: ExportEntry) {
       appName: appContext.appName ?? null,
       windowTitle: appContext.windowTitle ?? null,
       bundleId: appContext.bundleId ?? null,
+      websiteDomain: appContext.websiteDomain ?? null,
+      emailReply: appContext.emailReply ?? null,
       audio: ctx.audio ?? null,
       ...Object.fromEntries(
         Object.entries(ctx).filter(([k]) =>

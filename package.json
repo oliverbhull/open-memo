@@ -21,7 +21,7 @@
     "dev:main": "esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs --watch",
     "dev:preload": "esbuild electron/preload/index.ts --platform=node --bundle --external:electron --outfile=dist/preload.cjs --format=cjs --watch",
     "build:ts": "npm run build:main && npm run build:preload && npm run build:overlay-preload",
-    "build:main": "esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs",
+    "build:main": "npm run build:browser-context && esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs",
     "build:preload": "esbuild electron/preload/index.ts --platform=node --bundle --external:electron --outfile=dist/preload.cjs --format=cjs",
     "build:overlay-preload": "esbuild electron/preload/overlay.ts --platform=node --bundle --external:electron --outfile=dist/overlay-preload.cjs --format=cjs",
     "build:renderer": "vite build --config vite.config.ts",
@@ -48,7 +48,8 @@
     "test:clean-v2": "python3 -m unittest discover -s experiments/clean-v2 -v",
     "test:clean-v3": "python3 -m unittest discover -s experiments/clean-v3 -v",
     "test:experiments": "node --test experiments/shared/cleanup-development.test.cjs && npm run test:clean-v1 && npm run test:clean-v2 && npm run test:clean-v3",
-    "test": "node --test scripts/*.test.cjs && python3 scripts/python/test_cleanup_completion.py && python3 scripts/python/test_device_sync_lifecycle.py && python3 scripts/python/transcript-cleanup-worker.py --self-test"
+    "test": "node --test scripts/*.test.cjs && python3 scripts/python/test_cleanup_completion.py && python3 scripts/python/test_device_sync_lifecycle.py && python3 scripts/python/transcript-cleanup-worker.py --self-test",
+    "build:browser-context": "bash scripts/shell/build-browser-context.sh"
   },
   "keywords": [
     "conomo",
@@ -218,6 +219,10 @@
       {
         "from": ".build/ble/memo-ble-bridge",
         "to": "device-sync/memo-ble-bridge"
+      },
+      {
+        "from": ".build/browser-context/memo-browser-context",
+        "to": "browser-context/memo-browser-context"
       }
     ],
     "afterPack": "scripts/afterPack.cjs",

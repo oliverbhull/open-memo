@@ -41,6 +41,7 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
     const recordingState = (context.recordingState as string) || 'completed';
     const location = context.location as LocationData | undefined;
     const appContext = entry.appContext;
+    const emailReply = appContext?.emailReply;
     // Determine if this is a desktop entry (has appContext)
     const isDesktopEntry = !!appContext?.appName;
     
@@ -51,7 +52,7 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
       ? context.deviceRecordingId
       : null;
     const subtitleText = isDesktopEntry 
-      ? appContext.windowTitle || 'Unknown'
+      ? emailReply?.subject || [appContext.websiteDomain, appContext.windowTitle].filter(Boolean).join(' · ') || 'Unknown'
       : isMemoDeviceEntry
         ? `supermicrophone${deviceRecordingId ? ` • ${deviceRecordingId}` : ''}`
       : (location ? formatAddress(location) : 'Unknown Location');
@@ -110,7 +111,7 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
 
     const displayText = isProcessing ? 'Transcribing...' : entry.text;
     const sourceIcon = isDesktopEntry ? (
-      <AppIcon appName={appContext.appName || 'Unknown'} bundleId={appContext.bundleId} size={18} />
+      <AppIcon appName={appContext.appName || 'Unknown'} bundleId={appContext.bundleId} websiteDomain={appContext.websiteDomain} size={18} />
     ) : isMemoDeviceEntry ? (
       <img
         src={appIconBase}
@@ -186,6 +187,9 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
             <div className="row">
               {headerContent}
             </div>
+            {emailReply && <div style={{ fontSize: 12, opacity: 0.75, marginTop: 8 }}>
+              {emailReply.replyTo?.length ? `Reply to: ${emailReply.replyTo.join(', ')}` : 'Reply recipients unavailable'}
+            </div>}
             <div 
               ref={expandContentRef}
               className="expandedContent"
