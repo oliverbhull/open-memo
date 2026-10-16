@@ -2,6 +2,7 @@ import { FeedEntryData, AppContext } from '../components/FeedEntry';
 import { MemoEntry } from '../types/storage';
 import { logger } from './logger';
 import type { AudioAttachment } from '../../../shared/electron-api';
+import { gmailThreadUrl } from '../../../shared/emailContext';
 import { resolveTranscriptionText } from '../../../shared/transcription';
 
 interface ValidTranscriptionData {
@@ -28,7 +29,14 @@ export function isValidAppContext(obj: unknown): obj is AppContext {
     typeof obj.appName === 'string' &&
     typeof obj.windowTitle === 'string' &&
     obj.appName.length > 0 &&
-    (obj.bundleId === undefined || typeof obj.bundleId === 'string')
+    (obj.bundleId === undefined || typeof obj.bundleId === 'string') &&
+    (obj.websiteDomain === undefined || typeof obj.websiteDomain === 'string') &&
+    (obj.emailReply === undefined || (
+      isRecord(obj.emailReply) && obj.emailReply.source === 'accessibility' &&
+      typeof obj.emailReply.threadUrl === 'string' && !!gmailThreadUrl(obj.emailReply.threadUrl) &&
+      (obj.emailReply.subject === undefined || typeof obj.emailReply.subject === 'string') &&
+      (obj.emailReply.replyTo === undefined || (Array.isArray(obj.emailReply.replyTo) && obj.emailReply.replyTo.every(value => typeof value === 'string')))
+    ))
   );
 }
 

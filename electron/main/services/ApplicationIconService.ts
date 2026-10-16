@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AppContext } from '../../shared/electron-api';
+import { normalizeWebsiteDomain, BROWSER_BUNDLE_IDS } from '../../shared/websiteContext';
 import { logger } from '../utils/logger';
 
 interface ApplicationIdentity {
@@ -55,11 +56,66 @@ export class ApplicationIconService {
     return {
       appName,
       windowTitle: bounded(context.windowTitle, 1_000) || '',
+      ...(context.emailReply ? { emailReply: context.emailReply } : {}),
       ...(bundleId ? { bundleId } : {}),
+      ...(context.websiteDomain && bundleId && BROWSER_BUNDLE_IDS.has(bundleId) && normalizeWebsiteDomain(context.websiteDomain)
+        ? { websiteDomain: normalizeWebsiteDomain(context.websiteDomain) } : {}),
     };
   }
 
-  async getIconDataUrl(appNameValue: unknown, bundleIdValue: unknown): Promise<string | null> {
+  private readonly websiteIcons = new Map<string, Promise<string | null>>();
+
+  private async getWebsiteIcon(domain: string): Promise<string | null> {
+    try {
+      // Fetch only the public icon, without cookies, page paths, or a third-party favicon service.
+      const signal = AbortSignal.timeout(2500);
+      let url = `https://${domain}/favicon.ico`;
+      let response: Response;
+      for (let redirects = 0; ; redirects++) {
+        response = await fetch(url, { signal, redirect: 'manual', credentials: 'omit' });
+        if (![301, 302, 303, 307, 308].includes(response.status)) break;
+        const location = response.headers.get('location');
+        await response.body?.cancel();
+        if (!location || redirects >= 3) return null;
+        const next = new URL(location, url);
+        if (next.protocol !== 'https:' || next.username || next.password || next.port || !normalizeWebsiteDomain(next.hostname)) return null;
+        url = next.href;
+      }
+      if (!response.ok || !response.body) return null;
+      const chunks: Buffer[] = [];
+      let size = 0;
+      const reader = response.body.getReader();
+      while (true) {
+        const { done, value: chunk } = await reader.read();
+        if (done) break;
+        size += chunk.length;
+        if (size > 256 * 1024) {
+          await reader.cancel().catch(() => {});
+          return null;
+        }
+        chunks.push(Buffer.from(chunk));
+      }
+      const buffer = Buffer.concat(chunks);
+      // Chromium can display ICO files directly even on platforms where nativeImage cannot decode them.
+      if (buffer.length >= 6 && buffer.readUInt32LE(0) === 0x00010000 && buffer.readUInt16LE(4) > 0) {
+        return `data:image/x-icon;base64,${buffer.toString('base64')}`;
+      }
+      const icon = nativeImage.createFromBuffer(buffer);
+      return icon.isEmpty() ? null : icon.resize({ width: 64, height: 64 }).toDataURL();
+    } catch { return null; }
+  }
+
+  async getIconDataUrl(appNameValue: unknown, bundleIdValue: unknown, websiteDomainValue?: unknown): Promise<string | null> {
+    const domain = normalizeWebsiteDomain(websiteDomainValue);
+    if (domain && typeof bundleIdValue === 'string' && BROWSER_BUNDLE_IDS.has(bundleIdValue)) {
+      let request = this.websiteIcons.get(domain);
+      if (!request) {
+        request = this.getWebsiteIcon(domain);
+        this.websiteIcons.set(domain, request);
+      }
+      const icon = await request;
+      if (icon) return icon;
+    }
     const appName = bounded(appNameValue, 200);
     const bundleId = bounded(bundleIdValue, 300);
     if (!appName && !bundleId) return null;

@@ -72,3 +72,32 @@ test('Granite final does not mark an asynchronous cleanup as completed', async (
   await service.processLine('📝 (no speech detected)');
   assert.deepEqual(events, ['received', 'delivered', 'completed']);
 });
+
+test('browser capture retains only domain, never mailbox path or query', () => {
+  const { pasteIntoFocusedTarget } = load(() => 'pasted\x1eSafari\x1eInbox - Gmail\x1ecom.apple.Safari\x1ehttps://mail.google.com/mail/u/0/?token=secret#inbox\n');
+  assert.deepEqual(pasteIntoFocusedTarget(false).appContext, {
+    appName: 'Safari', windowTitle: 'Inbox - Gmail', bundleId: 'com.apple.Safari', websiteDomain: 'mail.google.com',
+  });
+});
+
+test('unsupported document URLs and native apps retain browser/app fallback', () => {
+  for (const [bundle, url] of [
+    ['com.apple.Safari', ''], ['com.apple.Safari', 'file:///private/document'],
+    ['com.apple.Safari', 'about:blank'], ['com.apple.Safari', 'http://localhost:3000'],
+    ['com.apple.Safari', 'http://127.0.0.1/'], ['com.apple.TextEdit', 'https://mail.google.com/'],
+  ]) {
+    const { pasteIntoFocusedTarget } = load(() => `pasted\x1eApp\x1eTitle\x1e${bundle}\x1e${url}\n`);
+    assert.equal(pasteIntoFocusedTarget(false).appContext.websiteDomain, undefined);
+  }
+});
+
+test('reply snapshot reaches history context only when the delivery thread matches', () => {
+  const url = 'https://mail.google.com/mail/u/0/#inbox/FMfcgzQhWxTCFBVfgNGGwQcJWTvPRrxL';
+  const { pasteIntoFocusedTarget } = load(() => `pasted\x1eGoogle Chrome\x1eSubject - Gmail\x1ecom.google.Chrome\x1e${url}\n`);
+  const snapshot = { bundleId: 'com.google.Chrome', windowTitle: 'Subject - Gmail', documentURL: url, focusedReply: true, subject: 'Subject', recipientLabels: ['Reply Recipient (reply@example.org)'] };
+  assert.deepEqual(pasteIntoFocusedTarget(false, snapshot).appContext.emailReply, {
+    source: 'accessibility', subject: 'Subject', replyTo: ['Reply Recipient (reply@example.org)'],
+    threadUrl: 'https://mail.google.com/mail/u/0/#all/FMfcgzQhWxTCFBVfgNGGwQcJWTvPRrxL',
+  });
+  assert.equal(pasteIntoFocusedTarget(false, { ...snapshot, windowTitle: 'Other thread' }).appContext.emailReply, undefined);
+});

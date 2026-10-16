@@ -271,9 +271,10 @@ const electronAPI = {
     ),
     openFolder: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('audio:openFolder'),
   },
+  openEmailThread: (url: string): Promise<void> => ipcRenderer.invoke('email:openThread', url),
   appIcons: {
-    get: (appName: string, bundleId?: string): Promise<string | null> => (
-      ipcRenderer.invoke('app-icon:get', appName, bundleId)
+    get: (appName: string, bundleId?: string, websiteDomain?: string): Promise<string | null> => (
+      ipcRenderer.invoke('app-icon:get', appName, bundleId, websiteDomain)
     ),
   },
   onOpenSettings: (callback: () => void) => {
