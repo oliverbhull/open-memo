@@ -8,7 +8,7 @@ import { ToastNotification, ToastData } from './components/ToastNotification';
 import { useEntries } from './hooks/useEntries';
 import { logger } from './utils/logger';
 import { Settings } from './components/Settings';
-import type { DeviceSyncStatus, MemoSttError, TranscriptionData } from '../../shared/electron-api';
+import type { AppUpdateStatus, DeviceSyncStatus, MemoSttError, TranscriptionData } from '../../shared/electron-api';
 import './styles/glass.css';
 
 // Settings Icon Component
@@ -49,6 +49,8 @@ function App() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [appUpdate, setAppUpdate] = useState<AppUpdateStatus>({ state: 'idle' });
+  const [isBleSyncing, setIsBleSyncing] = useState(false);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const settingsWasOpenRef = useRef(false);
 
@@ -255,15 +257,25 @@ function App() {
 
   useEffect(() => {
     if (!window.electronAPI?.deviceSync) return;
+    let stopped = false;
+    let receivedStatus = false;
     const applyStatus = (status: DeviceSyncStatus) => {
+      if (stopped) return;
+      setIsBleSyncing(status.transport === 'ble' && (
+        status.state === 'transferring' || status.state === 'transcribing' || status.state === 'verifying'
+      ));
       const previous = lastDeviceSyncStateRef.current;
       lastDeviceSyncStateRef.current = status.state;
       if (status.state === previous && status.state !== 'error') return;
-      if (status.state === 'transcribing') {
+      if (status.state === 'transcribing' && status.transport !== 'ble') {
         setToast({ message: 'Syncing Memo recordings… dictation will resume automatically.', severity: 'info', duration: 3500 });
       } else if (status.state === 'complete') {
         void importUsbTranscripts()
-          .then(() => setToast({ message: 'Memo sync complete', severity: 'success', duration: 3500 }))
+          .then(() => {
+            if (status.transport !== 'ble') {
+              setToast({ message: 'Memo sync complete', severity: 'success', duration: 3500 });
+            }
+          })
           .catch((error) => {
             logger.error('[App] Failed to show synced Memo recordings:', error);
             setToast({ message: 'Recordings are safe, but Memo could not add them to the feed.', severity: 'error', duration: 7000 });
@@ -278,9 +290,38 @@ function App() {
         setToast({ message: status.error || 'supermicrophone sync failed; recordings remain on the device.', severity: 'error', duration: 6000 });
       }
     };
-    void window.electronAPI.deviceSync.getStatus().then(applyStatus);
-    return window.electronAPI.deviceSync.onStatus(applyStatus);
+    const unsubscribe = window.electronAPI.deviceSync.onStatus(status => {
+      receivedStatus = true;
+      applyStatus(status);
+    });
+    void window.electronAPI.deviceSync.getStatus().then(status => {
+      if (!receivedStatus) applyStatus(status);
+    }).catch(error => {
+      if (!stopped) logger.error('[App] Failed to get device sync status:', error);
+    });
+    return () => {
+      stopped = true;
+      unsubscribe();
+    };
   }, [importUsbTranscripts]);
+
+  useEffect(() => {
+    if (!window.electronAPI?.appUpdate) return;
+    let stopped = false;
+    let receivedStatus = false;
+    const unsubscribe = window.electronAPI.appUpdate.onStatus(status => {
+      receivedStatus = true;
+      if (!stopped) setAppUpdate(status);
+    });
+    void window.electronAPI.appUpdate.getStatus().then(status => {
+      if (!stopped && !receivedStatus) setAppUpdate(status);
+    }).catch(error => logger.error('[App] Failed to get update status:', error));
+    return () => { stopped = true; unsubscribe(); };
+  }, []);
+
+  const updateLabel = appUpdate.state === 'downloaded'
+    ? `Memo ${appUpdate.version} is ready to install`
+    : `Download Memo ${appUpdate.version}`;
 
   // Combine storage errors with other errors
   const displayError = error || (storageError ? storageError.message : null);
@@ -303,6 +344,26 @@ function App() {
           <div className="title-bar app-title-bar" style={{ paddingLeft: '78px' }}
             onKeyDown={event => { if (showSettings && event.key === 'Escape') setShowSettings(false); }}>
             <div className="title-bar-right">
+              {appUpdate.state === 'downloading' ? (
+                <span className="device-sync-indicator" role="status" aria-label="Downloading Memo update" title="Downloading Memo update…">
+                  <span className="device-sync-spinner" aria-hidden="true" />
+                </span>
+              ) : appUpdate.state !== 'idle' && (
+                <button type="button" className="settings-icon app-update-icon" title={updateLabel} aria-label={updateLabel}
+                  onClick={() => { void window.electronAPI.appUpdate.open().catch(error => {
+                    logger.error('[App] Failed to open update:', error);
+                    setToast({ message: 'Could not open the update. Please try again.', severity: 'error', duration: 6000 });
+                  }); }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    {appUpdate.state === 'downloaded' ? <path d="m5 12 4 4L19 6" /> : <><path d="M12 3v12m-5-5 5 5 5-5" /><path d="M5 16v5h14v-5" /></>}
+                  </svg>
+                </button>
+              )}
+              {isBleSyncing && (
+                <span className="device-sync-indicator" role="status" aria-label="Syncing supermicrophone" title="Syncing supermicrophone…">
+                  <span className="device-sync-spinner" aria-hidden="true" />
+                </span>
+              )}
               {showSettings ? <button type="button" className="app-back-button" aria-label="Back to feed"
                 onClick={() => setShowSettings(false)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

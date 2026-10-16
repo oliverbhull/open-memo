@@ -807,6 +807,9 @@ ipcMain.handle('entries:get-all-active', () => memoDatabaseService.getAllActiveE
 
 ipcMain.handle('entries:get-total-word-count', () => memoDatabaseService.getTotalWordCount());
 
+ipcMain.handle('app-update:get-status', () => appUpdateService.getStatus());
+ipcMain.handle('app-update:open', () => appUpdateService.openUpdate());
+
 ipcMain.handle('device-sync:get-status', () => (
   deviceSyncService?.getStatus() || { state: 'disconnected', completed: 0, total: 0 }
 ));

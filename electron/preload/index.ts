@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
+  AppUpdateStatus,
   CleanupState,
   DictationReadiness,
   DeviceSyncStatus,
@@ -68,6 +69,16 @@ const electronAPI = {
     ),
     getAllActive: (): Promise<MemoEntry[]> => ipcRenderer.invoke('entries:get-all-active'),
     getTotalWordCount: (): Promise<number> => ipcRenderer.invoke('entries:get-total-word-count'),
+  },
+
+  appUpdate: {
+    getStatus: () => ipcRenderer.invoke('app-update:get-status'),
+    open: () => ipcRenderer.invoke('app-update:open'),
+    onStatus: (callback: (status: AppUpdateStatus) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, status: AppUpdateStatus) => callback(status);
+      ipcRenderer.on('app-update:status', handler);
+      return () => ipcRenderer.removeListener('app-update:status', handler);
+    },
   },
 
   deviceSync: {
