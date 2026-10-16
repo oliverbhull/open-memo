@@ -1,3 +1,4 @@
+import type { AppUpdateStatus } from '../../shared/electron-api';
 import { app, BrowserWindow, dialog } from 'electron';
 import electronUpdater, { type AppUpdater } from 'electron-updater';
 import os from 'node:os';
@@ -10,6 +11,8 @@ const FIRST_CHECK_DELAY_MS = 15_000;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
 export class AppUpdateService {
+  private status: AppUpdateStatus = { state: 'idle' };
+  private availableUpdate: { version: string; bytes?: number } | null = null;
   private readonly updater: AppUpdater;
   private readonly getMainWindow: () => BrowserWindow | null;
   private firstCheckTimer: NodeJS.Timeout | null = null;
@@ -38,6 +41,26 @@ export class AppUpdateService {
     // uses the streamed, signature-verified helper instead.
     this.updater.autoInstallOnAppQuit = false;
     this.registerEvents();
+  }
+
+  getStatus(): AppUpdateStatus {
+    return { ...this.status };
+  }
+
+  private publishStatus(status: AppUpdateStatus): void {
+    this.status = status;
+    const window = this.getMainWindow();
+    if (window && !window.isDestroyed()) window.webContents.send('app-update:status', status);
+  }
+
+  async openUpdate(): Promise<void> {
+    if (this.downloading) return;
+    if (this.downloadedUpdate) {
+      await this.promptToRestart(this.downloadedUpdate.version);
+    } else if (this.availableUpdate) {
+      this.declinedVersion = null;
+      await this.promptToDownload(this.availableUpdate.version, this.availableUpdate.bytes);
+    }
   }
 
   start(): void {
@@ -111,10 +134,12 @@ export class AppUpdateService {
     this.updater.on('update-available', (info) => {
       logger.info(`[AppUpdateService] Memo ${info.version} is available`);
       const bytes = info.files.find((file) => file.url.endsWith('.zip'))?.size;
-      void this.promptToDownload(info.version, bytes);
+      this.availableUpdate = { version: info.version, bytes };
+      this.publishStatus({ state: 'available', version: info.version });
     });
 
     this.updater.on('update-not-available', (info) => {
+      if (!this.downloadedUpdate) this.publishStatus({ state: 'idle' });
       logger.info(`[AppUpdateService] Memo is current (${info.version})`);
       if (this.manualCheck) {
         void this.showMessage({
@@ -128,7 +153,7 @@ export class AppUpdateService {
 
     this.updater.on('update-downloaded', (info) => {
       this.downloadedUpdate = { version: info.version, file: info.downloadedFile };
-      void this.promptToRestart(info.version);
+      this.publishStatus({ state: 'downloaded', version: info.version });
     });
     this.updater.on('error', (error) => logger.warn('[AppUpdateService] Updater error:', error));
   }
@@ -157,8 +182,10 @@ export class AppUpdateService {
         return;
       }
       this.downloading = true;
+      this.publishStatus({ state: 'downloading', version });
       await this.updater.downloadUpdate();
     } catch (error) {
+      this.publishStatus({ state: 'available', version });
       logger.warn('[AppUpdateService] Could not download update:', error);
       await this.showMessage({
         type: 'warning',

@@ -1,3 +1,8 @@
+export interface AppUpdateStatus {
+  state: 'idle' | 'available' | 'downloading' | 'downloaded';
+  version?: string;
+}
+
 import type { MemoEntry } from './memo-entry';
 import type { RecordingHotkeyCapture } from './recordingHotkey';
 
@@ -139,6 +144,11 @@ export interface ElectronAPI {
     list(limit: number, offset: number): Promise<MemoEntry[]>;
     getAllActive(): Promise<MemoEntry[]>;
     getTotalWordCount(): Promise<number>;
+  };
+  appUpdate: {
+    getStatus(): Promise<AppUpdateStatus>;
+    open(): Promise<void>;
+    onStatus(callback: (status: AppUpdateStatus) => void): () => void;
   };
   deviceSync: {
     getStatus(): Promise<DeviceSyncStatus>;

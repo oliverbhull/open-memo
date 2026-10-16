@@ -70,12 +70,15 @@ test('failed worker shutdown does not initiate install and reports recovery', as
   assert.equal(instance.updatePromptOpen, false);
 });
 test('large macOS updates bypass Squirrel installation', async () => {
-  const { instance, updater, installs } = service();
+  const { instance, updater, installs, messages } = service();
   assert.equal(updater.autoInstallOnAppQuit, false);
   assert.equal(updater.autoDownload, false);
   assert.equal(updater.disableDifferentialDownload, true);
   updater.emit('update-downloaded', { version: '2.0.0', downloadedFile: '/tmp/large-update.zip' });
   await new Promise(setImmediate);
+  assert.equal(messages.length, 0);
+  assert.equal(installs.length, 0);
+  await instance.openUpdate();
   assert.deepEqual(installs, [{ file: '/tmp/large-update.zip', version: '2.0.0' }]);
 });
 test('declining an update does not download it in the background', async () => {
@@ -83,6 +86,8 @@ test('declining an update does not download it in the background', async () => {
   setup.updater.emit('update-available', { version: '2.0.0', files: [{ url: 'Memo.zip', size: 1_350_000_000 }] });
   await new Promise(setImmediate);
   assert.equal(setup.downloads, 0);
+  assert.equal(setup.messages.length, 0);
+  await setup.instance.openUpdate();
   assert.match(setup.messages[0].detail, /1\.4 GB/);
   setup.updater.emit('update-available', { version: '2.0.0', files: [{ url: 'Memo.zip', size: 1_350_000_000 }] });
   await new Promise(setImmediate);
@@ -92,6 +97,9 @@ test('accepting an update starts one download', async () => {
   const setup = service();
   setup.updater.emit('update-available', { version: '2.0.0', files: [{ url: 'Memo.zip', size: 1_350_000_000 }] });
   await new Promise(setImmediate);
+  assert.equal(setup.downloads, 0);
+  assert.equal(setup.messages.length, 0);
+  await setup.instance.openUpdate();
   assert.equal(setup.downloads, 1);
 });
 test('one check remains active through download completion', async () => {
@@ -108,4 +116,35 @@ test('one check remains active through download completion', async () => {
   assert.equal(calls, 1);
   finish([]);
   await check;
+});
+test('header status tracks availability, download, failure, retry, and completion', async () => {
+  const { instance, updater } = service();
+  let rejectDownload;
+  updater.downloadUpdate = () => new Promise((_resolve, reject) => { rejectDownload = reject; });
+  assert.equal(instance.getStatus().state, 'idle');
+  updater.emit('update-available', { version: '2.0.0', files: [] });
+  assert.equal(instance.getStatus().state, 'available');
+  const download = instance.openUpdate();
+  await new Promise(setImmediate);
+  assert.equal(instance.getStatus().state, 'downloading');
+  rejectDownload(new Error('offline'));
+  await download;
+  assert.equal(instance.getStatus().state, 'available');
+  updater.downloadUpdate = async () => {
+    updater.emit('update-downloaded', { version: '2.0.0', downloadedFile: '/tmp/update.zip' });
+    return [];
+  };
+  await instance.openUpdate();
+  assert.equal(instance.getStatus().state, 'downloaded');
+});
+test('header can reopen a declined update', async () => {
+  const { instance, updater, messages } = service(undefined, undefined, 1);
+  updater.emit('update-available', { version: '2.0.0', files: [] });
+  await new Promise(setImmediate);
+  assert.equal(instance.getStatus().state, 'available');
+  assert.equal(messages.length, 0);
+  await instance.openUpdate();
+  assert.equal(messages.length, 1);
+  await instance.openUpdate();
+  assert.equal(messages.length, 2);
 });
