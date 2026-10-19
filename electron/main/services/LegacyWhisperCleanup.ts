@@ -6,6 +6,7 @@ import { logger } from '../utils/logger';
 
 /** Remove the optional Whisper download left by older Memo versions. */
 export async function removeLegacyWhisperModel(): Promise<void> {
+  if (process.platform === 'win32') return;
   if (store.get('asrModel') !== 'conomo') store.set('asrModel', 'conomo');
   const directory = path.join(app.getPath('userData'), 'models', 'whisper');
   if (!fs.existsSync(directory)) return;

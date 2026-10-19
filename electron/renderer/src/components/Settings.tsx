@@ -575,7 +575,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       if (!accepted) setWritingMode(previousMode);
                     }}>
                     <option value="as-spoken">As spoken — Included</option>
-                    <option value="clean">Cleaned – 1.03 GB model download</option>
+                    <option value="clean" disabled={window.electronAPI.platform === 'win32'}>{window.electronAPI.platform === 'win32' ? 'Cleaned — unavailable on Windows' : 'Cleaned – 1.03 GB model download'}</option>
                   </select>
                   {writingMode === 'clean' && <p role="status" className="settings-help">
                     {cleanupState.status === 'ready' ? 'Ready · runs locally' : cleanupState.status === 'downloading'

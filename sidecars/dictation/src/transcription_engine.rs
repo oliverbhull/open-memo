@@ -14,6 +14,7 @@ const TRANSCRIPTION_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub enum TranscriptionEngine {
     Worker(WorkerEngine),
+    Whisper(crate::whisper_engine::WhisperEngine),
 }
 
 impl TranscriptionEngine {
@@ -24,8 +25,9 @@ impl TranscriptionEngine {
             .as_str()
         {
             "conomo" => Ok(Self::Worker(WorkerEngine::new(input_sample_rate)?)),
+            "whisper" => Ok(Self::Whisper(crate::whisper_engine::WhisperEngine::new(input_sample_rate)?)),
             backend => Err(Error(format!(
-                "Unknown ASR backend {backend:?}; expected conomo"
+                "Unknown ASR backend {backend:?}; expected conomo or whisper"
             ))),
         }
     }
@@ -33,6 +35,7 @@ impl TranscriptionEngine {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Worker(_) => "conomo",
+            Self::Whisper(_) => "whisper-small.en-q5_1",
         }
     }
 
@@ -41,11 +44,11 @@ impl TranscriptionEngine {
     }
 
     pub fn warmup(&self) -> Result<()> {
-        Ok(())
+        match self { Self::Worker(_) => Ok(()), Self::Whisper(engine) => engine.warmup() }
     }
 
     pub fn set_prompt(&mut self, prompt: Option<String>) {
-        let Self::Worker(engine) = self;
+        let Self::Worker(engine) = self else { return; };
         if env::var("MEMO_CONTEXTUAL_VOCAB").as_deref() == Ok("1") {
             if let Err(error) = engine.set_context(prompt) {
                 eprintln!("contextual vocabulary update failed: {error}");
@@ -54,23 +57,19 @@ impl TranscriptionEngine {
     }
 
     pub fn begin_live_stream(&mut self) -> Result<()> {
-        let Self::Worker(engine) = self;
-        engine.begin_live_stream()
+        match self { Self::Worker(engine) => engine.begin_live_stream(), Self::Whisper(_) => Ok(()) }
     }
 
     pub fn feed_live_audio(&mut self, samples: &[i16]) -> Result<()> {
-        let Self::Worker(engine) = self;
-        engine.feed_live_audio(samples)
+        match self { Self::Worker(engine) => engine.feed_live_audio(samples), Self::Whisper(_) => Ok(()) }
     }
 
     pub fn abort_live_stream(&mut self) {
-        let Self::Worker(engine) = self;
-        engine.abort_live_stream();
+        if let Self::Worker(engine) = self { engine.abort_live_stream(); }
     }
 
     pub fn transcribe(&mut self, samples: &[i16]) -> Result<String> {
-        let Self::Worker(engine) = self;
-        engine.finish_transcription(samples)
+        match self { Self::Worker(engine) => engine.finish_transcription(samples), Self::Whisper(engine) => engine.transcribe(samples) }
     }
 }
 

@@ -1,3 +1,4 @@
+import { windowsDictationPath } from './windowsRuntime';
 import { execFileSync } from 'node:child_process';
 import { matchEmailReply, type ReplySnapshot } from '../../shared/emailContext';
 import { websiteDomainFromUrl } from '../../shared/websiteContext';
@@ -57,6 +58,11 @@ export function pasteIntoFocusedTarget(
   pressEnter: boolean,
   replySnapshot?: ReplySnapshot,
 ): FocusedPasteResult {
+  if (process.platform === 'win32') {
+    const status = execFileSync(windowsDictationPath(), ['--paste', ...(pressEnter ? ['--enter'] : [])],
+      { encoding: 'utf8', timeout: 1500, windowsHide: true }).trim();
+    return { status: status === 'pasted' ? 'pasted' : 'target_unavailable' };
+  }
   const result = execFileSync('osascript', [
     '-e', FOCUSED_PASTE_SCRIPT, String(pressEnter),
   ], { encoding: 'utf8', timeout: 1500, stdio: ['ignore', 'pipe', 'pipe'] }).trim();

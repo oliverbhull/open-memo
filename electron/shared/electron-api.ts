@@ -117,7 +117,7 @@ export interface ToastData {
   duration: number;
 }
 
-export type AsrModelId = 'conomo';
+export type AsrModelId = 'conomo' | 'whisper-small.en-q5_1';
 
 export type WritingMode = 'as-spoken' | 'clean';
 
@@ -142,6 +142,7 @@ export interface MicrophoneInputState {
 }
 
 export interface ElectronAPI {
+  platform: string;
   onTranscription(callback: (data: TranscriptionData) => void): void;
   removeTranscriptionListener(): void;
   listUsbTranscripts(): Promise<TranscriptionData[]>;

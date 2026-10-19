@@ -65,7 +65,7 @@ export class PunctuationService {
   private pending = new Map<string, PendingRequest>();
 
   start(): void {
-    if (this.process) return;
+    if (process.platform === 'win32' || this.process) return;
     try {
       const launch = punctuationWorkerLaunch();
       this.process = spawn(launch.command, launch.args, { stdio: ['pipe', 'pipe', 'pipe'] });

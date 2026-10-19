@@ -702,28 +702,30 @@ app.whenReady().then(async () => {
   // starts so its transparency context is fresh for the active display.
   createTray();
 
-  deviceSyncService = new DeviceSyncService({
-    pauseDictation: async () => {
-      if (!memoSttService) return false;
-      logger.info('[Main] Pausing live dictation for Memo device transcription');
-      await memoSttService.suspend();
-      return true;
-    },
-    resumeDictation: async () => {
-      if (isQuitting) return;
-      memoSttService?.resume();
-      if (!isQuitting && memoSttService && selectedSystemMicIsAvailable()) {
-        logger.info('[Main] Restoring live dictation after Memo device transcription');
-        await startLiveDictation();
+  if (process.platform !== 'win32') {
+    deviceSyncService = new DeviceSyncService({
+      pauseDictation: async () => {
+        if (!memoSttService) return false;
+        logger.info('[Main] Pausing live dictation for Memo device transcription');
+        await memoSttService.suspend();
+        return true;
+      },
+      resumeDictation: async () => {
+        if (isQuitting) return;
+        memoSttService?.resume();
+        if (!isQuitting && memoSttService && selectedSystemMicIsAvailable()) {
+          logger.info('[Main] Restoring live dictation after Memo device transcription');
+          await startLiveDictation();
+        }
+      },
+    });
+    deviceSyncService.on('status', (status) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('device-sync:status', status);
       }
-    },
-  });
-  deviceSyncService.on('status', (status) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('device-sync:status', status);
-    }
-  });
-  void deviceSyncService.start();
+    });
+    void deviceSyncService.start();
+  }
   
   app.on('activate', () => {
     openMainWindow();
@@ -854,6 +856,7 @@ ipcMain.handle('permissions:request-microphone', async () => {
 });
 
 ipcMain.handle('permissions:open-microphone-preferences', async () => {
+  if (process.platform === 'win32') { await shell.openExternal('ms-settings:privacy-microphone'); return; }
   if (process.platform === 'darwin') {
     await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
   }

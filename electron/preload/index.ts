@@ -37,6 +37,7 @@ const errorHandler = (_event: Electron.IpcRendererEvent, error: MemoSttError) =>
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 const electronAPI = {
+  platform: process.platform,
   // Transcription events
   onTranscription: (callback: (data: TranscriptionData) => void) => {
     // Remove existing listener to prevent duplicates, then re-add if needed

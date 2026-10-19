@@ -21,6 +21,8 @@ mod mrec_batch;
 mod opus_decoder;
 mod parent_watchdog;
 mod transcription_engine;
+mod whisper_engine;
+mod windows_commands;
 use transcription_engine::TranscriptionEngine;
 
 #[cfg(target_os = "macos")]
@@ -511,6 +513,7 @@ fn calculate_rate_of_increase(history: &[(f32, f32)]) -> Option<f32> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if windows_commands::run()? { return Ok(()); }
     parent_watchdog::start();
     if std::env::args().any(|argument| argument == "--batch-transcribe") {
         return mrec_batch::run();

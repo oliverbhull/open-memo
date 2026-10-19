@@ -64,7 +64,7 @@ export class AppUpdateService {
   }
 
   start(): void {
-    if (!app.isPackaged || this.firstCheckTimer || this.intervalTimer) return;
+    if (process.platform === 'win32' || !app.isPackaged || this.firstCheckTimer || this.intervalTimer) return;
 
     this.cacheMaintenance = pruneUpdaterCache(
       path.join(os.homedir(), 'Library', 'Caches', 'open-memo-updater'),
@@ -89,6 +89,12 @@ export class AppUpdateService {
   }
 
   async checkManually(): Promise<void> {
+    if (process.platform === 'win32') {
+      await this.showMessage({ type: 'info', title: 'Memo Updates',
+        message: 'Install Windows updates from the Memo download page.',
+        detail: 'Automatic updates are not enabled in this Windows preview.' });
+      return;
+    }
     if (!app.isPackaged) {
       await this.showMessage({
         type: 'info',

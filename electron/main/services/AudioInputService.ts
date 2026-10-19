@@ -1,3 +1,4 @@
+import { windowsDictationPath } from './windowsRuntime';
 import { execFile } from 'node:child_process';
 import { logger } from '../utils/logger';
 import { parseAudioInputDevices, type AudioInputDevice } from './audioInputParser';
@@ -36,7 +37,12 @@ export class AudioInputService {
 
     this.refreshPromise = (async () => {
       try {
-        const devices = parseAudioInputDevices(await runSystemProfiler());
+        const devices: AudioInputDevice[] = process.platform === 'win32'
+          ? JSON.parse(await new Promise<string>((resolve, reject) => {
+              execFile(windowsDictationPath(), ['--list-inputs'], { encoding: 'utf8', timeout: 5000, windowsHide: true },
+                (error, stdout) => error ? reject(error) : resolve(stdout));
+            }))
+          : parseAudioInputDevices(await runSystemProfiler());
         this.devices = devices;
         return this.getDevices();
       } catch (error) {

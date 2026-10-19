@@ -54,12 +54,12 @@ export function settingsPath(): string {
 
 export function loadSettings(): Settings {
   return {
-    asrModel: 'conomo',
+    asrModel: process.platform === 'win32' ? 'whisper-small.en-q5_1' : 'conomo',
     sayEnterToPressEnter: store.get('sayEnterToPressEnter', false),
     handsFreeMode: store.get('handsFreeMode', false),
     saveAudio: store.get('saveAudio', false),
     experimentalEmailFormatting: store.get('experimentalEmailFormatting', false) === true,
-    writingMode: store.get('writingMode') === 'clean' ? 'clean' : 'as-spoken',
+    writingMode: process.platform !== 'win32' && store.get('writingMode') === 'clean' ? 'clean' : 'as-spoken',
     vocabWords: stringArray(store.get('vocabWords')),
     phraseReplacements: clampPhraseReplacementRulesFromInput(store.get('phraseReplacements')),
   };
@@ -69,12 +69,12 @@ export function saveSettings(next: Settings): void {
   const settings: Settings = {
     ...loadSettings(),
     ...next,
-    asrModel: 'conomo',
+    asrModel: process.platform === 'win32' ? 'whisper-small.en-q5_1' : 'conomo',
     sayEnterToPressEnter: next.sayEnterToPressEnter === true,
     handsFreeMode: next.handsFreeMode === true,
     saveAudio: next.saveAudio === true,
     experimentalEmailFormatting: next.experimentalEmailFormatting === true,
-    writingMode: next.writingMode === 'clean' ? 'clean' : 'as-spoken',
+    writingMode: process.platform !== 'win32' && next.writingMode === 'clean' ? 'clean' : 'as-spoken',
     vocabWords: stringArray(next.vocabWords),
     phraseReplacements: clampPhraseReplacementRulesFromInput(next.phraseReplacements),
   };
@@ -91,12 +91,12 @@ export function saveSettings(next: Settings): void {
 
 export function loadUserSettings(): UserSettings {
   const userName = store.get('userName');
-  const hotkey = normalizeRecordingHotkey(store.get('hotkey')) ?? DEFAULT_RECORDING_HOTKEY;
+  const hotkey = normalizeRecordingHotkey(store.get('hotkey')) ?? (process.platform === 'win32' ? 'controlright' : DEFAULT_RECORDING_HOTKEY);
   const onboardedUsers = stringArray(store.get('onboardedUsers'));
   return {
     ...(userName ? { userName } : {}),
     ...(hotkey ? { hotkey } : {}),
-    lockHotkey: normalizeRecordingHotkey(store.get('lockHotkey')) ?? 'function+controlleft',
+    lockHotkey: normalizeRecordingHotkey(store.get('lockHotkey')) ?? (process.platform === 'win32' ? 'controlright+shiftleft' : 'function+controlleft'),
     ...(onboardedUsers.length > 0 ? { onboardedUsers } : {}),
   };
 }
@@ -120,7 +120,7 @@ function migrateSettingsJson(raw: Record<string, unknown>): void {
   const current = loadSettings();
   saveSettings({
     ...current,
-    asrModel: 'conomo',
+    asrModel: process.platform === 'win32' ? 'whisper-small.en-q5_1' : 'conomo',
     sayEnterToPressEnter: typeof raw.sayEnterToPressEnter === 'boolean'
       ? raw.sayEnterToPressEnter
       : current.sayEnterToPressEnter,
