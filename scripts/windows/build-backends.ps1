@@ -37,7 +37,9 @@ if ($LASTEXITCODE -ne 0 -or $actualRevision.Trim() -ne $revision) { throw 'Whisp
 $dirtySource = & git -C $source status --porcelain
 if ($dirtySource) { throw 'Whisper source checkout was modified; refusing to package it.' }
 $buildDir = Join-Path $repoRoot '.build/whisper-windows-build'
-Invoke-Checked cmake @('-S', $source, '-B', $buildDir, '-A', 'x64', '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded', '-DBUILD_SHARED_LIBS=OFF', '-DGGML_NATIVE=OFF', '-DGGML_CUDA=OFF', '-DGGML_VULKAN=OFF', '-DWHISPER_BUILD_TESTS=OFF', '-DWHISPER_BUILD_EXAMPLES=ON')
+# whisper.cpp declares CMake 3.5, which otherwise leaves CMP0091 unset and
+# ignores CMAKE_MSVC_RUNTIME_LIBRARY. Disable dynamic MSVC OpenMP too.
+Invoke-Checked cmake @('-S', $source, '-B', $buildDir, '-A', 'x64', '-DCMAKE_POLICY_DEFAULT_CMP0091=NEW', '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded', '-DGGML_OPENMP=OFF', '-DBUILD_SHARED_LIBS=OFF', '-DGGML_NATIVE=OFF', '-DGGML_CUDA=OFF', '-DGGML_VULKAN=OFF', '-DWHISPER_BUILD_TESTS=OFF', '-DWHISPER_BUILD_EXAMPLES=ON')
 Invoke-Checked cmake @('--build', $buildDir, '--config', 'Release', '--target', 'whisper-cli', '--parallel', '4')
 Copy-Item "$buildDir/bin/Release/whisper-cli.exe" $whisper -Force
 # Copy any runtime DLLs if an upstream build option introduces them.
@@ -62,6 +64,18 @@ Copy-Item "$env:CARGO_TARGET_DIR/release/memo-dictation.exe" $dictation -Force
 Copy-Item 'sidecars/dictation/THIRD_PARTY_NOTICES.txt' $dictation -Force
 @{ engine = 'whisper.cpp'; revision = $revision; model = 'small.en-q5_1'; modelSha256 = $modelHash } |
     ConvertTo-Json | Set-Content "$whisper/manifest.json"
+# Hosted builders already have the VC runtime installed. Check the actual import
+# table so their successful smoke test cannot hide a missing end-user dependency.
+$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+$dumpbins = @(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC/Tools/MSVC/**/bin/Hostx64/x64/dumpbin.exe')
+if ($LASTEXITCODE -ne 0 -or $dumpbins.Count -eq 0) { throw 'Cannot locate dumpbin to verify standalone Windows backends.' }
+foreach ($executable in @("$whisper/whisper-cli.exe", "$dictation/memo-dictation.exe")) {
+    $dependencies = & $dumpbins[0] /DEPENDENTS $executable
+    if ($LASTEXITCODE -ne 0) { throw "Cannot inspect dependencies: $executable" }
+    if (($dependencies -join "`n") -match '(?i)\b(?:MSVCP|VCRUNTIME|VCOMP|CONCRT)\d[^\s]*\.dll\b') {
+        throw "Windows backend depends on an unbundled Visual C++ runtime: $executable ($($Matches[0]))"
+    }
+}
 # Exercise the actual bundled model with upstream speech audio before packaging.
 Invoke-Checked "$whisper/whisper-cli.exe" @('-m', $model, '-f', "$source/samples/jfk.wav", '-l', 'en', '-t', '4', '-ng', '-nt', '-otxt', '-of', "$stage/smoke")
 $transcript = Get-Content "$stage/smoke.txt" -Raw
