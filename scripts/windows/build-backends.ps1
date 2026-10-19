@@ -7,6 +7,18 @@ function Invoke-Checked([string]$program, [string[]]$arguments) {
     & $program @arguments
     if ($LASTEXITCODE -ne 0) { throw "$program failed with exit code $LASTEXITCODE" }
 }
+# Use .NET directly: nested Windows PowerShell can lack the Utility module
+# that exports Get-FileHash on hosted runners.
+function Get-Sha256([string]$path) {
+    $stream = [System.IO.File]::OpenRead($path)
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return [System.BitConverter]::ToString($sha256.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha256.Dispose()
+        $stream.Dispose()
+    }
+}
 $stage = Join-Path $repoRoot '.build/windows'
 $dictation = Join-Path $stage 'dictation'
 $whisper = Join-Path $stage 'whisper'
@@ -34,10 +46,10 @@ Copy-Item "$source/LICENSE" "$whisper/LICENSE-whisper.cpp.txt" -Force
 Copy-Item "$PSScriptRoot/LICENSE-whisper-model.txt" $whisper -Force
 $model = Join-Path $whisper 'ggml-small.en-q5_1.bin'
 $modelHash = 'bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30'
-if (!(Test-Path $model) -or (Get-FileHash $model -Algorithm SHA256).Hash.ToLowerInvariant() -ne $modelHash) {
+if (!(Test-Path $model) -or (Get-Sha256 $model) -ne $modelHash) {
     $partial = "$model.partial"
     Invoke-WebRequest 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-q5_1.bin' -OutFile $partial
-    if ((Get-FileHash $partial -Algorithm SHA256).Hash.ToLowerInvariant() -ne $modelHash) {
+    if ((Get-Sha256 $partial) -ne $modelHash) {
         Remove-Item $partial -Force
         throw 'Whisper small.en q5_1 checksum mismatch.'
     }
