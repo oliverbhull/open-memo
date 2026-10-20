@@ -92,7 +92,7 @@ export class AppUpdateService {
     if (process.platform === 'win32') {
       await this.showMessage({ type: 'info', title: 'Memo Updates',
         message: 'Install Windows updates from the Memo download page.',
-        detail: 'Automatic updates are not enabled in this Windows preview.' });
+          detail: 'Automatic Windows updates are not enabled yet. Use Download for Windows in the GitHub README to get the current installer.' });
       return;
     }
     if (!app.isPackaged) {

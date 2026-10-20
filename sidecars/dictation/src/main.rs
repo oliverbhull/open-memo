@@ -8,7 +8,7 @@ use serde_json::json;
 use std::collections::{HashMap, VecDeque};
 use std::sync::mpsc;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Mutex,
 };
 use std::time::Instant;
@@ -21,9 +21,11 @@ mod mrec_batch;
 mod opus_decoder;
 mod parent_watchdog;
 mod transcription_engine;
+mod nemotron_engine;
 mod whisper_engine;
 mod windows_commands;
 use transcription_engine::TranscriptionEngine;
+static NEXT_RECORDING_ID: AtomicU64 = AtomicU64::new(1);
 
 #[cfg(target_os = "macos")]
 #[link(name = "ApplicationServices", kind = "framework")]
@@ -592,7 +594,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.sample_format()
     );
 
-    let engine = TranscriptionEngine::from_env(sample_rate)?;
+    let mut engine = TranscriptionEngine::from_env(sample_rate)?;
     println!(
         "Loading {} model ({} Hz input)...",
         engine.name(),
@@ -1372,6 +1374,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
                     .is_ok()
                 {
+                    let released_at = Instant::now();
+                    let recording_id = format!("{}-{}", std::process::id(), NEXT_RECORDING_ID.fetch_add(1, Ordering::Relaxed));
                     *active_trigger_clone.lock().unwrap() = None;
                     segmenter_active_clone.store(false, Ordering::Release);
 
@@ -1538,6 +1542,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             "rawTranscript": text,
                                             "processedText": processed_text,
                                             "wasProcessedByLLM": false,
+                                            "context": { "dictationTiming": {
+                                                "recordingId": recording_id,
+                                                "backend": eng.name(),
+                                                "releaseToFinalMs": released_at.elapsed().as_secs_f64() * 1000.0,
+                                                "audioDurationMs": audio_duration as f64 * 1000.0,
+                                                "fallbackUsed": std::env::var("MEMO_ASR_BACKEND").unwrap_or_default() == "nemotron" && !eng.name().contains("nemotron")
+                                            } },
                                             "appContext": {
                                                 "appName": app_name,
                                                 "windowTitle": window_title
@@ -1834,6 +1845,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
                             .is_ok()
                         {
+                            let released_at = Instant::now();
+                            let recording_id = format!("{}-{}", std::process::id(), NEXT_RECORDING_ID.fetch_add(1, Ordering::Relaxed));
                             segmenter_active_clone.store(false, Ordering::Release);
                             *active_trigger_clone.lock().unwrap() = None;
                             if !use_continuous_input {
@@ -2022,6 +2035,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     "rawTranscript": text,
                                                     "processedText": processed_text,
                                                     "wasProcessedByLLM": false,
+                                            "context": { "dictationTiming": {
+                                                "recordingId": recording_id,
+                                                "backend": eng.name(),
+                                                "releaseToFinalMs": released_at.elapsed().as_secs_f64() * 1000.0,
+                                                "audioDurationMs": audio_duration as f64 * 1000.0,
+                                                "fallbackUsed": std::env::var("MEMO_ASR_BACKEND").unwrap_or_default() == "nemotron" && !eng.name().contains("nemotron")
+                                            } },
                                                     "appContext": {
                                                         "appName": app_name,
                                                         "windowTitle": window_title

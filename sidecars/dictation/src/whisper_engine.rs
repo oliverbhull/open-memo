@@ -1,30 +1,69 @@
-//! CPU-only whisper.cpp CLI adapter. Each utterance owns its files and child.
-//! A fresh process is deliberately used until target-machine latency is measured.
+//! Persistent whisper.cpp context, communicating over private binary pipes.
 use crate::transcription_engine::StreamingResampler;
 use memo_dictation::{Error, Result};
 use std::{
-    env, fs,
-    io::Write,
+    env,
+    io::{Read, Write},
     path::PathBuf,
-    process::{Command, Stdio},
-    sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant},
+    process::{Child, Command, Stdio},
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        Mutex,
+    },
+    time::Duration,
 };
 
-static NEXT_JOB: AtomicU64 = AtomicU64::new(0);
+const TIMEOUT: Duration = Duration::from_secs(120);
+const MAX_RESPONSE: usize = 4 * 1024 * 1024;
 pub struct WhisperEngine {
     executable: PathBuf,
     model: PathBuf,
     sample_rate: u32,
+    worker: Mutex<Option<Worker>>,
 }
-struct JobDirectory(PathBuf);
-impl Drop for JobDirectory {
+struct Worker {
+    child: Child,
+    requests: Sender<Vec<u8>>,
+    responses: Receiver<std::result::Result<String, String>>,
+}
+impl Drop for Worker {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
-
+fn read_response(reader: &mut impl Read) -> std::io::Result<std::result::Result<String, String>> {
+    let mut header = [0u8; 5];
+    reader.read_exact(&mut header)?;
+    let size = u32::from_le_bytes(header[1..].try_into().unwrap()) as usize;
+    if size > MAX_RESPONSE {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Whisper response too large",
+        ));
+    }
+    let mut bytes = vec![0; size];
+    reader.read_exact(&mut bytes)?;
+    let text = String::from_utf8(bytes)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    match header[0] {
+        0 => Ok(Ok(text)),
+        1 => Ok(Err(text)),
+        _ => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Invalid Whisper status",
+        )),
+    }
+}
 impl WhisperEngine {
+    pub fn model_name(&self) -> String {
+        let stem = self
+            .model
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or("custom");
+        format!("whisper-{}", stem.strip_prefix("ggml-").unwrap_or(stem))
+    }
     pub fn new(sample_rate: u32) -> Result<Self> {
         let required = |name: &str| -> Result<PathBuf> {
             let path =
@@ -35,14 +74,73 @@ impl WhisperEngine {
             Ok(path)
         };
         Ok(Self {
-            executable: required("MEMO_WHISPER_CLI")?,
+            executable: required("MEMO_WHISPER_WORKER")?,
             model: required("MEMO_WHISPER_MODEL")?,
             sample_rate,
+            worker: Mutex::new(None),
         })
     }
+    fn start(&self) -> Result<Worker> {
+        let mut command = Command::new(&self.executable);
+        command
+            .arg(&self.model)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        let mut child = command
+            .spawn()
+            .map_err(|e| Error(format!("Start Whisper worker: {e}")))?;
+        let mut stdin = child.stdin.take().unwrap();
+        let mut stdout = child.stdout.take().unwrap();
+        let (request_sender, requests) = mpsc::channel::<Vec<u8>>();
+        let (sender, responses) = mpsc::channel();
+        // All pipe I/O runs off the caller thread, so the deadline also covers
+        // a blocked stdin write. Killing the child unblocks a stuck pipe reader.
+        std::thread::spawn(move || {
+            let exchange = |stdout: &mut _, sender: &Sender<_>| -> bool {
+                match read_response(stdout) {
+                    Ok(response) => sender.send(response).is_ok(),
+                    Err(error) => {
+                        let _ = sender.send(Err(format!("Whisper worker pipe closed: {error}")));
+                        false
+                    }
+                }
+            };
+            if !exchange(&mut stdout, &sender) {
+                return;
+            }
+            while let Ok(request) = requests.recv() {
+                if let Err(error) = stdin.write_all(&request).and_then(|_| stdin.flush()) {
+                    let _ = sender.send(Err(format!("Write Whisper audio: {error}")));
+                    break;
+                }
+                if !exchange(&mut stdout, &sender) {
+                    break;
+                }
+            }
+        });
+        let worker = Worker {
+            child,
+            requests: request_sender,
+            responses,
+        };
+        worker.response()?; // Ready only after the model and context are loaded.
+        Ok(worker)
+    }
     pub fn warmup(&self) -> Result<()> {
-        self.transcribe(&vec![0; self.sample_rate as usize])
-            .map(|_| ())
+        let mut slot = self
+            .worker
+            .lock()
+            .map_err(|_| Error("Whisper worker lock poisoned".into()))?;
+        if slot.is_none() {
+            *slot = Some(self.start()?);
+        }
+        Ok(())
     }
     pub fn transcribe(&self, samples: &[i16]) -> Result<String> {
         if samples.is_empty() {
@@ -50,143 +148,55 @@ impl WhisperEngine {
         }
         let mut resampler = StreamingResampler::new(self.sample_rate, 16_000);
         let pcm = resampler.push(samples, true);
-        let id = NEXT_JOB.fetch_add(1, Ordering::Relaxed);
-        let directory = env::temp_dir().join(format!("memo-whisper-{}-{id}", std::process::id()));
-        fs::create_dir(&directory).map_err(|e| Error(format!("Create Whisper job: {e}")))?;
-        let job = JobDirectory(directory);
-        let wav = job.0.join("audio.wav");
-        let output = job.0.join("transcript");
-        fs::write(&wav, wav_bytes(&pcm)?)
-            .map_err(|e| Error(format!("Write Whisper audio: {e}")))?;
-        let mut command = Command::new(&self.executable);
-        command
-            .args(["-m"])
-            .arg(&self.model)
-            .arg("-f")
-            .arg(&wav)
-            .args(["-l", "en", "-t", "4", "-ng", "-nt", "-otxt", "-of"])
-            .arg(&output)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        if pcm.len() > 16_000 * 60 * 10 {
+            return Err(Error("Whisper recording exceeds ten minutes".into()));
         }
-        let mut child = command
-            .spawn()
-            .map_err(|e| Error(format!("Start whisper.cpp: {e}")))?;
-        let started = Instant::now();
-        loop {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    if !status.success() {
-                        return Err(Error(format!("whisper.cpp failed ({status})")));
-                    }
-                    break;
-                }
-                Ok(None) if started.elapsed() < Duration::from_secs(120) => {
-                    std::thread::sleep(Duration::from_millis(20))
-                }
-                result => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(Error(format!(
-                        "whisper.cpp timed out or could not be reaped: {result:?}"
-                    )));
-                }
-            }
+        let mut request = Vec::with_capacity(4 + pcm.len() * 2);
+        request.extend((pcm.len() as u32).to_le_bytes());
+        for sample in pcm {
+            request.extend(sample.to_le_bytes());
         }
-        fs::read_to_string(output.with_extension("txt"))
-            .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
-            .map_err(|e| Error(format!("Read whisper.cpp transcript: {e}")))
+        let mut slot = self
+            .worker
+            .lock()
+            .map_err(|_| Error("Whisper worker lock poisoned".into()))?;
+        if slot.is_none() {
+            *slot = Some(self.start()?);
+        }
+        let worker = slot.as_mut().unwrap();
+        let result = worker
+            .requests
+            .send(request)
+            .map_err(|e| Error(format!("Whisper worker disconnected: {e}")))
+            .and_then(|_| worker.response());
+        if result.is_err() {
+            *slot = None;
+        } // Reap; next request gets a fresh worker.
+        result.map(|text| text.split_whitespace().collect::<Vec<_>>().join(" "))
     }
 }
-fn wav_bytes(pcm: &[i16]) -> Result<Vec<u8>> {
-    let bytes = u32::try_from(
-        pcm.len()
-            .checked_mul(2)
-            .ok_or_else(|| Error("Audio too long".into()))?,
-    )
-    .map_err(|_| Error("Audio too long".into()))?;
-    let size = bytes
-        .checked_add(36)
-        .ok_or_else(|| Error("Audio too long".into()))?;
-    let mut out = Vec::with_capacity(bytes as usize + 44);
-    out.write_all(b"RIFF").unwrap();
-    out.extend(size.to_le_bytes());
-    out.extend(b"WAVEfmt ");
-    out.extend(16u32.to_le_bytes());
-    out.extend(1u16.to_le_bytes());
-    out.extend(1u16.to_le_bytes());
-    out.extend(16000u32.to_le_bytes());
-    out.extend(32000u32.to_le_bytes());
-    out.extend(2u16.to_le_bytes());
-    out.extend(16u16.to_le_bytes());
-    out.extend(b"data");
-    out.extend(bytes.to_le_bytes());
-    for sample in pcm {
-        out.extend(sample.to_le_bytes());
+impl Worker {
+    fn response(&self) -> Result<String> {
+        self.responses
+            .recv_timeout(TIMEOUT)
+            .map_err(|e| Error(format!("Whisper worker timed out or disconnected: {e}")))?
+            .map_err(Error)
     }
-    Ok(out)
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn wave_is_mono_16khz_signed_little_endian() {
-        let wav = wav_bytes(&[-32768, 0, 32767]).unwrap();
-        assert_eq!(&wav[..4], b"RIFF");
-        assert_eq!(wav.len(), 50);
-        assert_eq!(&wav[24..28], &16000u32.to_le_bytes());
-        assert_eq!(&wav[44..], &[0, 128, 0, 0, 255, 127]);
-    }
-}
-
-#[cfg(all(test, unix))]
-mod process_tests {
-    use super::*;
-    use std::os::unix::fs::PermissionsExt;
-    #[test]
-    fn cli_adapter_handles_paths_with_spaces_and_rejects_failed_runs() {
-        let root = env::temp_dir().join(format!("memo whisper test {}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
-        let fixture = JobDirectory(root);
-        let executable = fixture.0.join("fake cli");
-        let model = fixture.0.join("model.bin");
-        fs::write(&model, "fixture").unwrap();
-        fs::write(
-            &executable,
-            r#"#!/bin/sh
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    -of) shift; output="$1" ;;
-    -f) shift; test -f "$1" || exit 2 ;;
-    -m) shift; test -f "$1" || exit 3 ;;
-  esac
-  shift
-done
-printf ' Hello\nworld. ' > "$output.txt"
-"#,
-        )
-        .unwrap();
-        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
-        let engine = WhisperEngine {
-            executable: executable.clone(),
-            model,
-            sample_rate: 48_000,
-        };
-        assert_eq!(
-            engine.transcribe(&[1, -2, 3, 4, 5, 6]).unwrap(),
-            "Hello world."
-        );
-        fs::write(&executable, "#!/bin/sh\nexit 1\n").unwrap();
-        assert!(engine
-            .transcribe(&[1, 2, 3])
-            .unwrap_err()
-            .to_string()
-            .contains("failed"));
-        assert_eq!(engine.transcribe(&[]).unwrap(), "");
+    fn framed_unicode_errors_and_truncation() {
+        let mut frame = vec![0];
+        frame.extend(5u32.to_le_bytes());
+        frame.extend("café".as_bytes());
+        assert_eq!(read_response(&mut &frame[..]).unwrap().unwrap(), "café");
+        frame[0] = 1;
+        assert_eq!(read_response(&mut &frame[..]).unwrap().unwrap_err(), "café");
+        assert!(read_response(&mut &frame[..8]).is_err());
+        let mut invalid = vec![0];
+        invalid.extend((MAX_RESPONSE as u32 + 1).to_le_bytes());
+        assert!(read_response(&mut &invalid[..]).is_err());
     }
 }

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { DatabaseSync } from 'node:sqlite';
 import type { MemoEntry } from '../../shared/memo-entry';
 
 const MAX_SQLITE_OUTPUT_BYTES = 50 * 1024 * 1024;
@@ -126,11 +127,15 @@ export class MemoDatabaseService {
   private readonly databasePath: string;
   private readonly sqlitePath: string;
   private initialized = false;
+  private readonly nativeSqlite: boolean;
+  private nativeDatabase: DatabaseSync | null = null;
   private queue: Promise<void> = Promise.resolve();
 
   constructor(options: MemoDatabaseOptions) {
     this.databasePath = options.databasePath;
     this.sqlitePath = options.sqlitePath ?? '/usr/bin/sqlite3';
+    // Electron on Windows includes SQLite; macOS can continue using its system CLI.
+    this.nativeSqlite = process.platform === 'win32' && options.sqlitePath === undefined;
   }
 
   async initialize(): Promise<{ legacyImportComplete: boolean }> {
@@ -152,6 +157,22 @@ export class MemoDatabaseService {
 INSERT OR IGNORE INTO memo_entries(
   id, device_id, text, created_at_ms, updated_at_ms, deleted_at_ms, context_json
 ) VALUES(${entryValues(entry)});`).join('');
+      if (this.nativeSqlite) {
+        await this.execute('BEGIN IMMEDIATE;');
+        try {
+          const before = await this.query('SELECT total_changes() AS count;');
+          await this.execute(statements);
+          const after = await this.query('SELECT total_changes() AS count;');
+          await this.execute(`INSERT INTO schema_meta(key, value)
+VALUES(${sqliteText(LEGACY_IMPORT_KEY)}, 'complete')
+ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+COMMIT;`);
+          return { imported: Number(after[0]?.count ?? 0) - Number(before[0]?.count ?? 0) };
+        } catch (error) {
+          await this.execute('ROLLBACK;').catch(() => {});
+          throw error;
+        }
+      }
       const rows = await this.query(`
 BEGIN IMMEDIATE;${statements}
 SELECT total_changes() AS imported;
@@ -278,6 +299,21 @@ SELECT value FROM schema_meta WHERE key=${sqliteText(LEGACY_IMPORT_KEY)} LIMIT 1
   }
 
   private execute(sql: string, json = false): Promise<string> {
+    if (this.nativeSqlite) {
+      try {
+        if (!this.nativeDatabase) {
+          // Loaded only on Windows, leaving the existing macOS runtime unchanged.
+          const { DatabaseSync: NativeDatabase } = require('node:sqlite') as typeof import('node:sqlite');
+          this.nativeDatabase = new NativeDatabase(this.databasePath);
+          this.nativeDatabase.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=30000; PRAGMA synchronous=FULL;');
+        }
+        if (json) return Promise.resolve(JSON.stringify(this.nativeDatabase.prepare(sql).all()));
+        this.nativeDatabase.exec(sql);
+        return Promise.resolve('');
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    }
     return new Promise((resolve, reject) => {
       const child = spawn(this.sqlitePath, [...(json ? ['-json'] : []), this.databasePath], {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -307,6 +343,14 @@ SELECT value FROM schema_meta WHERE key=${sqliteText(LEGACY_IMPORT_KEY)} LIMIT 1
       child.stdin.end(
         `.bail on\n.timeout 30000\nPRAGMA foreign_keys=ON;\nPRAGMA synchronous=FULL;\n${sql}\n`,
       );
+    });
+  }
+
+  async close(): Promise<void> {
+    await this.serialized(async () => {
+      this.nativeDatabase?.close();
+      this.nativeDatabase = null;
+      this.initialized = false;
     });
   }
 

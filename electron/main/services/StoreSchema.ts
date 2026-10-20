@@ -5,6 +5,7 @@ export interface StoreSchema {
   desktopDeviceId: string | null;
   selectedSystemMicName: string | null;
   asrModel: AsrModelId;
+  windowsSpeechModel: 'whisper-base.en-q5_1' | 'nemotron-streaming' | null;
   lastSystemMicDevice: string | null;
   lastSystemMicSampleRate: number | null;
   sayEnterToPressEnter: boolean;
@@ -27,6 +28,7 @@ export const storeDefaults: StoreSchema = {
   desktopDeviceId: null,
   selectedSystemMicName: null,
   asrModel: 'conomo',
+  windowsSpeechModel: null,
   lastSystemMicDevice: null,
   lastSystemMicSampleRate: null,
   sayEnterToPressEnter: false,

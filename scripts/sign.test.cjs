@@ -3,9 +3,10 @@ const path = require('node:path');
 const test = require('node:test');
 
 const { isDictationBinary, signingOptionsForFile } = require('./sign.cjs');
+const dictationPath = path.join('/tmp', 'Memo.app', 'Contents', 'Resources', 'dictation', 'memo-dictation');
 
 test('recognizes only the packaged dictation helper', () => {
-  assert.equal(isDictationBinary('/tmp/Memo.app/Contents/Resources/dictation/memo-dictation'), true);
+  assert.equal(isDictationBinary(dictationPath), true);
   assert.equal(isDictationBinary('/tmp/Memo.app/Contents/Resources/conomo/conomo'), false);
 });
 
@@ -13,7 +14,7 @@ test('sets dictation identity and entitlements inside the primary signing pass',
   const defaults = () => ({ hardenedRuntime: true, additionalArguments: ['--timestamp'] });
   const options = signingOptionsForFile(
     defaults,
-    '/tmp/Memo.app/Contents/Resources/dictation/memo-dictation',
+    dictationPath,
   );
 
   assert.equal(options.hardenedRuntime, true);

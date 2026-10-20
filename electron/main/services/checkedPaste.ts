@@ -54,14 +54,30 @@ export interface FocusedPasteResult {
   appContext?: AppContext;
 }
 
+export function parseWindowsPasteResult(raw: string): FocusedPasteResult {
+  // Accept the old helper during local upgrades, without inventing app metadata.
+  if (raw.trim() === 'pasted') return { status: 'pasted' };
+  try {
+    const result = JSON.parse(raw);
+    if (result?.status !== 'pasted') return { status: 'target_unavailable' };
+    const context = result.appContext;
+    const appName = typeof context?.appName === 'string' ? context.appName.trim().slice(0, 200) : '';
+    const windowTitle = typeof context?.windowTitle === 'string' ? context.windowTitle.slice(0, 1000) : '';
+    const appPath = typeof context?.appPath === 'string' ? context.appPath.slice(0, 32768) : undefined;
+    return { status: 'pasted', ...(appName ? { appContext: { appName, windowTitle, ...(appPath ? { appPath } : {}) } } : {}) };
+  } catch {
+    return { status: 'target_unavailable' };
+  }
+}
+
 export function pasteIntoFocusedTarget(
   pressEnter: boolean,
   replySnapshot?: ReplySnapshot,
 ): FocusedPasteResult {
   if (process.platform === 'win32') {
-    const status = execFileSync(windowsDictationPath(), ['--paste', ...(pressEnter ? ['--enter'] : [])],
+    const result = execFileSync(windowsDictationPath(), ['--paste', ...(pressEnter ? ['--enter'] : [])],
       { encoding: 'utf8', timeout: 1500, windowsHide: true }).trim();
-    return { status: status === 'pasted' ? 'pasted' : 'target_unavailable' };
+    return parseWindowsPasteResult(result);
   }
   const result = execFileSync('osascript', [
     '-e', FOCUSED_PASTE_SCRIPT, String(pressEnter),

@@ -1,0 +1,132 @@
+name: Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or commit to test; an existing v-version tag to publish
+        required: true
+        default: main
+        type: string
+      publish:
+        description: Publish signed Windows downloads (requires main CI and signing secrets)
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify source and publishing prerequisites
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_WINDOWS: ${{ inputs.publish }}
+          SOURCE_REF: ${{ inputs.ref }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:PUBLISH_WINDOWS -ne 'true') { exit 0 }
+          $version = node -p "require('./package.json').version"
+          if ($env:SOURCE_REF -ne "v$version") { throw 'Publishing requires the existing v-version tag matching package.json.' }
+          git show-ref --verify --quiet "refs/tags/v$version"
+          if ($LASTEXITCODE) { throw 'Version tag does not exist.' }
+          git fetch origin main
+          if ($LASTEXITCODE) { throw 'Cannot verify main.' }
+          $sha = git rev-parse HEAD
+          git merge-base --is-ancestor $sha origin/main
+          if ($LASTEXITCODE) { throw 'Release commit must be on main.' }
+          $conclusion = gh api "repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$sha&status=completed" --jq '[.workflow_runs[] | select(.event == "push" and .head_branch == "main")] | sort_by(.created_at) | last | .conclusion // ""'
+          if ($LASTEXITCODE -or $conclusion -ne 'success') { throw 'A successful main push CI run is required.' }
+          if (!$env:WIN_CSC_LINK -or !$env:WIN_CSC_KEY_PASSWORD) { throw 'Configure WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD before publishing.' }
+      - run: npm ci
+      - name: Test source
+        run: npm run check:windows
+      - name: Test native recorder
+        run: cargo test --locked --manifest-path sidecars/dictation/Cargo.toml
+      - name: Build self-contained Windows installer
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          MEMO_REQUIRE_WINDOWS_SIGNING: ${{ inputs.publish && '1' || '0' }}
+        run: npm run dist:win
+      - name: Prepare and verify downloads
+        shell: pwsh
+        env:
+          PUBLISH_WINDOWS: ${{ inputs.publish }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = node -p "require('./package.json').version"
+          $installer = "dist/Open-Memo-$version-windows-x64-setup.exe"
+          if (!(Test-Path -LiteralPath $installer)) { throw 'Installer missing.' }
+          if ($env:PUBLISH_WINDOWS -eq 'true') {
+            $signature = Get-AuthenticodeSignature -LiteralPath $installer
+            if ($signature.Status -ne 'Valid') { throw "Installer signature is not valid: $($signature.Status)" }
+          }
+          New-Item -ItemType Directory -Force windows-release-artifacts | Out-Null
+          Copy-Item -LiteralPath $installer -Destination windows-release-artifacts
+          Copy-Item -LiteralPath $installer -Destination windows-release-artifacts/Open-Memo-latest-windows-x64-setup.exe
+          Get-ChildItem windows-release-artifacts -Filter '*.exe' | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          } | Set-Content windows-release-artifacts/SHA256SUMS.txt -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Open-Memo-Windows
+          path: windows-release-artifacts/*
+          if-no-files-found: error
+      - name: Publish Windows downloads without changing the Mac latest release
+        if: inputs.publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-Gh([string[]]$Arguments) {
+            & gh @Arguments
+            if ($LASTEXITCODE) { throw "GitHub publishing command failed ($LASTEXITCODE)." }
+          }
+          $version = node -p "require('./package.json').version"
+          $sha = git rev-parse HEAD
+          $tag = "windows-v$version"
+          $notes = "Windows 11 x64. Nemotron streaming, local punctuation/capitalization, and Whisper Base fallback are included. Source: $sha. Cleaned mode and automatic updates are not available on Windows."
+          $notes | Set-Content windows-release-notes.txt -Encoding utf8
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            Invoke-Gh @('release', 'create', $tag, '--target', $sha, '--title', "Windows $version", '--notes-file', 'windows-release-notes.txt', '--latest=false')
+          } else {
+            # Versioned Windows releases are immutable; do not replace a published installer.
+            throw "Windows $version already exists. Increment the app version to publish another build."
+          }
+          Invoke-Gh @('release', 'upload', $tag, "windows-release-artifacts/Open-Memo-$version-windows-x64-setup.exe", 'windows-release-artifacts/SHA256SUMS.txt')
+          gh release view windows-latest *> $null
+          if ($LASTEXITCODE -ne 0) {
+            Invoke-Gh @('release', 'create', 'windows-latest', '--target', $sha, '--title', "Windows $version", '--notes-file', 'windows-release-notes.txt', '--latest=false')
+          } else {
+            Invoke-Gh @('api', '--method', 'PATCH', "repos/$env:GITHUB_REPOSITORY/git/refs/tags/windows-latest", '-f', "sha=$sha", '-F', 'force=true')
+            Invoke-Gh @('release', 'edit', 'windows-latest', '--title', "Windows $version", '--notes-file', 'windows-release-notes.txt', '--latest=false')
+          }
+          Invoke-Gh @('release', 'upload', 'windows-latest', 'windows-release-artifacts/Open-Memo-latest-windows-x64-setup.exe', 'windows-release-artifacts/SHA256SUMS.txt', '--clobber')

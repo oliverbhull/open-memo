@@ -1,4 +1,5 @@
 export interface AppUsage {
+  appPath?: string;
   appName: string;
   bundleId?: string;
   words: number;
@@ -35,6 +36,7 @@ export function groupApplicationUsage(records: AppUsage[]): GroupedAppUsage[] {
     const existing = apps.get(key);
     apps.set(key, {
       key,
+      ...(existing?.appPath || record.appPath ? { appPath: existing?.appPath || record.appPath } : {}),
       appName: existing?.appName ?? record.appName,
       bundleId: existing?.bundleId ?? bundleId,
       words: (existing?.words ?? 0) + record.words,

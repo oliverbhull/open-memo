@@ -1,22 +1,35 @@
-name: Windows preview installer
+name: Windows installer check
 on:
   push:
     branches: [codex/windows-preview]
+  pull_request:
+    paths:
+      - 'electron/**'
+      - 'sidecars/dictation/**'
+      - 'scripts/**'
+      - 'config/**'
+      - 'package*.json'
+      - '.github/workflows/windows*.yml'
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   windows:
     runs-on: windows-2022
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22.12.0'
+          node-version: '24'
           cache: npm
       - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - run: npm ci
+      - name: Check shared source and platform contracts
+        run: npm run check:windows
       - name: Test native dictation
         run: cargo test --locked --manifest-path sidecars/dictation/Cargo.toml
       - name: Build installer and test bundled speech model

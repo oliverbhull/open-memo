@@ -1,3 +1,4 @@
+import { app } from 'electron';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,7 +7,8 @@ import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger';
 import { resolveModelPackPath } from './ModelPackService';
 
-const FORMAT_TIMEOUT_MS = 150;
+const FORMAT_TIMEOUT_MS = process.platform === 'win32' ? 500 : 150;
+const WORKER_READY_TIMEOUT_MS = 30_000;
 
 interface WorkerResponse {
   id: string;
@@ -27,6 +29,21 @@ interface WorkerLaunch {
 }
 
 function punctuationWorkerLaunch(): WorkerLaunch {
+  if (process.platform === 'win32') {
+    if (process.env.MEMO_PNC_ENGINE && process.env.MEMO_PNC_ENGINE !== 'edge') {
+      throw new Error(`unsupported Windows PnC engine: ${process.env.MEMO_PNC_ENGINE}`);
+    }
+    const bundle = process.env.MEMO_EDGE_PNC_DIR || (app.isPackaged
+      ? path.join(process.resourcesPath, 'pnc') : path.join(process.cwd(), '.build', 'windows', 'pnc'));
+    const command = path.join(bundle, 'python', 'python.exe');
+    const worker = path.join(bundle, 'worker.py');
+    const model = path.join(bundle, 'model.int8.onnx');
+    const vocabulary = path.join(bundle, 'bpe.vocab');
+    for (const file of [command, worker, model, vocabulary]) {
+      if (!fs.existsSync(file)) throw new Error(`Windows punctuation resource missing: ${file}`);
+    }
+    return { command, args: [worker, '--model-path', model, '--vocabulary-path', vocabulary, '--worker'], label: 'Edge-Punct-Casing' };
+  }
   if (!process.env.MEMO_PNC_ENGINE || process.env.MEMO_PNC_ENGINE === 'distilbert') {
     const bundle = resolveModelPackPath('pnc');
     const compiled = path.join(bundle, 'compiled');
@@ -62,30 +79,44 @@ function punctuationWorkerLaunch(): WorkerLaunch {
 export class PunctuationService {
   private process: ChildProcessWithoutNullStreams | null = null;
   private ready = false;
+  private workerStderr = '';
+  private readyTimer: NodeJS.Timeout | null = null;
   private pending = new Map<string, PendingRequest>();
 
   start(): void {
-    if (process.platform === 'win32' || this.process) return;
+    if (this.process) return;
     try {
       const launch = punctuationWorkerLaunch();
-      this.process = spawn(launch.command, launch.args, { stdio: ['pipe', 'pipe', 'pipe'] });
+      this.workerStderr = '';
+      this.process = spawn(launch.command, launch.args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
 
       const child = this.process;
+      if (process.platform === 'win32') {
+        this.readyTimer = setTimeout(() => {
+          if (this.process === child && !this.ready) this.handleExit(new Error('punctuation worker readiness timed out'));
+        }, WORKER_READY_TIMEOUT_MS);
+        this.readyTimer.unref();
+      }
       const lines = readline.createInterface({ input: child.stdout });
       lines.on('line', (line) => { if (this.process === child) this.handleLine(line, launch.label); });
-      this.process.stderr.on('data', (chunk) => logger.debug(`[PunctuationService] ${String(chunk).trim()}`));
+      this.process.stderr.on('data', (chunk) => {
+        if (this.process !== child) return;
+        this.workerStderr = (this.workerStderr + String(chunk)).slice(-4000);
+        logger.debug(`[PunctuationService] ${String(chunk).trim()}`);
+      });
       child.stdin.on('error', (error) => { if (this.process === child) this.handleExit(error); });
       child.once('error', (error) => { if (this.process === child) this.handleExit(error); });
       child.once('exit', (code, signal) => {
         if (this.process === child) this.handleExit(new Error(`worker exited (${code ?? signal})`));
       });
     } catch (error) {
-      logger.warn('[PunctuationService] Unavailable; using raw conomo text:', error);
+      logger.warn('[PunctuationService] Unavailable; using raw text:', error);
       this.process = null;
     }
   }
 
   stop(): void {
+    this.clearReadyTimer();
     this.ready = false;
     this.process?.kill();
     this.process = null;
@@ -119,6 +150,7 @@ export class PunctuationService {
 
   private handleLine(line: string, label: string): void {
     if (line === 'READY') {
+      this.clearReadyTimer();
       this.ready = true;
       logger.info(`[PunctuationService] ${label} punctuation and capitalization ready`);
       return;
@@ -138,12 +170,18 @@ export class PunctuationService {
   }
 
   private handleExit(error: Error): void {
-    if (this.process) logger.warn('[PunctuationService] Worker stopped; using raw text:', error);
+    this.clearReadyTimer();
+    if (this.process) logger.warn('[PunctuationService] Worker stopped; using raw text:', error, this.workerStderr);
     this.ready = false;
     const child = this.process;
     this.process = null;
     child?.kill();
     this.resolvePending();
+  }
+
+  private clearReadyTimer(): void {
+    if (this.readyTimer) clearTimeout(this.readyTimer);
+    this.readyTimer = null;
   }
 
   private resolvePending(): void {

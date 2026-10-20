@@ -341,7 +341,7 @@ function App() {
     <ThemeProvider>
       <ErrorBoundary>
         <GlassContainer>
-          <div className="title-bar app-title-bar" style={{ paddingLeft: '78px' }}
+          <div className="title-bar app-title-bar" style={{ paddingLeft: window.electronAPI.platform === 'win32' ? '12px' : '78px' }}
             onKeyDown={event => { if (showSettings && event.key === 'Escape') setShowSettings(false); }}>
             <div className="title-bar-right">
               {appUpdate.state === 'downloading' ? (

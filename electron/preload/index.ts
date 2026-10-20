@@ -1,8 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
   AppUpdateStatus,
+  AsrModelId,
   CleanupState,
   DictationReadiness,
+  DictationDelivery,
+  DictationLatency,
   DeviceSyncStatus,
   ElectronAPI,
   MemoSttError,
@@ -38,6 +41,16 @@ const errorHandler = (_event: Electron.IpcRendererEvent, error: MemoSttError) =>
 // the ipcRenderer without exposing the entire object
 const electronAPI = {
   platform: process.platform,
+  onDictationLatency: (callback: (data: DictationLatency) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: DictationLatency) => callback(data);
+    ipcRenderer.on('dictation:latency', listener);
+    return () => ipcRenderer.removeListener('dictation:latency', listener);
+  },
+  onDictationDelivery: (callback: (data: DictationDelivery) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: DictationDelivery) => callback(data);
+    ipcRenderer.on('dictation:delivery', handler);
+    return () => ipcRenderer.removeListener('dictation:delivery', handler);
+  },
   // Transcription events
   onTranscription: (callback: (data: TranscriptionData) => void) => {
     // Remove existing listener to prevent duplicates, then re-add if needed
@@ -196,6 +209,7 @@ const electronAPI = {
 
   interface: {
     getSettings: (): Promise<{
+      asrModel: AsrModelId;
       hotkey: string;
       lockHotkey: string;
       sayEnterToPressEnter: boolean;
@@ -237,6 +251,7 @@ const electronAPI = {
       return ipcRenderer.invoke('settings:setSaveAudio', enabled);
     },
     setExperimentalEmailFormatting: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setExperimentalEmailFormatting', enabled),
+    setWindowsSpeechModel: (model: 'whisper-base.en-q5_1' | 'nemotron-streaming'): Promise<void> => ipcRenderer.invoke('settings:setWindowsSpeechModel', model),
     setWritingMode: (mode: WritingMode): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setWritingMode', mode);
     },
@@ -274,8 +289,8 @@ const electronAPI = {
   },
   openEmailThread: (url: string): Promise<void> => ipcRenderer.invoke('email:openThread', url),
   appIcons: {
-    get: (appName: string, bundleId?: string, websiteDomain?: string): Promise<string | null> => (
-      ipcRenderer.invoke('app-icon:get', appName, bundleId, websiteDomain)
+    get: (appName: string, bundleId?: string, websiteDomain?: string, appPath?: string): Promise<string | null> => (
+      ipcRenderer.invoke('app-icon:get', appName, bundleId, websiteDomain, appPath)
     ),
   },
   onOpenSettings: (callback: () => void) => {

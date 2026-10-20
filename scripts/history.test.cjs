@@ -19,11 +19,13 @@ function load(relative, mocks = {}) {
 
 test('main-owned history survives reopening with delivered text and original provenance', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'memo-history-'));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const databases = [];
+  t.after(async () => { await Promise.all(databases.map(database => database.close())); fs.rmSync(directory, { recursive: true, force: true }); });
   const { MemoDatabaseService } = load('electron/main/services/MemoDatabaseService.ts');
   const { createDictationEntry } = load('electron/shared/dictationEntry.ts');
   const options = { databasePath: path.join(directory, 'history.sqlite3') };
   const database = new MemoDatabaseService(options);
+  databases.push(database);
   const entry = createDictationEntry({ id: 'dictation-1', timestamp: 1000,
     processedText: 'Send the message.', rawTranscript: 'send the message enter',
     wasProcessedByLLM: true,
@@ -32,6 +34,7 @@ test('main-owned history survives reopening with delivered text and original pro
   }, 'desktop-test');
   await database.saveEntry(entry);
   const reopened = new MemoDatabaseService(options);
+  databases.push(reopened);
   const stored = await reopened.getEntry(entry.id);
   assert.equal(stored.text, 'Send the message.');
   assert.equal(stored.context.rawTranscript, 'send the message enter');
@@ -85,9 +88,11 @@ test('reconciled supermicrophone recordings retain chronological feed order', as
 
 test('database history is ordered by creation time rather than later updates', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'memo-order-'));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const databases = [];
+  t.after(async () => { await Promise.all(databases.map(database => database.close())); fs.rmSync(directory, { recursive: true, force: true }); });
   const { MemoDatabaseService } = load('electron/main/services/MemoDatabaseService.ts');
   const database = new MemoDatabaseService({ databasePath: path.join(directory, 'history.sqlite3') });
+  databases.push(database);
   await database.saveEntry({ id: 'new', deviceId: 'test', text: 'New.', createdAt: 3000, updatedAt: 3000, context: {} });
   await database.saveEntry({ id: 'old-edited', deviceId: 'test', text: 'Old.', createdAt: 1000, updatedAt: 4000, context: {} });
   assert.deepEqual((await database.getEntries(10, 0)).map(entry => entry.id), ['new', 'old-edited']);

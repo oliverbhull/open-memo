@@ -1,8 +1,9 @@
 """Subprocess-only lifecycle checks; never inspect or signal running Memo apps."""
-import fcntl
 import importlib.util
 import json
 import os
+if os.name == 'posix':
+    import fcntl
 from pathlib import Path
 import signal
 import subprocess
@@ -77,6 +78,7 @@ sys.stdin.readline()
                     pass
 
 
+@unittest.skipUnless(os.name == 'posix', 'device-sync worker uses POSIX flock')
 class BatchDurabilityTests(unittest.TestCase):
     def test_manifest_failure_is_retryable_and_completed_rows_repair_manifest(self):
         spec = importlib.util.spec_from_file_location('device_sync', WORKER)
@@ -108,6 +110,7 @@ class BatchDurabilityTests(unittest.TestCase):
                 connection.close()
 
 
+@unittest.skipUnless(os.name == 'posix', 'firmware updater uses POSIX flock')
 class FirmwareOwnershipTests(unittest.TestCase):
     def test_sync_contention_fails_before_flash_and_releases_lock_on_failure(self):
         spec = importlib.util.spec_from_file_location('firmware_update', WORKER.with_name('firmware_update.py'))

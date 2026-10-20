@@ -51,7 +51,8 @@
     "test": "node --test scripts/*.test.cjs && python3 scripts/python/test_cleanup_completion.py && python3 scripts/python/test_device_sync_lifecycle.py && python3 scripts/python/transcript-cleanup-worker.py --self-test",
     "build:browser-context": "bash scripts/shell/build-browser-context.sh",
     "build:windows:backends": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/build-backends.ps1",
-    "dist:win": "npm run build:windows:backends && npm run typecheck && npm run build:windows:ts && npm run build:renderer && electron-builder --config config/electron-builder.windows.cjs --win nsis --x64 --publish never",
+    "check:windows": "npm run typecheck && node scripts/test-windows.cjs",
+    "dist:win": "npm run build:windows:backends && npm run typecheck && npm run build:windows:ts && npm run build:renderer && electron-builder --config config/electron-builder.windows.cjs --win nsis --x64 --publish never && node scripts/verify-windows-package.cjs",
     "build:main:js": "esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs",
     "build:windows:ts": "npm run build:main:js && npm run build:preload && npm run build:overlay-preload"
   },

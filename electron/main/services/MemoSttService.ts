@@ -13,6 +13,7 @@ import type { DictationReadiness, TranscriptionData as SharedTranscriptionData }
 import type { RecordingHotkeyCapture } from '../../shared/recordingHotkey';
 
 export interface AppContext {
+  appPath?: string;
   appName: string;
   windowTitle: string;
   bundleId?: string;
@@ -29,6 +30,7 @@ export interface TranscriptionData extends SharedTranscriptionData {
   wasProcessedByLLM: boolean;
   appContext?: AppContext;
   audioCapture?: CapturedAudio;
+  finalReceivedAtMs?: number;
 }
 
 export type MemoSttStatus = 'stopped' | 'running' | 'error';
@@ -342,7 +344,7 @@ export class MemoSttService extends EventEmitter {
         MEMO_HANDS_FREE: handsFreeMode ? '1' : '0',
       };
       if (process.platform === 'win32') {
-        configureWindowsSpeech(env);
+        configureWindowsSpeech(env, settings.asrModel);
       } else {
         env.MEMO_ASR_BACKEND = 'conomo';
 
@@ -845,6 +847,7 @@ export class MemoSttService extends EventEmitter {
       return;
     }
 
+    const finalReceivedAtMs = performance.now();
     try {
       const jsonStr = line.slice(6).trim(); // Remove "FINAL:" prefix
       const transcription: TranscriptionData = JSON.parse(jsonStr);
@@ -873,6 +876,7 @@ export class MemoSttService extends EventEmitter {
       const audioCapture = this.takePendingAudio();
       this.emit('transcription', {
         ...transcription,
+        finalReceivedAtMs,
         processedText: text,
         ...(audioCapture ? { audioCapture } : {}),
       });

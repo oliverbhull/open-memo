@@ -12,43 +12,75 @@ const TARGET_SAMPLE_RATE: u32 = 16_000;
 const WORKER_READY_TIMEOUT: Duration = Duration::from_secs(120);
 const TRANSCRIPTION_TIMEOUT: Duration = Duration::from_secs(120);
 
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+fn validate_windows_cpu_features(features: [bool; 4]) -> Result<()> {
+    let required = ["AVX2", "FMA", "F16C", "BMI2"];
+    let missing: Vec<_> = required.into_iter().zip(features).filter_map(|(name, supported)| (!supported).then_some(name)).collect();
+    if missing.is_empty() { return Ok(()); }
+    Err(Error(format!(
+        "This Windows build of Memo requires an x86-64-v3 CPU with AVX2, FMA, F16C and BMI2 support. Missing CPU features: {}. This computer cannot run the bundled speech models.",
+        missing.join(", ")
+    )))
+}
+
 pub enum TranscriptionEngine {
     Worker(WorkerEngine),
+    Nemotron(crate::nemotron_engine::NemotronEngine),
     Whisper(crate::whisper_engine::WhisperEngine),
 }
 
 impl TranscriptionEngine {
     pub fn from_env(input_sample_rate: u32) -> Result<Self> {
-        match env::var("MEMO_ASR_BACKEND")
+        let backend = env::var("MEMO_ASR_BACKEND")
             .unwrap_or_else(|_| "conomo".to_string())
-            .to_lowercase()
-            .as_str()
-        {
+            .to_lowercase();
+        #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+        if matches!(backend.as_str(), "whisper" | "nemotron") {
+            validate_windows_cpu_features([
+                std::is_x86_feature_detected!("avx2"),
+                std::is_x86_feature_detected!("fma"),
+                std::is_x86_feature_detected!("f16c"),
+                std::is_x86_feature_detected!("bmi2"),
+            ])?;
+        }
+        match backend.as_str() {
+            "nemotron" => Ok(Self::Nemotron(crate::nemotron_engine::NemotronEngine::new(
+                input_sample_rate,
+            )?)),
             "conomo" => Ok(Self::Worker(WorkerEngine::new(input_sample_rate)?)),
-            "whisper" => Ok(Self::Whisper(crate::whisper_engine::WhisperEngine::new(input_sample_rate)?)),
+            "whisper" => Ok(Self::Whisper(crate::whisper_engine::WhisperEngine::new(
+                input_sample_rate,
+            )?)),
             backend => Err(Error(format!(
-                "Unknown ASR backend {backend:?}; expected conomo or whisper"
+                "Unknown ASR backend {backend:?}; expected conomo, whisper, or nemotron"
             ))),
         }
     }
 
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self) -> String {
         match self {
-            Self::Worker(_) => "conomo",
-            Self::Whisper(_) => "whisper-small.en-q5_1",
+            Self::Worker(_) => "conomo".to_string(),
+            Self::Nemotron(engine) => engine.name(),
+            Self::Whisper(engine) => engine.model_name(),
         }
     }
 
     pub fn is_worker_backend(&self) -> bool {
-        matches!(self, Self::Worker(_))
+        matches!(self, Self::Worker(_) | Self::Nemotron(_))
     }
 
-    pub fn warmup(&self) -> Result<()> {
-        match self { Self::Worker(_) => Ok(()), Self::Whisper(engine) => engine.warmup() }
+    pub fn warmup(&mut self) -> Result<()> {
+        match self {
+            Self::Worker(_) => Ok(()),
+            Self::Nemotron(engine) => engine.warmup(),
+            Self::Whisper(engine) => engine.warmup(),
+        }
     }
 
     pub fn set_prompt(&mut self, prompt: Option<String>) {
-        let Self::Worker(engine) = self else { return; };
+        let Self::Worker(engine) = self else {
+            return;
+        };
         if env::var("MEMO_CONTEXTUAL_VOCAB").as_deref() == Ok("1") {
             if let Err(error) = engine.set_context(prompt) {
                 eprintln!("contextual vocabulary update failed: {error}");
@@ -57,19 +89,35 @@ impl TranscriptionEngine {
     }
 
     pub fn begin_live_stream(&mut self) -> Result<()> {
-        match self { Self::Worker(engine) => engine.begin_live_stream(), Self::Whisper(_) => Ok(()) }
+        match self {
+            Self::Worker(engine) => engine.begin_live_stream(),
+            Self::Nemotron(engine) => engine.begin(),
+            Self::Whisper(_) => Ok(()),
+        }
     }
 
     pub fn feed_live_audio(&mut self, samples: &[i16]) -> Result<()> {
-        match self { Self::Worker(engine) => engine.feed_live_audio(samples), Self::Whisper(_) => Ok(()) }
+        match self {
+            Self::Worker(engine) => engine.feed_live_audio(samples),
+            Self::Nemotron(engine) => engine.feed(samples),
+            Self::Whisper(_) => Ok(()),
+        }
     }
 
     pub fn abort_live_stream(&mut self) {
-        if let Self::Worker(engine) = self { engine.abort_live_stream(); }
+        match self {
+            Self::Worker(engine) => engine.abort_live_stream(),
+            Self::Nemotron(engine) => engine.abort(),
+            _ => {}
+        }
     }
 
     pub fn transcribe(&mut self, samples: &[i16]) -> Result<String> {
-        match self { Self::Worker(engine) => engine.finish_transcription(samples), Self::Whisper(engine) => engine.transcribe(samples) }
+        match self {
+            Self::Worker(engine) => engine.finish_transcription(samples),
+            Self::Nemotron(engine) => engine.transcribe(samples),
+            Self::Whisper(engine) => engine.transcribe(samples),
+        }
     }
 }
 
@@ -356,6 +404,18 @@ fn required_path(name: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    #[test]
+    fn unsupported_windows_cpu_reports_missing_speech_requirements() {
+        assert!(validate_windows_cpu_features([true; 4]).is_ok());
+        for (index, name) in ["AVX2", "FMA", "F16C", "BMI2"].iter().enumerate() {
+            let mut supported = [true; 4];
+            supported[index] = false;
+            let error = validate_windows_cpu_features(supported).err().expect("Unsupported CPU must fail before loading models");
+            assert!(error.to_string().contains(&format!("Missing CPU features: {name}.")));
+        }
+    }
 
     #[cfg(unix)]
     #[test]

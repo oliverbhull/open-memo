@@ -6,7 +6,7 @@ const { buildSync } = require('esbuild');
 
 function load(run) {
   const entry = path.resolve('electron/main/services/checkedPaste.ts');
-  const js = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', write: false, external: ['electron'] }).outputFiles[0].text;
+  const js = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', write: false, define: { 'process.platform': '"darwin"' }, external: ['electron'] }).outputFiles[0].text;
   const loaded = new Module(entry, module), original = Module._load;
   Module._load = (name, ...args) => name === 'electron' ? { app: { isPackaged: false } } : name === 'node:child_process' ? { execFileSync: run } : original(name, ...args);
   try { loaded._compile(js, entry); } finally { Module._load = original; }

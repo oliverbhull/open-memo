@@ -14,6 +14,7 @@ export interface EmailReplyContext {
 }
 
 export interface AppContext {
+  appPath?: string;
   appName: string;
   windowTitle: string;
   websiteDomain?: string;
@@ -62,6 +63,24 @@ export interface TranscriptionData {
 export interface MemoSttError {
   message: string;
   name: string;
+}
+
+export interface DictationLatency {
+  recordingId: string;
+  backend: string;
+  releaseToTextMs: number;
+  releaseToFinalMs?: number;
+  finalToTextMs?: number;
+  audioDurationMs?: number;
+  fallbackUsed: boolean;
+  origin: 'native-release' | 'recorder-stop-received';
+  delivery: string;
+  recordedAt: string;
+}
+
+export interface DictationDelivery {
+  text: string;
+  delivery: string;
 }
 
 export interface DictationReadiness {
@@ -117,7 +136,7 @@ export interface ToastData {
   duration: number;
 }
 
-export type AsrModelId = 'conomo' | 'whisper-small.en-q5_1';
+export type AsrModelId = 'conomo' | 'whisper-small.en-q5_1' | 'whisper-base.en-q5_1' | 'whisper-custom' | 'nemotron-streaming';
 
 export type WritingMode = 'as-spoken' | 'clean';
 
@@ -144,6 +163,8 @@ export interface MicrophoneInputState {
 export interface ElectronAPI {
   platform: string;
   onTranscription(callback: (data: TranscriptionData) => void): void;
+  onDictationLatency(callback: (data: DictationLatency) => void): () => void;
+  onDictationDelivery(callback: (data: DictationDelivery) => void): () => void;
   removeTranscriptionListener(): void;
   listUsbTranscripts(): Promise<TranscriptionData[]>;
   entries: {
@@ -187,7 +208,9 @@ export interface ElectronAPI {
   isUserOnboarded(userName: string): Promise<boolean>;
   markUserOnboarded(userName: string): Promise<void>;
   interface: {
+    setWindowsSpeechModel(model: 'whisper-base.en-q5_1' | 'nemotron-streaming'): Promise<void>;
     getSettings(): Promise<{
+      asrModel: AsrModelId;
       hotkey: string;
       lockHotkey: string;
       sayEnterToPressEnter: boolean;
@@ -228,7 +251,7 @@ export interface ElectronAPI {
   };
   openEmailThread(url: string): Promise<void>;
   appIcons: {
-    get(appName: string, bundleId?: string, websiteDomain?: string): Promise<string | null>;
+    get(appName: string, bundleId?: string, websiteDomain?: string, appPath?: string): Promise<string | null>;
   };
   onOpenSettings(callback: () => void): () => void;
   exportJson(document: TranscriptionExportDocument): Promise<{

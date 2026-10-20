@@ -100,7 +100,7 @@ test('firmware updater shares sync lock and preserves owner-conflict diagnostics
   const { service, children } = setup();
   const update = service.runFirmwareUpdater({ path: '/test.uf2', sha256: 'abc', firmwareVersion: '1.0' }, 'device');
   const child = children[0];
-  assert.equal(child.args[child.args.indexOf('--lock') + 1], '/test-memo/device-sync.lock');
+  assert.equal(child.args[child.args.indexOf('--lock') + 1], path.join('/test-memo', 'device-sync.lock'));
   assert.equal(child.args[child.args.indexOf('--parent-pid') + 1], String(process.pid));
   child.stdout.write(JSON.stringify({ state: 'update-error', error: 'Another Memo app is syncing' }) + '\n');
   child.exitCode = 1;

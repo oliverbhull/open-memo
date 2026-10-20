@@ -1,5 +1,6 @@
 import { app, nativeImage } from 'electron';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { windowsDictationPath } from './windowsRuntime';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -37,6 +38,11 @@ function bounded(value: unknown, maximum: number): string | undefined {
   return normalized || undefined;
 }
 
+function windowsExecutable(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.length > 32768 || !/^[a-z]:\\/i.test(value) || !/\.exe$/i.test(value) || value.includes('\0')) return undefined;
+  return path.win32.normalize(value);
+}
+
 function spotlightLiteral(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
@@ -44,6 +50,58 @@ function spotlightLiteral(value: string): string {
 export class ApplicationIconService {
   private readonly identities = new Map<string, ApplicationIdentity>();
   private readonly iconDataUrls = new Map<string, string | null>();
+  private readonly windowsPaths = new Map<string, Promise<string | undefined>>();
+
+  private packagedWindowsIcon(executable: string): Electron.NativeImage | null {
+    if (!/\\WindowsApps\\/i.test(executable)) return null;
+    try {
+      let directory = path.win32.dirname(executable);
+      for (let depth = 0; depth < 6; depth++) {
+        const manifest = path.win32.join(directory, 'AppxManifest.xml');
+        if (fs.existsSync(manifest)) {
+          if (fs.statSync(manifest).size > 1024 * 1024) return null;
+          const xml = fs.readFileSync(manifest, 'utf8');
+          const decode = (value: string) => value.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+          for (const application of xml.matchAll(/<Application\b([^>]*)>([\s\S]*?)<\/Application>/g)) {
+            const relative = /\bExecutable=["']([^"']+)["']/.exec(application[1]!)?.[1];
+            if (!relative || path.win32.resolve(directory, decode(relative)).toLowerCase() !== executable.toLowerCase()) continue;
+            const logo = /\bSquare44x44Logo=["']([^"']+)["']/.exec(application[2]!)?.[1];
+            if (!logo) return null;
+            const artwork = path.win32.resolve(directory, decode(logo));
+            const inside = path.win32.relative(directory, artwork);
+            if (inside.startsWith('..') || path.win32.isAbsolute(inside) || !/\.png$/i.test(artwork)) return null;
+            const stem = artwork.slice(0, -4);
+            for (const candidate of [`${stem}.targetsize-64_altform-unplated.png`, artwork, `${stem}.scale-200.png`]) {
+              if (!fs.existsSync(candidate)) continue;
+              const icon = nativeImage.createFromPath(candidate);
+              if (!icon.isEmpty()) return icon;
+            }
+          }
+          return null;
+        }
+        const parent = path.win32.dirname(directory);
+        if (parent === directory || path.win32.basename(parent).toLowerCase() === 'windowsapps') break;
+        directory = parent;
+      }
+    } catch { /* Fall back to Windows' executable icon when package artwork is unavailable. */ }
+    return null;
+  }
+
+  private resolveWindowsPath(name: string): Promise<string | undefined> {
+    const key = name.toLowerCase();
+    let request = this.windowsPaths.get(key);
+    if (!request) {
+      request = new Promise(resolve => {
+        execFile(windowsDictationPath(), ['--resolve-app', name], { encoding: 'utf8', timeout: 1500, windowsHide: true, maxBuffer: 64 * 1024 }, (error, stdout) => {
+          if (error) return resolve(undefined);
+          try { resolve(windowsExecutable(JSON.parse(stdout).appPath)); }
+          catch { resolve(undefined); }
+        });
+      });
+      this.windowsPaths.set(key, request);
+    }
+    return request;
+  }
 
   enrichContext(context: AppContext | undefined): AppContext | undefined {
     if (!context) return undefined;
@@ -53,8 +111,11 @@ export class ApplicationIconService {
     // Decoration must not block delivery or history on an AppleScript lookup.
     // Resolve an icon lazily when the renderer requests one.
     const bundleId = bounded(context.bundleId, 300);
+    const appPath = process.platform === 'win32' ? windowsExecutable(context.appPath) : undefined;
+    if (appPath) this.identities.set(appName.toLowerCase(), { appPath });
     return {
       appName,
+      ...(appPath ? { appPath } : {}),
       windowTitle: bounded(context.windowTitle, 1_000) || '',
       ...(context.emailReply ? { emailReply: context.emailReply } : {}),
       ...(bundleId ? { bundleId } : {}),
@@ -105,7 +166,25 @@ export class ApplicationIconService {
     } catch { return null; }
   }
 
-  async getIconDataUrl(appNameValue: unknown, bundleIdValue: unknown, websiteDomainValue?: unknown): Promise<string | null> {
+  async getIconDataUrl(appNameValue: unknown, bundleIdValue: unknown, websiteDomainValue?: unknown, appPathValue?: unknown): Promise<string | null> {
+    if (process.platform === 'win32') {
+      const name = bounded(appNameValue, 200);
+      if (appPathValue !== undefined && !windowsExecutable(appPathValue)) return null;
+      const executable = windowsExecutable(appPathValue)
+        ?? (name === 'Memo' ? process.execPath : name ? this.identities.get(name.toLowerCase())?.appPath : undefined)
+        ?? (name && name !== 'Unknown' ? await this.resolveWindowsPath(name) : undefined);
+      if (!executable || !fs.existsSync(executable)) return null;
+      const key = `win:${executable.toLowerCase()}`;
+      if (this.iconDataUrls.has(key)) return this.iconDataUrls.get(key) ?? null;
+      try {
+        const icon = this.packagedWindowsIcon(executable) ?? await app.getFileIcon(executable, { size: 'normal' });
+        const result = icon.isEmpty() ? null : icon.toDataURL();
+        this.iconDataUrls.set(key, result);
+        return result;
+      } catch {
+        return null;
+      }
+    }
     const domain = normalizeWebsiteDomain(websiteDomainValue);
     if (domain && typeof bundleIdValue === 'string' && BROWSER_BUNDLE_IDS.has(bundleIdValue)) {
       let request = this.websiteIcons.get(domain);

@@ -1,0 +1,11 @@
+Licensed by NVIDIA Corporation under the NVIDIA Open Model License
+
+Model: nvidia/nemotron-speech-streaming-en-0.6b
+Revision: ebe59e5a817142986528bbbee5dba8db7b38ed50
+Artifact: nemotron-speech-streaming-en-0.6b.q8_0.gguf
+Source: https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b
+
+Memo bundles the upstream quantized model unchanged. The accompanying
+NVIDIA-Open-Model-License.html contains the applicable model license.
+The NeMo-Speech.cpp runtime and its dependencies have separate notices
+under licenses/nemo-speech/.

@@ -7,6 +7,8 @@ import { buildTranscriptionExport } from '../services/transcriptionExport';
 import { DEFAULT_RECORDING_HOTKEY, normalizeRecordingHotkey, recordingHotkeyLabel, recordingHotkeyParts } from '../../../shared/recordingHotkey';
 import type {
   CleanupState,
+  AsrModelId,
+  DictationLatency,
   MicrophoneInputState,
   PhraseReplacementRule,
   WritingMode,
@@ -87,6 +89,10 @@ function toLocalDateTime(timestamp: number): string {
 
 export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const { primary, setPrimary } = useTheme();
+  const [speechModel, setSpeechModel] = useState<AsrModelId>('whisper-base.en-q5_1');
+  const [speechModelSaving, setSpeechModelSaving] = useState(false);
+  const [speechModelError, setSpeechModelError] = useState<string | null>(null);
+  const [latestLatency, setLatestLatency] = useState<DictationLatency | null>(null);
   const [handsFreeMode, setHandsFreeMode] = useState(false);
   const [sayEnterToPressEnter, setSayEnterToPressEnter] = useState(false);
   const [startAtLogin, setStartAtLogin] = useState(false);
@@ -153,6 +159,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
   useEffect(() => {
     window.electronAPI.interface.getSettings().then((settings) => {
+      setSpeechModel(settings.asrModel);
       setRecordingHotkey(settings.hotkey ?? DEFAULT_RECORDING_HOTKEY);
       setLockHotkey(settings.lockHotkey ?? 'function+controlleft');
       setHotkeyLoaded(true);
@@ -169,6 +176,22 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       );
     }).catch(() => setHotkeyError('Could not load recording shortcuts. Reopen Settings to try again.'));
   }, []);
+
+  useEffect(() => window.electronAPI.onDictationLatency(setLatestLatency), []);
+
+  const changeSpeechModel = async (model: 'whisper-base.en-q5_1' | 'nemotron-streaming') => {
+    setSpeechModelSaving(true);
+    setSpeechModelError(null);
+    try {
+      await window.electronAPI.interface.setWindowsSpeechModel(model);
+      setSpeechModel(model);
+      setLatestLatency(null);
+    } catch (error) {
+      setSpeechModelError((error instanceof Error ? error.message : 'Could not change model.').replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ''));
+    } finally {
+      setSpeechModelSaving(false);
+    }
+  };
 
   const changeRecordingHotkey = async (next: string, kind: 'hotkey' | 'lockHotkey' = 'hotkey') => {
     if (hotkeySaving) return;
@@ -536,6 +559,20 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             </section>
             <section id="settings-panel-audio" className="settings-panel" aria-label="Audio" hidden={activeSection !== 'audio'}>
               <div className="settings-grid">
+                {window.electronAPI.platform === 'win32' && <section className="settings-tile settings-tile--wide" aria-label="Speech model">
+                  <h3>Speech model</h3>
+                  <p className="settings-help">Compare local models. Nemotron recognizes speech while you talk and falls back to Whisper Base if it fails.</p>
+                  <label className="settings-sr-only" htmlFor="windows-speech-model">Selected speech model</label>
+                  <select id="windows-speech-model" value={speechModel} disabled={speechModelSaving}
+                    onChange={event => void changeSpeechModel(event.target.value as 'whisper-base.en-q5_1' | 'nemotron-streaming')}>
+                    <option value="whisper-base.en-q5_1">Whisper Base — resident CPU</option>
+                    <option value="nemotron-streaming">Nemotron — streaming CPU (experimental)</option>
+                    {speechModel !== 'whisper-base.en-q5_1' && speechModel !== 'nemotron-streaming' && <option value={speechModel}>Current Whisper model</option>}
+                  </select>
+                  <p className="settings-help" role="status">{speechModelSaving ? 'Switching model…' : 'Selection applies to the next dictation. Models stay loaded between recordings.'}</p>
+                  {latestLatency && <p className="settings-help" role="status">Last dictation: {(latestLatency.releaseToTextMs / 1000).toFixed(2)} s from release to text · {latestLatency.backend}{latestLatency.fallbackUsed ? ' · Whisper Base fallback used' : ''}</p>}
+                  {speechModelError && <p className="settings-error" role="alert">{speechModelError}</p>}
+                </section>}
                 <section className="settings-tile settings-tile--wide" aria-labelledby="settings-input-title">
                   <h3 id="settings-input-title" className="settings-sr-only">Microphone</h3>
                   <p className="settings-help">Choose where Memo listens.</p>
@@ -564,7 +601,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 <section className="settings-tile settings-tile--wide" data-active={writingMode === 'clean'} aria-labelledby="settings-writing-title">
                   <div className="settings-tile__top"><span className="settings-badge">{writingMode === 'clean' ? 'Cleaned' : 'As spoken'}</span></div>
                   <h3 id="settings-writing-title" className="settings-sr-only">Writing mode</h3>
-                  <p className="settings-help">As spoken keeps your words. Cleaned adds punctuation and layout locally.</p>
+                  <p className="settings-help">{window.electronAPI.platform === 'win32' ? 'As spoken adds punctuation and capitalization locally while keeping your words.' : 'As spoken keeps your words. Cleaned adds punctuation and layout locally.'}</p>
                   <label className="settings-sr-only" htmlFor="writing-mode">Writing mode</label>
                   <select id="writing-mode" value={writingMode} disabled={cleanedRemoving}
                     onChange={async event => {
@@ -575,7 +612,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       if (!accepted) setWritingMode(previousMode);
                     }}>
                     <option value="as-spoken">As spoken — Included</option>
-                    <option value="clean" disabled={window.electronAPI.platform === 'win32'}>{window.electronAPI.platform === 'win32' ? 'Cleaned — unavailable on Windows' : 'Cleaned – 1.03 GB model download'}</option>
+                    {window.electronAPI.platform !== 'win32' && <option value="clean">Cleaned – 1.03 GB model download</option>}
                   </select>
                   {writingMode === 'clean' && <p role="status" className="settings-help">
                     {cleanupState.status === 'ready' ? 'Ready · runs locally' : cleanupState.status === 'downloading'
@@ -590,9 +627,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   </div>}
                   {cleanupActionError && <p role="alert" className="settings-error">{cleanupActionError}</p>}
                 </section>
-                <ToggleTile experimental title="Email formatting" checked={experimentalEmailFormatting} disabled={writingMode !== 'clean'}
+                {window.electronAPI.platform !== 'win32' && <ToggleTile experimental title="Email formatting" checked={experimentalEmailFormatting} disabled={writingMode !== 'clean'}
                   description="In Cleaned mode, formats Gmail and all Safari dictation as email using the app and URL locally."
-                  onChange={async enabled => { if (await window.electronAPI.interface.setExperimentalEmailFormatting(enabled)) setExperimentalEmailFormatting(enabled); }} />
+                  onChange={async enabled => { if (await window.electronAPI.interface.setExperimentalEmailFormatting(enabled)) setExperimentalEmailFormatting(enabled); }} />}
               </div>
             </section>
             <section id="settings-panel-vocabulary" className="settings-panel" aria-label="Vocabulary" hidden={activeSection !== 'vocabulary'}>
@@ -676,6 +713,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             <section id="settings-panel-general" className="settings-panel" aria-label="General" hidden={activeSection !== 'general'}>
               <div className="settings-grid">
                 <section className="settings-shortcuts" aria-label="Recording shortcuts" aria-busy={hotkeySaving}>
+                    {window.electronAPI.platform === 'win32' && <p className="settings-help">Choose a key or combination, such as Right Control or F8. Most Windows keyboards do not expose the Fn key to apps; F1–F12 are separate keys.</p>}
                   {([
                     { kind: 'hotkey', title: 'Push to talk', description: 'Hold to record. Release to transcribe.', value: recordingHotkey, fallback: DEFAULT_RECORDING_HOTKEY },
                     { kind: 'lockHotkey', title: 'Recording lock', description: 'Press to start recording. Press again to stop.', value: lockHotkey, fallback: 'function+controlleft' },

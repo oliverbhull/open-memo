@@ -1,71 +1,116 @@
-# Windows preview
+# Windows distribution
 
-Target: Windows 11 x64. Initial hardware: ThinkPad T490s, i5-8365U, 8 GB RAM.
-This port is implemented for testing, not yet verified on Windows or released.
+Target: Windows 11 x64. Local acceptance hardware: ThinkPad T490s, Intel
+Core i7-8665U, Intel UHD 620, 8 GB RAM. Windows ARM is not a supported target.
+The bundled CPU engines require x86-64-v3: AVX2, FMA, F16C and BMI2. Windows 11
+alone does not guarantee those features; some Pentium/Celeron CPUs do not qualify.
+English dictation is the current model scope.
 
-## Installation experience
+## What the installer includes
 
-The intended download is `Open-Memo-<version>-windows-x64-setup.exe`.
-The installer includes the app, native recorder, CPU-only whisper.cpp and
-`ggml-small.en-q5_1.bin` (190,098,681 bytes). Users need no development tools,
-model selection or second model download. Dictation runs offline.
-Hold Right Ctrl to dictate; release to transcribe. Left Shift + Right Ctrl
-locks recording until pressed again. Both shortcuts can be changed in Settings.
+- Resident, CPU-only Nemotron streaming, selected on a fresh install.
+- Resident local punctuation/capitalization with an independent Python runtime.
+- Whisper Base English q5_1 and its resident worker as automatic failure fallback
+  and an explicit Settings choice. A saved Base preference stays selected.
+- Recorder, Windows app/title capture, executable/package icons, clipboard
+  delivery, local history, native caption buttons, and dark Windows header.
+- Required runtime DLLs and third-party notices. Users do not install Python,
+  Visual Studio, GPU drivers, or separate models.
 
-## Build
+Hold Right Ctrl to dictate; release to insert text. Right Ctrl + Left Shift locks
+recording until pressed again. Shortcuts are editable. Most PC Fn keys are handled
+by keyboard firmware; F1–F12 are distinct, capturable keys.
 
-Use Windows x64 with Node 22.12+, Rust 1.88+, Git, CMake and Visual Studio 2022
-Build Tools with Desktop development with C++. These tools are build dependencies,
-not end-user dependencies.
+Windows As spoken adds punctuation/capitalization without generative rewriting.
+The existing Cleaned worker and its model pack use MLX and are Mac-only. Do not
+offer or download that package on Windows. A future Windows cleanup backend needs
+its own compatible checkpoint/runtime and latency, memory, and text-quality checks;
+acceptable performance on an 8 GB ThinkPad has not been demonstrated.
 
-```powershell
-npm ci
-npm run dist:win
-```
+Memo recorder/Bluetooth sync, browser URL/reply capture, and automatic updates are
+not currently supported on Windows. Browser window titles and application icons
+are supported. Elevated/protected targets can reject normal-user input injection;
+the clipboard remains available. Installing a newer Windows version preserves
+settings and history.
 
-The `Windows preview installer` GitHub workflow runs on pushes to
-`codex/windows-preview` and can also be triggered manually. It runs the native
-tests, builds the backends, transcribes the upstream JFK sample with the exact model,
-and uploads the installer as a workflow artifact. It does not publish a release.
-Signing requires the Windows signing credentials in the build environment; without
-them this is an unsigned test installer, not a signed public download.
+## Platform boundaries
 
-The build pins whisper.cpp v1.9.5 to commit
-`d1be6fde11ac6e0407606b4e42fe72d34add8037`. It checks the model SHA-256:
-`bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30`.
+The Windows builder config explicitly replaces the Mac resource list and Mac
+afterPack hook. Windows includes only dictation, Base, Nemotron, and PnC.
+windowsRuntime.ts selects these resources only in Windows launch paths.
+Native Windows foreground APIs are behind cfg(windows). Mac still uses Conomo;
+its build scripts, signing/notarization, release workflow, download URL, and updater
+metadata are unchanged.
 
-## Architecture and scope
+Shared renderer, delivery events, history service, and timing plumbing also changed.
+These are shared bug fixes; not every edit is Windows-only. SQLite uses Node's
+native implementation only on Windows; Mac retains its CLI. The new header,
+scrollbar style, and reduced icon sizes apply only to Windows. Windows PnC uses
+Edge; Mac retains its current worker, timeout and startup behavior.
+Tests explicitly simulate both platforms. Real Mac CI/build verification is still
+required before merge; it cannot be replaced by tests on this ThinkPad.
 
-The Electron interface, local history and transcription delivery flow are shared.
-`windowsRuntime.ts` selects Windows resources. The Rust recorder uses CPAL for
-microphones and rdev for shortcuts. Its Windows helper lists microphone names and
-pastes the clipboard into the foreground control; text never enters command arguments.
-The existing Mac runtime and release commands retain their own resources.
+## Reproducible build
 
-The Whisper adapter resamples audio to 16 kHz mono PCM and invokes the bundled CLI
-with English, four CPU threads and GPU disabled. It uses per-utterance temporary
-files, deletes them on normal success/failure, and kills inference after 120 seconds.
-A crash or forced process termination can leave temporary files. Warmup runs actual
-inference before reporting the model ready. Each utterance currently reloads the
-model; measure that latency on the ThinkPad before deciding whether to keep a
-persistent worker. No accuracy or real-time performance claim has been verified.
+Build on Windows x64 with Node 24, Rust 1.88+, Git, CMake, Python for tests, and
+Visual Studio 2022 Build Tools with Desktop development with C++:
 
-Windows uses Whisper's own punctuation. Cleaned mode, Memo recorder sync, browser
-context capture and automatic app updates are outside this preview. Install a newer
-Windows installer over the old version to update; settings/history are retained.
-OS input security can prevent pasting into applications running as administrator;
-clipboard text remains available for manual paste.
+    npm ci
+    npm run check:windows
+    npm run dist:win
 
-## Required Windows acceptance checks
+The backend script pins Whisper source, downloads Base with a SHA-256 check,
+verifies the CPU-only NeMo-Speech SDK and GGUF model, compiles both resident
+adapters, and stages DLLs. Punctuation uses official embedded Python and hashed
+Sherpa wheels/model from scripts/windows/pnc-dependencies.lock.json. No developer
+cache or global Python installation is used by the installed application.
+Build-time downloads require the network; installed dictation is offline.
 
-- Build/install on a clean Windows user account without development tools.
-- Complete microphone and first-dictation onboarding, then restart the app.
-- Dictate into Notepad and a browser field; test multiline text and optional Enter.
-- Test hold/release, lock/unlock, shortcut editing, and changing microphone.
-- Disconnect an explicitly selected microphone and confirm capture stays stopped.
-- Disconnect the internet after installation and dictate successfully.
-- Measure cold startup, transcription delay for 5/15/30-second speech, and peak RAM
-  while typical browser apps are open on the 8 GB ThinkPad.
-- Quit during transcription, reinstall/update, and confirm history survives.
+The build checks native DLL import closure, rejecting missing VC runtimes and
+GPU dependencies. Speech smoke tests run both workers repeatedly; a real
+punctuation smoke test checks packaged Python/model output.
 
-Do not advertise the Windows download as ready until these pass.
+## Download buttons and release isolation
+
+The README has independent links:
+
+- Mac: /releases/latest/download/Open-Memo-latest-arm64.dmg (unchanged).
+- Windows: /releases/download/windows-latest/Open-Memo-latest-windows-x64-setup.exe.
+
+The Windows installer-check workflow runs on relevant pull requests and uploads
+an artifact. It does not publish. The separate manual Windows release workflow
+defaults to build-only. Publishing requires an existing v-version source tag
+matching package.json, the commit on main with successful main CI, and
+WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD signing secrets.
+
+Public builds require code signing and a Valid Authenticode installer signature.
+The workflow publishes immutable windows-v-version releases, plus a moving
+windows-latest distribution tag with a stable filename and SHA256SUMS. Neither
+Windows release is marked GitHub's latest release, preserving the Mac latest
+pointer and updater. The moving tag changes only in the explicit publish action.
+No workflow has been triggered by this local work.
+
+The Windows button will not be live until the first signed Windows release is
+actually published. Merging, publishing, and local tests are separate actions.
+
+## Release acceptance gates
+
+Passing tests or running this development machine is not sufficient to call an
+installer production-verified. Before public publication:
+
+- Pass real Mac CI/build/signing checks for shared changes.
+- Build NSIS from staged verified resources and inspect its payload.
+- Install in a fresh standard Windows user/VM without developer tools or an
+  installed VC runtime; finish onboarding, quit, and relaunch.
+- Dictate into Notepad and a browser; check text, app/title/icons, hold/release,
+  lock/unlock, optional Enter, shortcut/microphone editing, and history persistence.
+- Disconnect networking after installation and verify speech and punctuation.
+- Exercise explicit Base selection and forced Nemotron failure with Base fallback.
+- Measure release-to-text delay and peak RAM for short/long speech with ordinary
+  applications open; confirm a busy machine stays responsive.
+- Test install-over-update/uninstall behavior, signature validation, and both
+  download buttons after publication. Never publish unsigned test artifacts.
+
+Local release-to-text timings cover native release through paste dispatch,
+including formatting. They omit native stdout transit and target-app rendering.
+Timing logs contain durations/backend names, not transcript text or microphone audio.

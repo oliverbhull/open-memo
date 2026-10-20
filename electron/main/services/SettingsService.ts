@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Store from 'electron-store';
+import { resolveWindowsSpeechModel } from './windowsRuntime';
 import { StoreSchema, storeDefaults } from './StoreSchema';
 import { clampPhraseReplacementRulesFromInput } from './phraseReplacement';
 import { DEFAULT_RECORDING_HOTKEY, normalizeRecordingHotkey } from '../../shared/recordingHotkey';
@@ -54,7 +55,7 @@ export function settingsPath(): string {
 
 export function loadSettings(): Settings {
   return {
-    asrModel: process.platform === 'win32' ? 'whisper-small.en-q5_1' : 'conomo',
+    asrModel: process.platform === 'win32' ? resolveWindowsSpeechModel(store.get('windowsSpeechModel')) : 'conomo',
     sayEnterToPressEnter: store.get('sayEnterToPressEnter', false),
     handsFreeMode: store.get('handsFreeMode', false),
     saveAudio: store.get('saveAudio', false),
@@ -69,7 +70,7 @@ export function saveSettings(next: Settings): void {
   const settings: Settings = {
     ...loadSettings(),
     ...next,
-    asrModel: process.platform === 'win32' ? 'whisper-small.en-q5_1' : 'conomo',
+    asrModel: process.platform === 'win32' ? resolveWindowsSpeechModel(store.get('windowsSpeechModel')) : 'conomo',
     sayEnterToPressEnter: next.sayEnterToPressEnter === true,
     handsFreeMode: next.handsFreeMode === true,
     saveAudio: next.saveAudio === true,
@@ -120,7 +121,7 @@ function migrateSettingsJson(raw: Record<string, unknown>): void {
   const current = loadSettings();
   saveSettings({
     ...current,
-    asrModel: process.platform === 'win32' ? 'whisper-small.en-q5_1' : 'conomo',
+    asrModel: process.platform === 'win32' ? resolveWindowsSpeechModel(store.get('windowsSpeechModel')) : 'conomo',
     sayEnterToPressEnter: typeof raw.sayEnterToPressEnter === 'boolean'
       ? raw.sayEnterToPressEnter
       : current.sayEnterToPressEnter,

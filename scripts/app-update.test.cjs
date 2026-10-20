@@ -149,12 +149,12 @@ test('header can reopen a declined update', async () => {
   assert.equal(messages.length, 2);
 });
 
- test('Windows preview never starts the Mac updater', async () => {
+ test('Windows never starts the Mac updater and explains manual downloads', async () => {
   const { instance, updater, messages, installs } = service(undefined, undefined, 0, 'win32');
   updater.checkForUpdates = () => { throw new Error('Windows updater must stay disabled'); };
   instance.start();
   await instance.checkManually();
   assert.equal(messages.length, 1);
-  assert.match(messages[0].detail, /Windows preview/);
+  assert.match(messages[0].detail, /Download for Windows/);
   assert.deepEqual(installs, []);
 });

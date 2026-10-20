@@ -31,6 +31,17 @@ body {
   -webkit-backdrop-filter: blur(100px) saturate(200%);
 }
 
+/* Keep scrolling available without a persistent scrollbar in the Windows UI. */
+.glass-container[data-platform="win32"],
+.glass-container[data-platform="win32"] * {
+  scrollbar-width: none;
+}
+
+.glass-container[data-platform="win32"]::-webkit-scrollbar,
+.glass-container[data-platform="win32"] *::-webkit-scrollbar {
+  display: none;
+}
+
 /* Main container */
 .glass-container {
   width: 100%;
@@ -93,6 +104,27 @@ body {
 
 .title-bar-right {
   margin-left: auto;
+}
+
+.glass-container[data-platform="win32"] .title-bar {
+  height: 36px;
+  background: #08080c;
+  padding-right: 144px;
+  border-bottom-color: transparent;
+}
+
+.glass-container[data-platform="win32"] .title-bar-right {
+  margin-left: 0;
+}
+
+.glass-container[data-platform="win32"] .settings-icon {
+  color: #b9b9c2 !important;
+  padding: 7px;
+}
+
+.glass-container[data-platform="win32"] .settings-icon:hover {
+  background: #ffffff0d;
+  color: #f1f1f4 !important;
 }
 
 .settings-icon {
