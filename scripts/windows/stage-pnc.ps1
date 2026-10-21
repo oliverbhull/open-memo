@@ -98,8 +98,22 @@ if (!(Test-Path $modelFile) -or !(Test-Path $vocabulary) -or
     (Get-Sha256 $vocabulary) -ne $lock.model.vocabSha256) {
     $extract = Join-Path $CacheRoot 'model-extracted'
     New-Item -ItemType Directory -Force $extract | Out-Null
-    Write-Host "Extracting verified punctuation model archive with Windows tar (PATH tar: $((Get-Command tar.exe).Source))."
-    $null = Invoke-PncProcess (Join-Path $env:SystemRoot 'System32/tar.exe') @('-xf', $modelArchive, '-C', $extract)
+    # Server 2022's inbox tar can hang decoding this bzip2 archive. Use the
+    # pinned embedded Python, extracting only regular files to fixed paths.
+    Write-Host 'Extracting verified punctuation model with bundled Python.'
+    $extractScript = @'
+import pathlib, shutil, sys, tarfile
+root = pathlib.Path(sys.argv[2]) / 'sherpa-onnx-online-punct-en-2024-08-06'
+root.mkdir(parents=True, exist_ok=True)
+with tarfile.open(sys.argv[1], 'r:bz2') as archive:
+    for name in ('model.int8.onnx', 'bpe.vocab'):
+        member = archive.getmember('./sherpa-onnx-online-punct-en-2024-08-06/' + name)
+        if not member.isfile():
+            raise ValueError('Expected a regular punctuation model file: ' + name)
+        with archive.extractfile(member) as source, (root / name).open('wb') as target:
+            shutil.copyfileobj(source, target)
+'@
+    $null = Invoke-PncProcess (Join-Path $python 'python.exe') @('-c', $extractScript, $modelArchive, $extract)
     $source = Join-Path $extract 'sherpa-onnx-online-punct-en-2024-08-06'
     Copy-Item -LiteralPath (Join-Path $source 'model.int8.onnx') -Destination $modelFile -Force
     Copy-Item -LiteralPath (Join-Path $source 'bpe.vocab') -Destination $vocabulary -Force
