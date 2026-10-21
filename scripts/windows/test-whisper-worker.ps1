@@ -47,7 +47,13 @@ $info.UseShellExecute = $false
 $info.CreateNoWindow = $true
 $info.RedirectStandardInput = $true
 $info.RedirectStandardOutput = $true
-$process = [Diagnostics.Process]::Start($info)
+# Framework's stdin writer otherwise emits the CI console's UTF-8 BOM before
+# the binary protocol header, even when writes use StandardInput.BaseStream.
+$previousInputEncoding = [Console]::InputEncoding
+try {
+    [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $process = [Diagnostics.Process]::Start($info)
+} finally { [Console]::InputEncoding = $previousInputEncoding }
 try {
     if ((Read-Response $process.StandardOutput.BaseStream) -ne '') { throw 'Expected empty ready frame.' }
     $previous = $null
@@ -73,7 +79,7 @@ try {
         if ($i -eq 1 -and $text -ne $previous) { throw 'Whisper worker leaked transcription context between requests.' }
         $previous = $text
     }
-    $process.StandardInput.Close()
+    $process.StandardInput.BaseStream.Close()
     if (!$process.WaitForExit(10000) -or $process.ExitCode -ne 0) { throw 'Whisper worker did not exit cleanly after pipe closure.' }
 } finally {
     if (!$process.HasExited) { $process.Kill(); $process.WaitForExit() }
