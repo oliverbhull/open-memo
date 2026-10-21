@@ -1,5 +1,6 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. "$PSScriptRoot/download-asset.ps1"
 if ($env:OS -ne 'Windows_NT') { throw 'Build Windows backends on Windows x64.' }
 $repoRoot = (Resolve-Path "$PSScriptRoot/../..").Path
 Set-Location $repoRoot
@@ -24,8 +25,11 @@ $dictation = Join-Path $stage 'dictation'
 $whisper = Join-Path $stage 'whisper'
 New-Item -ItemType Directory -Force $dictation, $whisper | Out-Null
 # Native CPU runtimes and a private punctuation interpreter; users need no tools.
+Write-Host 'Staging Nemotron CPU SDK and model.'
 $sdk = & "$PSScriptRoot/stage-nemotron.ps1" -OutputRoot $stage
+Write-Host 'Staging punctuation runtime and model.'
 & "$PSScriptRoot/stage-pnc.ps1" -OutputRoot $stage
+Write-Host 'Preparing pinned Whisper source.'
 $revision = 'd1be6fde11ac6e0407606b4e42fe72d34add8037'
 $source = Join-Path $repoRoot ".build/whisper-source-$revision"
 if (!(Test-Path "$source/.git")) {
@@ -42,6 +46,7 @@ $buildDir = Join-Path $repoRoot '.build/whisper-worker-windows-build'
 # whisper.cpp declares CMake 3.5, which otherwise leaves CMP0091 unset and
 # ignores CMAKE_MSVC_RUNTIME_LIBRARY. Disable dynamic MSVC OpenMP too.
 $architecture = if ($env:CMAKE_GENERATOR -eq 'Ninja') { @() } else { @('-A', 'x64') }
+Write-Host 'Configuring native Windows speech workers.'
 Invoke-Checked cmake (@('-S', $PSScriptRoot, '-B', $buildDir) + $architecture + @("-DMEMO_WHISPER_SOURCE=$source", "-DMEMO_NEMO_SDK=$sdk", '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_POLICY_DEFAULT_CMP0091=NEW', '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded', '-DGGML_OPENMP=OFF', '-DBUILD_SHARED_LIBS=OFF', '-DGGML_NATIVE=OFF', '-DGGML_CUDA=OFF', '-DGGML_VULKAN=OFF', '-DWHISPER_BUILD_TESTS=OFF', '-DWHISPER_BUILD_EXAMPLES=ON'))
 Invoke-Checked cmake @('--build', $buildDir, '--config', 'Release', '--target', 'whisper-cli', 'memo-whisper-worker', 'memo-nemotron-worker', '--parallel', '2')
 $binaryDir = if (Test-Path "$buildDir/bin/Release/memo-whisper-worker.exe") { "$buildDir/bin/Release" } else { "$buildDir/bin" }
@@ -56,7 +61,7 @@ $model = Join-Path $whisper 'ggml-base.en-q5_1.bin'
 $modelHash = '4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f'
 if (!(Test-Path $model) -or (Get-Sha256 $model) -ne $modelHash) {
     $partial = "$model.partial"
-    Invoke-WebRequest -UseBasicParsing 'https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en-q5_1.bin' -OutFile $partial
+    Save-BackendAsset 'https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en-q5_1.bin' $partial
     if ((Get-Sha256 $partial) -ne $modelHash) {
         Remove-Item $partial -Force
         throw 'Whisper base.en q5_1 checksum mismatch.'

@@ -5,6 +5,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. "$PSScriptRoot/download-asset.ps1"
 if ($env:OS -ne 'Windows_NT') { throw 'Windows x64 is required to stage punctuation.' }
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
@@ -28,7 +29,7 @@ function Get-Artifact($Artifact) {
     $file = Join-Path $CacheRoot $Artifact.filename
     if (!(Test-Path -LiteralPath $file) -or (Get-Sha256 $file) -ne $Artifact.sha256) {
         $partial = "$file.partial"
-        Invoke-WebRequest -UseBasicParsing -Uri $Artifact.url -OutFile $partial
+        Save-BackendAsset $Artifact.url $partial
         if ((Get-Sha256 $partial) -ne $Artifact.sha256) {
             Remove-Item -LiteralPath $partial -Force
             throw "Checksum mismatch: $($Artifact.filename)"

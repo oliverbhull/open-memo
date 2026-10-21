@@ -4,6 +4,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. "$PSScriptRoot/download-asset.ps1"
 function Asset-Hash([string]$Path) {
     $stream = [IO.File]::OpenRead($Path)
     $hash = [Security.Cryptography.SHA256]::Create()
@@ -12,7 +13,7 @@ function Asset-Hash([string]$Path) {
 }
 function Get-Asset([string]$Url, [string]$Path, [string]$Sha256) {
     if (!(Test-Path -LiteralPath $Path) -or (Asset-Hash $Path) -ne $Sha256) {
-        Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile "$Path.partial"
+        Save-BackendAsset $Url "$Path.partial"
         if ((Asset-Hash "$Path.partial") -ne $Sha256) { throw "Nemotron asset checksum mismatch: $Url" }
         Move-Item -LiteralPath "$Path.partial" -Destination $Path -Force
     }
@@ -32,6 +33,7 @@ Get-Asset "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v$version
 $unpack = Join-Path $cache 'nemo-sdk'
 if ((Split-Path -Parent ([IO.Path]::GetFullPath($unpack))) -ne $cache) { throw 'Invalid SDK extraction path.' }
 if (Test-Path -LiteralPath $unpack) { Remove-Item -LiteralPath $unpack -Recurse -Force }
+Write-Host 'Extracting verified NeMo CPU SDK.'
 Expand-Archive -LiteralPath $archive -DestinationPath $unpack -Force
 $sdk = Join-Path $unpack $archiveName
 if (!(Test-Path "$sdk/include/nemo_speech/asr.h") -or !(Test-Path "$sdk/lib/nemo_speech_asr_c.lib")) { throw 'Incomplete NeMo SDK archive.' }
