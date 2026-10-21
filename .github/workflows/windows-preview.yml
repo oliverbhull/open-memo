@@ -32,6 +32,12 @@ jobs:
         run: npm run check:windows
       - name: Test native dictation
         run: cargo test --locked --manifest-path sidecars/dictation/Cargo.toml
+      - name: Stage and verify Nemotron assets
+        timeout-minutes: 10
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/stage-nemotron.ps1
+      - name: Stage and smoke-test punctuation assets
+        timeout-minutes: 10
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/stage-pnc.ps1
       - name: Build installer and test bundled speech model
         run: npm run dist:win
       - uses: actions/upload-artifact@v4
