@@ -38,6 +38,33 @@ function Get-Artifact($Artifact) {
     }
     return $file
 }
+function Invoke-PncProcess([string]$Program, [string[]]$Arguments, [string]$InputText = '') {
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = $Program
+    $info.Arguments = ($Arguments | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }) -join ' '
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardInput = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $info
+    try {
+        if (!$process.Start()) { throw "Cannot start $Program" }
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        if ($InputText) { $process.StandardInput.WriteLine($InputText) }
+        $process.StandardInput.Close()
+        if (!$process.WaitForExit(120000)) {
+            $process.Kill()
+            throw "Punctuation staging timed out after 120s: $Program $($info.Arguments)"
+        }
+        $diagnostic = $stderr.GetAwaiter().GetResult()
+        if ($diagnostic) { [Console]::Error.Write($diagnostic) }
+        if ($process.ExitCode -ne 0) { throw "Punctuation staging process failed ($($process.ExitCode)): $Program" }
+        return $stdout.GetAwaiter().GetResult().TrimEnd()
+    } finally { $process.Dispose() }
+}
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 function Expand-VerifiedZip([string]$Archive, [string]$Destination) {
     # Wheels are zip files; avoid pip, network dependency resolution, and host Python.
@@ -54,6 +81,7 @@ function Expand-VerifiedZip([string]$Archive, [string]$Destination) {
     } finally { $zip.Dispose() }
 }
 $pythonArchive = Get-Artifact $lock.python
+Write-Host 'Extracting verified embedded Python and punctuation wheels.'
 Expand-VerifiedZip $pythonArchive $python
 foreach ($wheel in $lock.wheels) { Expand-VerifiedZip (Get-Artifact $wheel) $sitePackages }
 # The embeddable runtime ignores the user's environment and installed Python.
@@ -70,8 +98,8 @@ if (!(Test-Path $modelFile) -or !(Test-Path $vocabulary) -or
     (Get-Sha256 $vocabulary) -ne $lock.model.vocabSha256) {
     $extract = Join-Path $CacheRoot 'model-extracted'
     New-Item -ItemType Directory -Force $extract | Out-Null
-    & tar.exe -xf $modelArchive -C $extract
-    if ($LASTEXITCODE -ne 0) { throw 'Extracting pinned punctuation model failed.' }
+    Write-Host "Extracting verified punctuation model archive with Windows tar (PATH tar: $((Get-Command tar.exe).Source))."
+    $null = Invoke-PncProcess (Join-Path $env:SystemRoot 'System32/tar.exe') @('-xf', $modelArchive, '-C', $extract)
     $source = Join-Path $extract 'sherpa-onnx-online-punct-en-2024-08-06'
     Copy-Item -LiteralPath (Join-Path $source 'model.int8.onnx') -Destination $modelFile -Force
     Copy-Item -LiteralPath (Join-Path $source 'bpe.vocab') -Destination $vocabulary -Force
@@ -79,6 +107,7 @@ if (!(Test-Path $modelFile) -or !(Test-Path $vocabulary) -or
 if ((Get-Sha256 $modelFile) -ne $lock.model.modelSha256 -or (Get-Sha256 $vocabulary) -ne $lock.model.vocabSha256) {
     throw 'Punctuation model/vocabulary checksum mismatch.'
 }
+Write-Host 'Punctuation model hashes verified; copying runtime and licenses.'
 Copy-Item -LiteralPath $modelFile, $vocabulary -Destination $bundle -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/python/edge-punct-worker.py') -Destination (Join-Path $bundle 'worker.py') -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'LICENSE-Edge-Punct-Casing.txt') -Destination $bundle -Force
@@ -108,11 +137,13 @@ $manifest = [ordered]@{
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $bundle 'manifest.json') -Encoding UTF8
 if (!$SkipSmokeTest) {
     $executable = Join-Path $python 'python.exe'
-    & $executable -c "import sherpa_onnx; assert sherpa_onnx.__version__ == '1.13.8'"
-    if ($LASTEXITCODE -ne 0) { throw 'Pinned sherpa-onnx runtime failed to import.' }
+    Write-Host 'Checking pinned sherpa-onnx import.'
+    $null = Invoke-PncProcess $executable @('-c', "import sherpa_onnx; assert sherpa_onnx.__version__ == '1.13.8'")
     $request = '{"id":"verify","text":"how are you i am fine thank you"}'
-    $output = @($request | & $executable (Join-Path $bundle 'worker.py') --model-path (Join-Path $bundle 'model.int8.onnx') --vocabulary-path (Join-Path $bundle 'bpe.vocab') --worker)
-    if ($LASTEXITCODE -ne 0 -or $output.Count -lt 2 -or $output[0] -ne 'READY') { throw 'Punctuation worker did not become ready.' }
+    Write-Host 'Running punctuation worker smoke test with explicit stdin EOF.'
+    $response = Invoke-PncProcess $executable @((Join-Path $bundle 'worker.py'), '--model-path', (Join-Path $bundle 'model.int8.onnx'), '--vocabulary-path', (Join-Path $bundle 'bpe.vocab'), '--worker') $request
+    $output = @($response -split '\r?\n')
+    if ($output.Count -lt 2 -or $output[0] -ne 'READY') { throw 'Punctuation worker did not become ready.' }
     $result = $output[-1] | ConvertFrom-Json
     if ($result.id -ne 'verify' -or $result.text -ne 'How are you? I am fine. Thank you.' -or $result.error) {
         throw "Punctuation smoke test returned unexpected text: $($output[-1])"
