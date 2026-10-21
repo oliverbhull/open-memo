@@ -47,14 +47,29 @@ function Invoke-PncProcess([string]$Program, [string[]]$Arguments, [string]$Inpu
     $info.RedirectStandardInput = $true
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
+    # The CI console uses BOM-emitting UTF-8; never inherit it for JSON pipes.
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $info.StandardOutputEncoding = $utf8
+    $info.StandardErrorEncoding = $utf8
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $info
     try {
-        if (!$process.Start()) { throw "Cannot start $Program" }
+        # Framework constructs the stdin writer at Start() from the console
+        # input encoding, and AutoFlush immediately emits that encoding's BOM.
+        $previousEncoding = [Console]::InputEncoding
+        try {
+            [Console]::InputEncoding = $utf8
+            if (!$process.Start()) { throw "Cannot start $Program" }
+        } finally { [Console]::InputEncoding = $previousEncoding }
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
-        if ($InputText) { $process.StandardInput.WriteLine($InputText) }
-        $process.StandardInput.Close()
+        # .NET Framework has no ProcessStartInfo.StandardInputEncoding. Write
+        # bytes to the pipe directly so its default StreamWriter adds no BOM.
+        if ($InputText) {
+            $bytes = $utf8.GetBytes($InputText + "`n")
+            $process.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+        }
+        $process.StandardInput.BaseStream.Close()
         if (!$process.WaitForExit(120000)) {
             $process.Kill()
             throw "Punctuation staging timed out after 120s: $Program $($info.Arguments)"
