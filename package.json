@@ -48,7 +48,7 @@
     "test:clean-v2": "python3 -m unittest discover -s experiments/clean-v2 -v",
     "test:clean-v3": "python3 -m unittest discover -s experiments/clean-v3 -v",
     "test:experiments": "node --test experiments/shared/cleanup-development.test.cjs && npm run test:clean-v1 && npm run test:clean-v2 && npm run test:clean-v3",
-    "test": "node --test scripts/*.test.cjs && python3 scripts/python/test_cleanup_completion.py && python3 scripts/python/test_device_sync_lifecycle.py && python3 scripts/python/transcript-cleanup-worker.py --self-test",
+    "test": "node --experimental-sqlite --test scripts/*.test.cjs && python3 scripts/python/test_cleanup_completion.py && python3 scripts/python/test_device_sync_lifecycle.py && python3 scripts/python/transcript-cleanup-worker.py --self-test",
     "build:browser-context": "bash scripts/shell/build-browser-context.sh",
     "build:windows:backends": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/build-backends.ps1",
     "check:windows": "npm run typecheck && node scripts/test-windows.cjs",
