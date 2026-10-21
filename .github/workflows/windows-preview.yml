@@ -9,6 +9,7 @@ on:
       - 'scripts/**'
       - 'config/**'
       - 'package*.json'
+      - '.gitattributes'
       - '.github/workflows/windows*.yml'
   workflow_dispatch:
 permissions:
