@@ -16,6 +16,7 @@ function setup(options = {}) {
   Module._load = (request, parent, isMain) => {
     if (request === 'electron') return { app: { isPackaged: false, getPath: () => '/test-memo' } };
     if (request === 'node:fs') return { ...fs, existsSync: () => true };
+    if (request === './conomoRuntime') return { configureConomo(env) { env.MEMO_ASR_BACKEND = 'conomo'; env.MEMO_ASR_WORKER = '/conomo-worker'; } };
     if (request === './ModelPackService') return { resolveModelPackPath: () => '/test-conomo' };
     if (request === './FirmwareReleaseService') return { FirmwareReleaseService: class {} };
     if (request === './SettingsService') return { loadSettings: () => ({ asrModel: 'conomo' }) };

@@ -1,3 +1,5 @@
+import { configureConomo } from './conomoRuntime';
+import { loadSettings } from './SettingsService';
 import { app } from 'electron';
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -88,6 +90,10 @@ export class DeviceSyncService extends EventEmitter {
 
     const requestedModel = 'conomo';
     const actualModel = 'conomo';
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' };
+    configureConomo(childEnv, resources.conomo);
+    childEnv.CONOMO_PHRASES = JSON.stringify(loadSettings().vocabWords ?? []);
+    childEnv.MEMO_ASR_SOURCE = 'memo-device';
     const userData = app.getPath('userData');
     const args = [
       '-B', resources.helper,
@@ -108,7 +114,7 @@ export class DeviceSyncService extends EventEmitter {
     logger.info(`[DeviceSyncService] Starting bundled worker (${requestedModel} -> ${actualModel})`);
     const child = spawn(resources.python, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' },
+      env: childEnv,
       detached: process.platform !== 'win32',
     });
     this.child = child;

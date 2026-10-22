@@ -7,7 +7,7 @@
   "preload": "dist/preload.cjs",
   "type": "module",
   "scripts": {
-    "dev": "npm run setup:pnc:edge && npm run build:dictation && npm run build:ble && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development MEMO_PNC_ENGINE=edge electron .\"",
+    "dev": "npm run build:conomo && npm run setup:pnc:edge && npm run build:dictation && npm run build:ble && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development MEMO_PNC_ENGINE=edge electron .\"",
     "setup:contextual-ctc": "bash scripts/shell/setup-contextual-ctc.sh",
     "setup:cleanup": "bash scripts/shell/setup-cleanup-dev.sh",
     "setup:pnc:edge": "bash scripts/shell/setup-edge-punct-dev.sh",
@@ -185,12 +185,11 @@
         "to": "conomo",
         "filter": [
           "conomo",
-          "compiled/**",
-          "tokenizer.json",
-          "manifest.json",
+          "model/**",
+          "runtime/**",
           "model-pack.json",
-          "LICENSE-APACHE-2.0.txt",
-          "NOTICE.txt",
+          "LICENSE",
+          "THIRD_PARTY_NOTICES",
           "VERSIONS",
           "device-runtime/**"
         ]
