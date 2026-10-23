@@ -18,7 +18,7 @@ test('Memo connects through the packaged or external Conomo bridge without selec
     assert.equal(env.MEMO_ASR_BACKEND, 'conomo');
     assert.equal(env.MEMO_ASR_WORKER, worker);
     assert.equal(env.MEMO_CONTEXTUAL_VOCAB, '1');
-    assert.ok(env.CONOMO_SOCKET.endsWith('/Conomo/speech.sock'));
+    assert.equal(env.CONOMO_SOCKET, path.join(os.homedir(), 'Library/Application Support/Conomo/speech.sock'));
     const custom = { CONOMO_WORKER: worker, CONOMO_SOCKET: '/private/custom.sock' };
     loaded.exports.configureConomo(custom, '/missing');
     assert.equal(custom.CONOMO_SOCKET, '/private/custom.sock');
