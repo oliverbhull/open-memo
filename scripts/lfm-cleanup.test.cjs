@@ -339,3 +339,7 @@ test('email retains the dictated thank-you opening when LFM substitutes Hello', 
   assert.equal(result.status, 'accepted');
   assert.equal(result.text, 'Thanks Dimitri,\n\nThis is helpful.\n\nThanks,\nOliver');
 });
+
+test('Supermicrophone starts disabled for new and upgraded installs', () => {
+  assert.equal(loadStoreDefaults().experimentalSupermicrophone, false);
+});

@@ -109,6 +109,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [microphoneSelecting, setMicrophoneSelecting] = useState(false);
   const [microphoneError, setMicrophoneError] = useState<string | null>(null);
   const [saveAudio, setSaveAudio] = useState(false);
+  const [experimentalSupermicrophone, setExperimentalSupermicrophone] = useState(false);
+  const [supermicrophoneBusy, setSupermicrophoneBusy] = useState(false);
+  const [supermicrophoneError, setSupermicrophoneError] = useState('');
   const [experimentalEmailFormatting, setExperimentalEmailFormatting] = useState(false);
   const [writingMode, setWritingMode] = useState<WritingMode>('as-spoken');
   const [cleanupState, setCleanupState] = useState<CleanupState>({
@@ -167,6 +170,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       setHandsFreeMode(settings.handsFreeMode ?? false);
       setStartAtLogin(settings.startAtLogin);
       setSaveAudio(settings.saveAudio ?? false);
+      setExperimentalSupermicrophone(settings.experimentalSupermicrophone ?? false);
       setExperimentalEmailFormatting(settings.experimentalEmailFormatting ?? false);
       setWritingMode(settings.writingMode ?? 'as-spoken');
       setCleanupState(settings.cleanupState);
@@ -711,6 +715,18 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               </div>
             </section>
             <section id="settings-panel-general" className="settings-panel" aria-label="General" hidden={activeSection !== 'general'}>
+              <ToggleTile experimental title="Supermicrophone" checked={experimentalSupermicrophone}
+                description="Enable experimental USB and Bluetooth recorder sync, transcription, and automatic firmware updates. Off by default."
+                onChange={async enabled => {
+                  if (supermicrophoneBusy) return;
+                  setSupermicrophoneBusy(true); setSupermicrophoneError('');
+                  try {
+                    if (await window.electronAPI.interface.setExperimentalSupermicrophone(enabled)) setExperimentalSupermicrophone(enabled);
+                  } catch (error) { setSupermicrophoneError(error instanceof Error ? error.message : 'Could not change Supermicrophone setting.'); }
+                  finally { setSupermicrophoneBusy(false); }
+                }} />
+              {supermicrophoneError && <p role="alert">{supermicrophoneError}</p>}
+
               <div className="settings-grid">
                 <section className="settings-shortcuts" aria-label="Recording shortcuts" aria-busy={hotkeySaving}>
                     {window.electronAPI.platform === 'win32' && <p className="settings-help">Choose a key or combination, such as Right Control or F8. Most Windows keyboards do not expose the Fn key to apps; F1–F12 are separate keys.</p>}

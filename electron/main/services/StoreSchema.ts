@@ -13,6 +13,7 @@ export interface StoreSchema {
   saveAudio: boolean;
   writingMode: WritingMode;
   experimentalEmailFormatting: boolean;
+  experimentalSupermicrophone: boolean;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
   userName: string | null;
@@ -36,6 +37,7 @@ export const storeDefaults: StoreSchema = {
   saveAudio: false,
   writingMode: 'as-spoken',
   experimentalEmailFormatting: false,
+  experimentalSupermicrophone: false,
   vocabWords: [],
   phraseReplacements: [],
   userName: null,

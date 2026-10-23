@@ -62,7 +62,9 @@ open the `.dmg`, and drag **Memo** into **Applications**. Open Memo, allow the
 requested permissions, then hold **Fn** and start talking.
 
 Open Memo requires macOS 15 or newer and an Apple silicon Mac.
-Conomo is included and ready to use.
+Conomo is included and ready to use. It streams audio to a separate local runtime
+and applies your vocabulary hints during recognition. The verified model ships
+inside the installer; no first-launch model download is needed.
 
 **Windows:** [Download for Windows](https://github.com/oliverbhull/open-memo/releases/download/windows-latest/Open-Memo-latest-windows-x64-setup.exe),
 run the installer, and complete the microphone test. Hold **Right Ctrl** to dictate.

@@ -749,7 +749,7 @@ app.whenReady().then(async () => {
         mainWindow.webContents.send('device-sync:status', status);
       }
     });
-    void deviceSyncService.start();
+    if (loadSettings().experimentalSupermicrophone) void deviceSyncService.start();
   }
   
   app.on('activate', () => {
@@ -816,7 +816,7 @@ ipcMain.handle('memo-stt:get-status', () => {
   return memoSttService?.getStatus() || 'stopped';
 });
 
-ipcMain.handle('usb-transcripts:list', () => usbTranscriptService.list());
+ipcMain.handle('usb-transcripts:list', () => loadSettings().experimentalSupermicrophone ? usbTranscriptService.list() : []);
 
 ipcMain.handle('entries:initialize', () => memoDatabaseService.initialize());
 
@@ -1128,6 +1128,7 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
     saveAudio: settings.saveAudio ?? false,
     writingMode: settings.writingMode,
     experimentalEmailFormatting: settings.experimentalEmailFormatting,
+    experimentalSupermicrophone: settings.experimentalSupermicrophone,
     cleanupState: cleanupService.getState(),
     vocabWords: Array.isArray(settings.vocabWords) ? settings.vocabWords : [],
     phraseReplacements: Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : [],
@@ -1233,6 +1234,19 @@ ipcMain.handle('settings:setSaveAudio', async (_event, enabled: boolean) => {
   saveSettings(settings);
   if (changed) memoSttService?.restart();
   updateMenuState();
+  return true;
+});
+
+ipcMain.handle('settings:setExperimentalSupermicrophone', async (_event, enabled: unknown) => {
+  if (typeof enabled !== 'boolean') throw new Error('Supermicrophone setting must be a boolean.');
+  if (!enabled && deviceSyncService?.isUpdatingFirmware()) {
+    throw new Error('Wait for the firmware update to finish before disabling Supermicrophone.');
+  }
+  const settings = loadSettings();
+  settings.experimentalSupermicrophone = enabled;
+  saveSettings(settings);
+  if (enabled) await deviceSyncService?.start();
+  else await deviceSyncService?.stop();
   return true;
 });
 

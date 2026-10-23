@@ -1082,17 +1082,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                         }
-                        let contextual_prompt = if vocab.boost_words.is_empty() {
-                            None
-                        } else {
-                            Some(format!("Vocabulary: {}.", vocab.boost_words.join(", ")))
-                        };
+                        let boost_words = vocab.boost_words.clone();
                         drop(vocab);
                         if std::env::var("MEMO_CONTEXTUAL_VOCAB").as_deref() == Ok("1") {
                             engine_for_vocab
                                 .lock()
                                 .unwrap()
-                                .set_prompt(contextual_prompt);
+                                .set_vocabulary(&boost_words);
                         }
                         let vocab = vocabulary_clone.lock().unwrap();
                         eprintln!(

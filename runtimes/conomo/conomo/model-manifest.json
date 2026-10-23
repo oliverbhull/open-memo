@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "repository": "onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4",
+  "revision": "8364d9e2dd9da23789b480bdbba9e423717e42ee",
+  "license": "NVIDIA Open Model License; see model card",
+  "files": {
+    "README.md": {
+      "size": 10139,
+      "sha256": "2478f3127e48bb162384bd3661763b3faf23ca9612e4e90487deb831c407680d"
+    },
+    "audio_processor_config.json": {
+      "size": 413,
+      "sha256": "ab28d41eb87ce3922006edeb9c3fad4d5ce451f9a56a12d84f470f02a5ec157b"
+    },
+    "decoder.onnx": {
+      "size": 4696,
+      "sha256": "6a9f608dcbab71ebd81ffa4c198e82a5b6bb10f1c1830a94c752c5f543454df3"
+    },
+    "decoder.onnx.data": {
+      "size": 59785216,
+      "sha256": "e5fd55cbeeb268f9d383e2ee72735b9fbbb13aea4bc7cd38cb73b8e16f1366c7"
+    },
+    "encoder.onnx": {
+      "size": 2677548,
+      "sha256": "0b05217594ec0bda442e43a90a298ac2471a3bdcea9b169de34214e61a730e17"
+    },
+    "encoder.onnx.data": {
+      "size": 690089984,
+      "sha256": "2f27295855aeb99ab1f8cd2254418d9ad7a087ea8dbe85f5596b4d887ea7d630"
+    },
+    "genai_config.json": {
+      "size": 1892,
+      "sha256": "39568fbeebbe848696a1e2a01c7f33df000f72c29f2285509fd12442bda9571e"
+    },
+    "joint.onnx": {
+      "size": 2136,
+      "sha256": "e2c7d2fa40a243bf82eaca36c15698c52129de9361d2875d7f223f67fcd9482d"
+    },
+    "joint.onnx.data": {
+      "size": 37830656,
+      "sha256": "2e0fb1c060f3777a1a76e78d5589dd54f01505a06dffbd2588e315508b402c12"
+    },
+    "model_config.json": {
+      "size": 365,
+      "sha256": "f41f943eeb1310a89dd58cf3e11e654a8ae1a788fceeb6cd1eacce3a6d081965"
+    },
+    "silero_vad.onnx": {
+      "size": 2243022,
+      "sha256": "a4a068cd6cf1ea8355b84327595838ca748ec29a25bc91fc82e6c299ccdc5808"
+    },
+    "tokenizer.json": {
+      "size": 642525,
+      "sha256": "24e1e8335c8396884a86f06880271376ae46a29381cfc35c82c6295d407acec7"
+    },
+    "tokenizer_config.json": {
+      "size": 183,
+      "sha256": "ea4b35353f468fea11f436f837d9621a29b4ba9d1c73c1ed0aa5743f5a53919e"
+    },
+    "vocab.txt": {
+      "size": 64024,
+      "sha256": "ca88922ac5a92c911b79985b69634d7a4c2ef604d61b71bbe2982210dd77cd43"
+    }
+  }
+}

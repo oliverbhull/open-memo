@@ -218,6 +218,7 @@ export interface ElectronAPI {
       saveAudio: boolean;
       writingMode: WritingMode;
       experimentalEmailFormatting: boolean;
+  experimentalSupermicrophone: boolean;
       cleanupState: CleanupState;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
@@ -233,6 +234,7 @@ export interface ElectronAPI {
     endHotkeyCapture(): Promise<void>;
     onHotkeyCapture(callback: (capture: RecordingHotkeyCapture) => void): () => void;
     setSaveAudio(enabled: boolean): Promise<boolean>;
+    setExperimentalSupermicrophone(enabled: boolean): Promise<boolean>;
     setExperimentalEmailFormatting(enabled: boolean): Promise<boolean>;
     setWritingMode(mode: WritingMode): Promise<boolean>;
     removeCleaned(): Promise<{ writingMode: WritingMode; cleanupState: CleanupState }>;

@@ -102,15 +102,16 @@ test('verified bundled models replace legacy copies without touching downloaded 
     fs.rmSync(temporary, { recursive: true, force: true });
   });
   const conomo = path.join(process.resourcesPath, 'conomo');
-  for (const relative of ['conomo', 'compiled/Model.mlmodelc/weights.bin', 'tokenizer.json', 'manifest.json', 'VERSIONS', 'device-runtime/bin/python3.12']) {
+  for (const relative of ['conomo', 'model/weights.bin', 'runtime/conomo/model-manifest.json', 'VERSIONS', 'device-runtime/bin/python3.12']) {
     const file = path.join(conomo, relative);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, 'good');
   }
-  fs.writeFileSync(path.join(conomo, 'model-pack.json'), JSON.stringify(require('./model-pack-manifest.cjs').createManifest('conomo', conomo)));
-  const contextualLauncher = path.join(process.resourcesPath, 'dictation', 'run-contextual-conomo');
+  const contextualLauncher = path.join(conomo, 'conomo');
   fs.mkdirSync(path.dirname(contextualLauncher), { recursive: true });
-  fs.writeFileSync(contextualLauncher, '#!/bin/sh\nprintf "READY\\n"\n', { mode: 0o755 });
+  fs.writeFileSync(contextualLauncher, '#!/bin/sh\nprintf "READY\\n"\n');
+  fs.chmodSync(contextualLauncher, 0o755);
+  fs.writeFileSync(path.join(conomo, 'model-pack.json'), JSON.stringify(require('./model-pack-manifest.cjs').createManifest('conomo', conomo)));
   const entry = path.resolve('electron/main/services/ModelPackService.ts');
   const compiled = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', external: ['electron'], define: { 'process.platform': '"darwin"' }, write: false }).outputFiles[0].text;
   const loaded = new Module(entry, module);

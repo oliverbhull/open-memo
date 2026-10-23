@@ -1,38 +1,28 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const vm = require('node:vm');
 const test = require('node:test');
+const { transformSync } = require('esbuild');
+const loaded = { exports: {} };
+vm.runInNewContext(transformSync(fs.readFileSync('electron/main/services/conomoRuntime.ts', 'utf8'),
+  { loader: 'ts', format: 'cjs' }).code, { module: loaded, exports: loaded.exports, require });
 
-test('packaged Conomo dictation uses its own runtime without the optional Cleaned pack', () => {
-  const source = fs.readFileSync(
-    path.resolve('electron/main/services/MemoSttService.ts'),
-    'utf8',
-  );
-
-  assert.match(
-    source,
-    /MEMO_CONTEXTUAL_PYTHON = path\.join\(conomoRoot, 'device-runtime', 'bin', 'python3\.12'\)/,
-  );
-  assert.doesNotMatch(
-    source,
-    /MEMO_CONTEXTUAL_PYTHON\s*=\s*path\.join\(resolveModelPackPath\('cleanup'\)/,
-  );
-
-  const requirements = fs.readFileSync(
-    path.resolve('sidecars/conomo/requirements-device.txt'),
-    'utf8',
-  );
-  assert.match(requirements, /^tokenizers==[^\s]+$/m);
-
-  const verifier = fs.readFileSync(
-    path.resolve('scripts/shell/verify-conomo-bundle.sh'),
-    'utf8',
-  );
-  assert.match(verifier, /from tokenizers import Tokenizer/);
-
-  const manifestBuilder = fs.readFileSync(
-    path.resolve('scripts/model-pack-manifest.cjs'),
-    'utf8',
-  );
-  assert.match(manifestBuilder, /device-runtime\/\.memo-runtime-version/);
+test('Memo connects through the packaged or external Conomo bridge without selecting a model', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'conomo-bridge-'));
+  try {
+    const worker = path.join(root, 'conomo'); fs.writeFileSync(worker, 'fixture');
+    const env = {};
+    loaded.exports.configureConomo(env, root);
+    assert.equal(env.MEMO_ASR_BACKEND, 'conomo');
+    assert.equal(env.MEMO_ASR_WORKER, worker);
+    assert.equal(env.MEMO_CONTEXTUAL_VOCAB, '1');
+    assert.ok(env.CONOMO_SOCKET.endsWith('/Conomo/speech.sock'));
+    const custom = { CONOMO_WORKER: worker, CONOMO_SOCKET: '/private/custom.sock' };
+    loaded.exports.configureConomo(custom, '/missing');
+    assert.equal(custom.CONOMO_SOCKET, '/private/custom.sock');
+    fs.unlinkSync(worker);
+    assert.throws(() => loaded.exports.configureConomo({}, root), /runtime worker missing/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

@@ -692,7 +692,7 @@ def prepare_archives(args, connection, batch: dict, journal: dict) -> list[dict]
         await_transcription_slot()
         env = dict(os.environ)
         env.update({"MEMO_ASR_BACKEND": args.actual_model, "PYTHONNOUSERSITE": "1"})
-        env["MEMO_ASR_WORKER"] = str(args.conomo_root / "conomo")
+        env.setdefault("MEMO_ASR_WORKER", str(args.conomo_root / "conomo"))
         results = transcribe_batch(args.stt_bin, requests, env)
     archives = []
     completed = 0

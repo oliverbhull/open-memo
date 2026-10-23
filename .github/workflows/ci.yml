@@ -56,7 +56,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .build/conomo
-          key: ${{ runner.os }}-${{ runner.arch }}-conomo-${{ hashFiles('scripts/shell/build-conomo.sh', 'sidecars/conomo/requirements-device.txt') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-conomo-${{ hashFiles('scripts/shell/build-conomo.sh', 'sidecars/conomo/requirements-device.txt', 'runtimes/conomo/conomo/model-manifest.json') }}
 
       - name: Install dependencies
         run: npm ci
@@ -72,9 +72,10 @@ jobs:
 
       - name: Build unsigned app
         run: |
-          export CONOMO_SOURCE="scripts/fixtures/conomo-bundle"
-          export CONOMO_SHA256="$(shasum -a 256 "${CONOMO_SOURCE}/conomo" | awk '{print $1}')"
           npm run build:dir
+
+      - name: Test Conomo protocol, vocabulary, and model installation
+        run: PYTHONPATH=runtimes/conomo .build/conomo/device-runtime/bin/python3.12 -B -m unittest discover -s runtimes/conomo/tests -v
 
       - name: Verify packaged dictation sidecar
         run: |
