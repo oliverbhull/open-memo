@@ -1,5 +1,6 @@
 """Start one independent local runtime, serialized across concurrent clients."""
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -11,8 +12,24 @@ from .models import verify, MANIFEST
 from . import __version__
 
 
+def runtime_socket():
+    """Bundled Memo owns its socket; external clients retain their explicit route."""
+    override = os.getenv('CONOMO_SOCKET')
+    if override:
+        return Path(override).expanduser()
+    if not os.getenv('CONOMO_MODEL_DIR'):
+        return Path(DEFAULT_SOCKET)
+    # Code and model identity isolate updates as well as development services.
+    identity = hashlib.sha256(MANIFEST.read_bytes())
+    for source in sorted(Path(__file__).parent.glob('*.py')):
+        identity.update(source.name.encode())
+        identity.update(source.read_bytes())
+    return Path.home() / 'Library/Application Support/Memo/asr' / (identity.hexdigest()[:16] + '.sock')
+
+
 def ensure_running():
-    socket = Path(os.getenv('CONOMO_SOCKET', DEFAULT_SOCKET)).expanduser()
+    socket = runtime_socket()
+    os.environ['CONOMO_SOCKET'] = str(socket)
     model = os.getenv('CONOMO_MODEL_DIR')
     if not model:
         # External services are allowed; the caller then owns their lifecycle.

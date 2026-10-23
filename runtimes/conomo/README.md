@@ -12,6 +12,11 @@ verified model weights. Nothing needs to be downloaded when an installed app
 starts. Each app connects through `conomo --worker`; the bridge starts one detached
 runtime process if necessary. The shared process survives a client disconnect;
 streaming state and phrase history are separate for every utterance/client.
+Bundled Memo uses a private socket under `~/Library/Application Support/Memo/asr/`,
+identified by runtime code and model manifest. It does not connect to the standalone
+Conomo/Memo Agent socket. An app update with different code or weights starts a
+separate compatible runtime automatically. `CONOMO_SOCKET` remains an explicit
+operator override.
 
 Build from the repository root:
 
