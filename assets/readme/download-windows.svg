@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="260" height="52" viewBox="0 0 260 52" role="img" aria-labelledby="title desc">
+  <title id="title">Download for Windows</title>
+  <desc id="desc">Download the latest Open Memo installer for Windows 11 x64</desc>
+  <rect x="1" y="1" width="258" height="50" rx="10" fill="#ffffff" stroke="#b7bec8" stroke-width="2"/>
+  <path fill="#111827" d="M25 15h12v11H25zm14 0h12v11H39zM25 28h12v11H25zm14 0h12v11H39z"/>
+  <text x="62" y="31.5" fill="#111827" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" font-weight="700">Download for Windows</text>
+</svg>

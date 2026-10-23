@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "python": {
+    "version": "3.13.16",
+    "url": "https://www.python.org/ftp/python/3.13.16/python-3.13.16-embed-amd64.zip",
+    "filename": "python-3.13.16-embed-amd64.zip",
+    "sha256": "97dae5274cc54867065e8d5a3226e48c35017ed332a0fdb0e27d5b5821961297"
+  },
+  "wheels": [
+    {
+      "name": "sherpa-onnx",
+      "version": "1.13.8",
+      "filename": "sherpa_onnx-1.13.8-cp313-cp313-win_amd64.whl",
+      "url": "https://files.pythonhosted.org/packages/52/1f/a96759b33dab99647e57f94040d678c332e0d7eb595127d1e0b4e0b9af27/sherpa_onnx-1.13.8-cp313-cp313-win_amd64.whl",
+      "sha256": "195455d8d6cc49f616e9d459b7d08f10a32daf2ddcbe90d4d479a8ba9aab28bf"
+    },
+    {
+      "name": "sherpa-onnx-core",
+      "version": "1.13.8",
+      "filename": "sherpa_onnx_core-1.13.8-py3-none-win_amd64.whl",
+      "url": "https://files.pythonhosted.org/packages/94/38/64356ad97f68fffcf01fe7545407ad18a2ea86c1ffae5b0950f7fac73638/sherpa_onnx_core-1.13.8-py3-none-win_amd64.whl",
+      "sha256": "5579e80196d516e6dae23c8f629292ce3142ab8869925d32b94612fd86f93733"
+    }
+  ],
+  "model": {
+    "repository": "frankyoujian/Edge-Punct-Casing",
+    "revision": "bde453bde24b544f38ffdd56398bfadcd22ce935",
+    "filename": "sherpa-onnx-online-punct-en-2024-08-06.tar.bz2",
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/sherpa-onnx-online-punct-en-2024-08-06.tar.bz2",
+    "sha256": "9f5e5a72c7d2829635bd074fce92b6bbd5b78da8a52e7ad8ed1be933f366b99d",
+    "modelSha256": "9d611f445fe4a46186080fe161be6059d87d72eb88d3a8cb00c1a06e83a6067e",
+    "vocabSha256": "e118b7ad88c54db562517df49e1cffd4836d166c34fb190fd311d7f34eb238f5"
+  },
+  "onnxRuntimeVersion": "1.28.2",
+  "licenses": [
+    {
+      "filename": "LICENSE-ONNX-Runtime.txt",
+      "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.28.2/LICENSE",
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+    },
+    {
+      "filename": "THIRD-PARTY-NOTICES-ONNX-Runtime.txt",
+      "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.28.2/ThirdPartyNotices.txt",
+      "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2"
+    }
+  ]
+}

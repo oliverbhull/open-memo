@@ -1,6 +1,6 @@
 {
   "name": "open-memo",
-  "version": "0.8.25",
+  "version": "0.8.26",
   "description": "Open-source push-to-talk dictation for macOS",
   "homepage": "https://github.com/oliverbhull/open-memo",
   "main": "dist/main.cjs",
@@ -21,7 +21,7 @@
     "dev:main": "esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs --watch",
     "dev:preload": "esbuild electron/preload/index.ts --platform=node --bundle --external:electron --outfile=dist/preload.cjs --format=cjs --watch",
     "build:ts": "npm run build:main && npm run build:preload && npm run build:overlay-preload",
-    "build:main": "npm run build:browser-context && esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs",
+    "build:main": "npm run build:browser-context && npm run build:main:js",
     "build:preload": "esbuild electron/preload/index.ts --platform=node --bundle --external:electron --outfile=dist/preload.cjs --format=cjs",
     "build:overlay-preload": "esbuild electron/preload/overlay.ts --platform=node --bundle --external:electron --outfile=dist/overlay-preload.cjs --format=cjs",
     "build:renderer": "vite build --config vite.config.ts",
@@ -48,8 +48,13 @@
     "test:clean-v2": "python3 -m unittest discover -s experiments/clean-v2 -v",
     "test:clean-v3": "python3 -m unittest discover -s experiments/clean-v3 -v",
     "test:experiments": "node --test experiments/shared/cleanup-development.test.cjs && npm run test:clean-v1 && npm run test:clean-v2 && npm run test:clean-v3",
-    "test": "node --test scripts/*.test.cjs && python3 scripts/python/test_cleanup_completion.py && python3 scripts/python/test_device_sync_lifecycle.py && python3 scripts/python/transcript-cleanup-worker.py --self-test",
-    "build:browser-context": "bash scripts/shell/build-browser-context.sh"
+    "test": "node --experimental-sqlite --test scripts/*.test.cjs && python3 scripts/python/test_cleanup_completion.py && python3 scripts/python/test_device_sync_lifecycle.py && python3 scripts/python/transcript-cleanup-worker.py --self-test",
+    "build:browser-context": "bash scripts/shell/build-browser-context.sh",
+    "build:windows:backends": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/build-backends.ps1",
+    "check:windows": "npm run typecheck && node scripts/test-windows.cjs",
+    "dist:win": "npm run build:windows:backends && npm run typecheck && npm run build:windows:ts && npm run build:renderer && electron-builder --config config/electron-builder.windows.cjs --win nsis --x64 --publish never && node scripts/verify-windows-package.cjs",
+    "build:main:js": "esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs",
+    "build:windows:ts": "npm run build:main:js && npm run build:preload && npm run build:overlay-preload"
   },
   "keywords": [
     "conomo",

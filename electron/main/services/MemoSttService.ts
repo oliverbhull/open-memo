@@ -1,3 +1,4 @@
+import { configureWindowsSpeech, windowsDictationPath } from './windowsRuntime';
 import { configureConomo } from './conomoRuntime';
 import { spawn, spawnSync, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
@@ -13,6 +14,7 @@ import type { DictationReadiness, TranscriptionData as SharedTranscriptionData }
 import type { RecordingHotkeyCapture } from '../../shared/recordingHotkey';
 
 export interface AppContext {
+  appPath?: string;
   appName: string;
   windowTitle: string;
   bundleId?: string;
@@ -29,6 +31,7 @@ export interface TranscriptionData extends SharedTranscriptionData {
   wasProcessedByLLM: boolean;
   appContext?: AppContext;
   audioCapture?: CapturedAudio;
+  finalReceivedAtMs?: number;
 }
 
 export type MemoSttStatus = 'stopped' | 'running' | 'error';
@@ -264,7 +267,10 @@ export class MemoSttService extends EventEmitter {
       let command: string;
       let args: string[];
       
-      if (isDev) {
+      if (process.platform === 'win32') {
+        command = windowsDictationPath();
+        args = ['--hotkey', this.hotkey, '--lock-hotkey', this.lockHotkey];
+      } else if (isDev) {
         // Development uses the same staged binary that release builds package.
         command = path.join(process.cwd(), '.build', 'dictation', 'memo-dictation');
         if (!fs.existsSync(command)) {
@@ -338,8 +344,12 @@ export class MemoSttService extends EventEmitter {
         MEMO_EMIT_AUDIO: settings.saveAudio ? '1' : '0',
         MEMO_HANDS_FREE: handsFreeMode ? '1' : '0',
       };
-      configureConomo(env, resolveModelPackPath('conomo'));
-      logger.info(`[MemoSttService #${this.instanceId}] ASR runtime: Conomo`);
+      if (process.platform === 'win32') {
+        configureWindowsSpeech(env, settings.asrModel);
+      } else {
+        configureConomo(env, resolveModelPackPath('conomo'));
+        logger.info(`[MemoSttService #${this.instanceId}] ASR runtime: Conomo`);
+      }
       // An explicit system microphone is strict. The native process must either
       // open this device or fail; it must never substitute the macOS default.
       const micLabel = store.get('selectedSystemMicName');
@@ -354,6 +364,7 @@ export class MemoSttService extends EventEmitter {
         stdio: ['pipe', 'pipe', 'pipe'], // Changed to 'pipe' for stdin to send commands
         env: env,
         detached: process.platform !== 'win32',
+        windowsHide: true,
       });
       this.process = child;
       this.stdinClosed = false;
@@ -773,6 +784,7 @@ export class MemoSttService extends EventEmitter {
       return;
     }
 
+    const finalReceivedAtMs = performance.now();
     try {
       const jsonStr = line.slice(6).trim(); // Remove "FINAL:" prefix
       const transcription: TranscriptionData = JSON.parse(jsonStr);
@@ -801,6 +813,7 @@ export class MemoSttService extends EventEmitter {
       const audioCapture = this.takePendingAudio();
       this.emit('transcription', {
         ...transcription,
+        finalReceivedAtMs,
         processedText: text,
         ...(audioCapture ? { audioCapture } : {}),
       });

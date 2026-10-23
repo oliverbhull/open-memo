@@ -26,9 +26,11 @@ function appContextFor(entry: MemoEntry): AppContext | null {
   const appName = (candidate as Record<string, unknown>).appName;
   const windowTitle = (candidate as Record<string, unknown>).windowTitle;
   const bundleId = (candidate as Record<string, unknown>).bundleId;
+  const appPath = (candidate as Record<string, unknown>).appPath;
   if (typeof appName !== 'string' || !appName.trim()) return null;
   return {
     appName: appName.trim(),
+    ...(typeof appPath === 'string' && appPath ? { appPath } : {}),
     windowTitle: typeof windowTitle === 'string' ? windowTitle : '',
     ...(typeof bundleId === 'string' && bundleId ? { bundleId } : {}),
   };
@@ -85,6 +87,7 @@ export const ActivityInsights: React.FC = () => {
       if (!app) return;
       appRecords.push({
         appName: app.appName,
+        appPath: app.appPath,
         bundleId: app.bundleId,
         words,
       });
@@ -140,7 +143,7 @@ export const ActivityInsights: React.FC = () => {
           const percent = activity.appWords > 0 ? Math.round((app.words / activity.appWords) * 100) : 0;
           return (
             <div className="activity-insights__app" key={app.key}>
-              <AppIcon appName={app.appName} bundleId={app.bundleId} size={22} />
+              <AppIcon appName={app.appName} bundleId={app.bundleId} appPath={app.appPath} size={window.electronAPI.platform === 'win32' ? 16 : 22} />
               <span className="activity-insights__app-name">{app.appName}</span>
               <span className="activity-insights__app-track"><i style={{ width: `${percent}%` }} /></span>
               <span className="activity-insights__app-value">{percent}%</span>

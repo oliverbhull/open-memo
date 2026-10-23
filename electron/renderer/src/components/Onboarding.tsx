@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { DictationReadiness, TranscriptionData } from '../../../shared/electron-api';
+import type { DictationReadiness, DictationDelivery } from '../../../shared/electron-api';
 import { GlassContainer } from './GlassContainer';
 import { useTheme } from '../context/ThemeContext';
 import { KeyboardKey } from './KeyboardKey';
@@ -11,7 +11,8 @@ type OnboardingStep = 'name' | 'microphone' | 'accessibility' | 'inputMonitoring
 
 interface OnboardingProps { onComplete: () => void; }
 
-const steps: OnboardingStep[] = ['name', 'microphone', 'accessibility', 'inputMonitoring', 'ready'];
+const isWindows = window.electronAPI.platform === 'win32';
+const steps: OnboardingStep[] = isWindows ? ['name', 'microphone', 'ready'] : ['name', 'microphone', 'accessibility', 'inputMonitoring', 'ready'];
 
 function initialStep(): OnboardingStep {
   const stored = localStorage.getItem('onboarding_step') as OnboardingStep | null;
@@ -47,6 +48,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   const [typingBlocked, setTypingBlocked] = useState(false);
   const [prepareAttempt, setPrepareAttempt] = useState(0);
   const micCleanupRef = useRef<(() => void) | null>(null);
+  const completingRef = useRef(false);
 
   const setStep = (next: OnboardingStep) => {
     localStorage.setItem('onboarding_step', next);
@@ -129,14 +131,13 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     setBusy(true);
     setError(null);
     void window.electronAPI.startMemoSttService().then(state => { if (active) setReadiness(state); }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : String(reason)); }).finally(() => { if (active) setBusy(false); });
-    const transcriptionHandler = (data: TranscriptionData) => {
+    const deliveryHandler = (data: DictationDelivery) => {
       if (!active) return;
-      const delivery = data.context?.delivery;
-      if (delivery === 'pasted' && data.processedText?.trim()) { setTestSucceeded(true); setTypingBlocked(false); setError(null); }
-      else if (data.processedText?.trim()) { setTypingBlocked(true); setError('Memo heard you, but macOS blocked typing. Review Typing Access, then try again.'); }
+      if (data.delivery === 'pasted' && data.text.trim()) { setTestSucceeded(true); setTypingBlocked(false); setError(null); }
+      else if (data.text.trim()) { setTypingBlocked(!isWindows); setError('Memo heard you, but could not type into the test field. Click the field and try again.'); }
     };
-    window.electronAPI.onTranscription(transcriptionHandler);
-    return () => { active = false; };
+    const unsubscribe = window.electronAPI.onDictationDelivery(deliveryHandler);
+    return () => { active = false; unsubscribe(); };
   }, [step, prepareAttempt]);
 
   const saveName = async () => {
@@ -174,14 +175,24 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   };
 
   const complete = async () => {
-    if (!testSucceeded) return;
-    const savedName = await window.electronAPI.getUserName();
-    const normalized = name.trim().replace(/\s+/g, ' ') || savedName || '';
-    if (!normalized) { setStep('name'); return; }
-    await window.electronAPI.markUserOnboarded(normalized);
-    localStorage.setItem('onboarding_complete', 'true');
-    localStorage.removeItem('onboarding_step');
-    onComplete();
+    if (!testSucceeded || busy || completingRef.current) return;
+    completingRef.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const savedName = await window.electronAPI.getUserName();
+      const normalized = name.trim().replace(/\s+/g, ' ') || savedName || '';
+      if (!normalized) { setStep('name'); return; }
+      await window.electronAPI.markUserOnboarded(normalized);
+      localStorage.setItem('onboarding_complete', 'true');
+      localStorage.removeItem('onboarding_step');
+      onComplete();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not finish setup. Please try again.');
+    } finally {
+      completingRef.current = false;
+      setBusy(false);
+    }
   };
 
   const stepNumber = steps.indexOf(step) + 1;
@@ -190,13 +201,13 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   return <GlassContainer><div className="title-bar"/><div className="onboarding-container"><div className="onboarding-content">
     {step === 'name' && <div className="onboarding-step"><img src={titleLogo} alt="Memo" height={48} style={{ objectFit: 'contain' }}/><p className="onboarding-description">What should Memo call you?</p><div className="onboarding-input-group"><input className="onboarding-input" placeholder="Your name" value={name} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void saveName(); }} autoFocus/></div><button className="onboarding-button primary" onClick={() => void saveName()} disabled={!name.trim() || busy} style={buttonStyle}>Continue</button><p className="onboarding-hint">Memo will learn your name for more accurate dictation.</p></div>}
 
-    {step === 'microphone' && <div className="onboarding-step"><div className="onboarding-icon-container"><PermissionIcon kind="microphone"/></div><p className="onboarding-description">Allow Memo to hear your dictation.</p>{micGranted && <div style={{ width: '100%', maxWidth: 320 }}><div style={{ fontSize: 13, textAlign: 'center', marginBottom: 8 }}>Using {micName}</div><div style={{ height: 8, borderRadius: 4, background: 'rgba(255,255,255,.12)', overflow: 'hidden' }}><div style={{ width: `${Math.max(3, micLevel * 100)}%`, height: '100%', background: primary, transition: 'width 80ms linear' }}/></div></div>}{micDetected ? <Success>Microphone is working</Success> : micGranted ? <p className="onboarding-hint">Say “hello” to test your microphone.</p> : null}{error && <p className="onboarding-hint">{error}</p>}{!micGranted && <button className="onboarding-button primary" onClick={() => void requestMicrophone()} disabled={busy} style={buttonStyle}>Allow Microphone</button>}{!micGranted && error && <button className="onboarding-button secondary" onClick={() => void window.electronAPI.openMicrophonePreferences()}>Open Microphone Settings</button>}{micDetected && <button className="onboarding-button primary" onClick={() => setStep('accessibility')} style={buttonStyle}>Continue</button>}</div>}
+    {step === 'microphone' && <div className="onboarding-step"><div className="onboarding-icon-container"><PermissionIcon kind="microphone"/></div><p className="onboarding-description">Allow Memo to hear your dictation.</p>{micGranted && <div style={{ width: '100%', maxWidth: 320 }}><div style={{ fontSize: 13, textAlign: 'center', marginBottom: 8 }}>Using {micName}</div><div style={{ height: 8, borderRadius: 4, background: 'rgba(255,255,255,.12)', overflow: 'hidden' }}><div style={{ width: `${Math.max(3, micLevel * 100)}%`, height: '100%', background: primary, transition: 'width 80ms linear' }}/></div></div>}{micDetected ? <Success>Microphone is working</Success> : micGranted ? <p className="onboarding-hint">Say “hello” to test your microphone.</p> : null}{error && <p className="onboarding-hint">{error}</p>}{!micGranted && <button className="onboarding-button primary" onClick={() => void requestMicrophone()} disabled={busy} style={buttonStyle}>Allow Microphone</button>}{(isWindows || !micGranted) && error && <button className="onboarding-button secondary" onClick={() => void window.electronAPI.openMicrophonePreferences()}>Open Microphone Settings</button>}{micDetected && <button className="onboarding-button primary" onClick={() => setStep(isWindows ? 'ready' : 'accessibility')} style={buttonStyle}>Continue</button>}</div>}
 
     {step === 'accessibility' && <div className="onboarding-step"><div className="onboarding-icon-container"><PermissionIcon kind="typing"/></div><p className="onboarding-description">Allow Memo to type your words into other apps.</p>{accessibilityGranted ? <Success>Typing access enabled</Success> : <p className="onboarding-hint">Turn on Memo in Privacy &amp; Security → Accessibility.</p>}{!accessibilityGranted ? <button className="onboarding-button primary" onClick={() => void requestAccessibility()} disabled={busy} style={buttonStyle}>Enable Typing Access</button> : <button className="onboarding-button primary" onClick={() => setStep('inputMonitoring')} style={buttonStyle}>Continue</button>}</div>}
 
     {step === 'inputMonitoring' && <div className="onboarding-step"><div className="onboarding-icon-container"><PermissionIcon kind="keyboard"/></div><p className="onboarding-description">Allow your recording shortcut to work anywhere.</p>{inputMonitoringGranted ? <Success>Keyboard shortcut enabled</Success> : <p className="onboarding-hint">Memo only listens for your chosen dictation shortcut.</p>}{!inputMonitoringGranted ? <button className="onboarding-button primary" onClick={() => void requestInputMonitoring()} disabled={busy} style={buttonStyle}>Enable Keyboard Shortcut</button> : <button className="onboarding-button primary" onClick={() => setStep('ready')} style={buttonStyle}>Try Memo</button>}</div>}
 
-    {step === 'ready' && <div className="onboarding-step"><div className="onboarding-icon-container"><PermissionIcon kind="keyboard"/></div>{busy ? <p className="onboarding-description">Getting Memo ready…</p> : readiness?.ready ? <><p className="onboarding-description">Hold <KeyboardKey label={hotkeyLabel} size="small"/>, say something, then release.</p><input className="onboarding-input" type="text" placeholder="Your words will appear here" value={tryItText} onChange={event => setTryItText(event.target.value)} autoFocus/>{testSucceeded ? <Success>Memo is working</Success> : <p className="onboarding-hint">This verifies your microphone, shortcut, and typing access together.</p>}</> : null}{error && <><p className="onboarding-hint">{error}</p>{typingBlocked ? <button className="onboarding-button secondary" onClick={() => void window.electronAPI.openAutomationPreferences()}>Review Typing Access</button> : <button className="onboarding-button secondary" onClick={() => { setError(null); setPrepareAttempt(value => value + 1); }}>Try Again</button>}</>}{testSucceeded && <button className="onboarding-button primary" onClick={() => void complete()} style={buttonStyle}>Start using Memo</button>}</div>}
+    {step === 'ready' && <div className="onboarding-step"><div className="onboarding-icon-container"><PermissionIcon kind="keyboard"/></div>{busy ? <p className="onboarding-description">Getting Memo ready…</p> : readiness?.ready ? <><p className="onboarding-description">Hold <KeyboardKey label={hotkeyLabel} size="small"/>, say something, then release.</p><input className="onboarding-input" type="text" placeholder="Your words will appear here" value={tryItText} onChange={event => setTryItText(event.target.value)} autoFocus/>{testSucceeded ? <Success>Memo is working</Success> : <p className="onboarding-hint">This verifies your microphone, shortcut, and typing access together.</p>}</> : null}{error && <><p className="onboarding-hint">{error}</p>{typingBlocked ? <button className="onboarding-button secondary" onClick={() => void window.electronAPI.openAutomationPreferences()}>Review Typing Access</button> : <button className="onboarding-button secondary" onClick={() => { setError(null); setPrepareAttempt(value => value + 1); }}>Try Again</button>}</>}<button className="onboarding-button primary" onClick={() => void complete()} disabled={!testSucceeded || busy} style={buttonStyle}>Continue</button></div>}
 
     <div className="onboarding-status-tracker">{steps.map((_, index) => <div key={index} className={`onboarding-status-step ${index + 1 === stepNumber ? 'active' : ''}`} style={{ color: index + 1 <= stepNumber ? primary : 'rgba(255,255,255,.5)' }}><div className="onboarding-status-dot" style={index + 1 <= stepNumber ? { backgroundColor: primary, borderColor: primary } : {}}/>{index < steps.length - 1 && <div className={`onboarding-status-line ${index + 1 < stepNumber ? 'completed' : ''}`} style={index + 1 < stepNumber ? { backgroundColor: primary } : {}}/>}</div>)}</div>
   </div></div></GlassContainer>;

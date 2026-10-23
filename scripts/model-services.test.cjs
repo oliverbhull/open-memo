@@ -10,7 +10,7 @@ const fs = require('node:fs');
 function load(name, mocks) {
   const entry = path.resolve(`electron/main/services/${name}.ts`);
   const source = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs',
-    external: ['electron', './SettingsService'], write: false }).outputFiles[0].text;
+    external: ['electron', './SettingsService'], define: { 'process.platform': '"darwin"' }, write: false }).outputFiles[0].text;
   const loaded = new Module(entry, module);
   const original = Module._load;
   Module._load = (id, ...args) => Object.hasOwn(mocks, id) ? mocks[id] : original(id, ...args);
@@ -22,7 +22,7 @@ test('old punctuation worker exit cannot disable replacement; pipe errors retain
   const workers = [];
   const Service = load('PunctuationService', {
     electron: { app: { isPackaged: false } },
-    'node:fs': { readdirSync: () => ['test.mlmodelc'] },
+    'node:fs': { readdirSync: () => ['test.mlmodelc'], existsSync: () => true },
     'node:child_process': { spawn: () => {
       const worker = new EventEmitter();
       worker.stdout = new PassThrough(); worker.stderr = new PassThrough(); worker.stdin = new PassThrough();
@@ -57,7 +57,7 @@ test('upgrade resets Whisper selection and removes its downloads without touchin
   let selection = 'whisper';
   const entry = path.resolve('electron/main/services/LegacyWhisperCleanup.ts');
   const source = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs',
-    external: ['electron', './SettingsService', '../utils/logger'], write: false }).outputFiles[0].text;
+    external: ['electron', './SettingsService', '../utils/logger'], define: { 'process.platform': '"darwin"' }, write: false }).outputFiles[0].text;
   const loaded = new Module(entry, module);
   const original = Module._load;
   Module._load = (id, ...args) => {
@@ -81,7 +81,7 @@ test('removing Cleaned leaves included model packs in place', async t => {
   fs.mkdirSync(path.join(root, 'cleanup', 'pack'), { recursive: true });
   fs.mkdirSync(path.join(root, 'conomo', 'pack'), { recursive: true });
   const entry = path.resolve('electron/main/services/ModelPackService.ts');
-  const compiled = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', external: ['electron'], write: false }).outputFiles[0].text;
+  const compiled = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', external: ['electron'], define: { 'process.platform': '"darwin"' }, write: false }).outputFiles[0].text;
   const loaded = new Module(entry, module);
   const original = Module._load;
   Module._load = (id, ...args) => id === 'electron'
@@ -113,12 +113,26 @@ test('verified bundled models replace legacy copies without touching downloaded 
   fs.chmodSync(contextualLauncher, 0o755);
   fs.writeFileSync(path.join(conomo, 'model-pack.json'), JSON.stringify(require('./model-pack-manifest.cjs').createManifest('conomo', conomo)));
   const entry = path.resolve('electron/main/services/ModelPackService.ts');
-  const compiled = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', external: ['electron'], write: false }).outputFiles[0].text;
+  const compiled = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', external: ['electron'], define: { 'process.platform': '"darwin"' }, write: false }).outputFiles[0].text;
   const loaded = new Module(entry, module);
   const original = Module._load;
-  Module._load = (id, ...args) => id === 'electron'
-    ? { app: { isPackaged: true, getPath: () => temporary, getVersion: () => '1.0.1' } }
-    : original(id, ...args);
+  const workerLaunches = [];
+  Module._load = (id, ...args) => {
+    if (id === 'electron') return { app: { isPackaged: true, getPath: () => temporary, getVersion: () => '1.0.1' } };
+    // A Windows host cannot execute the Mac shell fixtures. Keep integrity checks
+    // real and emulate only the worker process boundary, including READY output.
+    if (process.platform === 'win32' && id === 'node:child_process') return {
+      execFile(command, commandArgs, options, callback) {
+        assert.match(fs.readFileSync(command, 'utf8'), /READY/);
+        assert.ok(commandArgs.includes('--worker'));
+        assert.equal(options.timeout, 120_000);
+        workerLaunches.push(command);
+        queueMicrotask(() => callback(null, 'READY\n', ''));
+        return { stdin: { end() {} } };
+      },
+    };
+    return original(id, ...args);
+  };
   try { loaded._compile(compiled, entry); } finally { Module._load = original; }
   const service = loaded.exports;
   const legacyConomo = path.join(temporary, 'model-packs', 'conomo', '00000000000000000000');
@@ -143,6 +157,7 @@ test('verified bundled models replace legacy copies without touching downloaded 
   fs.chmodSync(path.join(pnc, 'memo-pnc'), 0o755);
   fs.writeFileSync(path.join(pnc, 'model-pack.json'), JSON.stringify(require('./model-pack-manifest.cjs').createManifest('pnc', pnc)));
   await service.verifyBundledModelPacks();
+  if (process.platform === 'win32') assert.deepEqual(workerLaunches, [contextualLauncher, contextualLauncher, path.join(pnc, 'memo-pnc')]);
   assert.equal(service.resolveModelPackPath('conomo'), conomo);
   assert.equal(service.resolveModelPackPath('pnc'), pnc);
   await service.removeLegacyBundledModelPacks();

@@ -1,4 +1,5 @@
-import { app, autoUpdater, BrowserWindow, ipcMain, systemPreferences, shell, Menu, clipboard } from 'electron';
+import { calculateDictationLatency, saveDictationLatency } from './services/dictationLatency';
+import { app, autoUpdater, BrowserWindow, ipcMain, systemPreferences, shell, Menu, clipboard, nativeTheme } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { MemoSttService, TranscriptionData } from './services/MemoSttService';
 import { createTray, getMicrophoneInputState, refreshAudioInputDevices, selectSystemInput, setMainWindow, setOpenMainWindowHandler, setLastTranscript, setRecordingState, setProcessingState, updateMenuState, setMemoSttService } from './services/TrayService';
@@ -60,6 +61,7 @@ function selectedSystemMicIsAvailable(): boolean {
 }
 
 app.setName('Memo');
+if (process.platform === 'win32') app.setAppUserModelId('com.memo.desktop');
 
 const memoDatabaseService = new MemoDatabaseService({
   databasePath: path.join(app.getPath('userData'), 'memo.sqlite3'),
@@ -113,6 +115,7 @@ app.on('second-instance', () => {
 });
 
 function createWindow(): void {
+  if (process.platform === 'win32') nativeTheme.themeSource = 'dark';
   // Check for dev mode - either NODE_ENV or if dist-react doesn't exist
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -129,6 +132,16 @@ function createWindow(): void {
       // macOS: Use hiddenInset title bar to show native traffic lights
       titleBarStyle: 'hiddenInset',
       frame: true, // Frame must be true for titleBarStyle to work
+    } : process.platform === 'win32' ? {
+      // Share one dark header with native Windows caption controls and Snap.
+      frame: true,
+      titleBarStyle: 'hidden',
+      titleBarOverlay: { color: '#08080c', symbolColor: '#d6d6dc', height: 36 },
+      transparent: false,
+      backgroundColor: '#08080c',
+      title: 'Memo',
+      autoHideMenuBar: true,
+      icon: app.isPackaged ? path.join(process.resourcesPath, 'app-icon.ico') : path.join(app.getAppPath(), 'assets', 'app-icons', 'app-icon.ico'),
     } : {
       // Other platforms: Use frameless window
       frame: false,
@@ -409,7 +422,19 @@ async function setupMemoSttService(): Promise<void> {
           }
         }
 
+        const latency = calculateDictationLatency(data.context, data.finalReceivedAtMs, performance.now(), delivery);
+        if (latency) {
+          logger.info('[Dictation latency] ' + JSON.stringify(latency));
+          mainWindow?.webContents.send('dictation:latency', latency);
+          try { saveDictationLatency(path.join(app.getPath('userData'), 'latency'), latency); }
+          catch (error) { logger.warn('[Dictation latency] Could not save timing:', error); }
+        }
         finishDelivery();
+
+        // Delivery success must not depend on saving history or audio afterward.
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+          mainWindow.webContents.send('dictation:delivery', { text: textToPaste, delivery });
+        }
 
         // Explicitly requested development diagnostics. JSON escaping keeps dictated
         // newlines/control characters from impersonating other log entries.
@@ -429,7 +454,7 @@ async function setupMemoSttService(): Promise<void> {
         }
 
         // Reuse the comparison ID for the memo and its optional WAV file.
-        const { audioCapture, ...transcription } = data;
+        const { audioCapture, finalReceivedAtMs: _timingReceipt, ...transcription } = data;
         const appContext = resolveApplicationContext(
           applicationIconService.enrichContext(deliveryAppContext ?? data.appContext),
           !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused(),
@@ -702,28 +727,30 @@ app.whenReady().then(async () => {
   // starts so its transparency context is fresh for the active display.
   createTray();
 
-  deviceSyncService = new DeviceSyncService({
-    pauseDictation: async () => {
-      if (!memoSttService) return false;
-      logger.info('[Main] Pausing live dictation for Memo device transcription');
-      await memoSttService.suspend();
-      return true;
-    },
-    resumeDictation: async () => {
-      if (isQuitting) return;
-      memoSttService?.resume();
-      if (!isQuitting && memoSttService && selectedSystemMicIsAvailable()) {
-        logger.info('[Main] Restoring live dictation after Memo device transcription');
-        await startLiveDictation();
+  if (process.platform !== 'win32') {
+    deviceSyncService = new DeviceSyncService({
+      pauseDictation: async () => {
+        if (!memoSttService) return false;
+        logger.info('[Main] Pausing live dictation for Memo device transcription');
+        await memoSttService.suspend();
+        return true;
+      },
+      resumeDictation: async () => {
+        if (isQuitting) return;
+        memoSttService?.resume();
+        if (!isQuitting && memoSttService && selectedSystemMicIsAvailable()) {
+          logger.info('[Main] Restoring live dictation after Memo device transcription');
+          await startLiveDictation();
+        }
+      },
+    });
+    deviceSyncService.on('status', (status) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('device-sync:status', status);
       }
-    },
-  });
-  deviceSyncService.on('status', (status) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('device-sync:status', status);
-    }
-  });
-  if (loadSettings().experimentalSupermicrophone) void deviceSyncService.start();
+    });
+    if (loadSettings().experimentalSupermicrophone) void deviceSyncService.start();
+  }
   
   app.on('activate', () => {
     openMainWindow();
@@ -854,6 +881,7 @@ ipcMain.handle('permissions:request-microphone', async () => {
 });
 
 ipcMain.handle('permissions:open-microphone-preferences', async () => {
+  if (process.platform === 'win32') { await shell.openExternal('ms-settings:privacy-microphone'); return; }
   if (process.platform === 'darwin') {
     await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
   }
@@ -1069,10 +1097,30 @@ ipcMain.handle('microphone:select-system-input', async (_event, deviceName: unkn
 });
 
 // Interface settings handlers
+let changingWindowsSpeechModel = false;
+ipcMain.handle('settings:setWindowsSpeechModel', async (_event, model: unknown) => {
+  if (process.platform !== 'win32') throw new Error('This model choice is only available on Windows.');
+  if (model !== 'whisper-base.en-q5_1' && model !== 'nemotron-streaming') throw new Error('Choose Whisper Base or Nemotron streaming.');
+  if (isRecording || isDictationProcessing || changingWindowsSpeechModel) throw new Error('Finish your dictation before changing the speech model.');
+  const previous = store.get('windowsSpeechModel');
+  changingWindowsSpeechModel = true;
+  try {
+    store.set('windowsSpeechModel', model);
+    await memoSttService?.restart();
+  } catch (error) {
+    store.set('windowsSpeechModel', previous);
+    await memoSttService?.restart();
+    throw error;
+  } finally {
+    changingWindowsSpeechModel = false;
+  }
+});
+
 ipcMain.handle('settings:getInterfaceSettings', () => {
   const settings = loadSettings();
   const loginItemSettings = app.getLoginItemSettings();
   return {
+    asrModel: settings.asrModel,
     hotkey: loadUserSettings().hotkey ?? DEFAULT_RECORDING_HOTKEY,
     lockHotkey: loadUserSettings().lockHotkey ?? 'function+controlleft',
     sayEnterToPressEnter: settings.sayEnterToPressEnter ?? false,
@@ -1307,8 +1355,8 @@ ipcMain.handle('email:openThread', async (_event, url: unknown) => {
   await shell.openExternal(threadUrl);
 });
 
-ipcMain.handle('app-icon:get', (_event, appName: string, bundleId?: string, websiteDomain?: string) => {
-  return applicationIconService.getIconDataUrl(appName, bundleId, websiteDomain);
+ipcMain.handle('app-icon:get', (_event, appName: string, bundleId?: string, websiteDomain?: string, appPath?: string) => {
+  return applicationIconService.getIconDataUrl(appName, bundleId, websiteDomain, appPath);
 });
 
 ipcMain.handle('export:json', async (_event, document: unknown) => {

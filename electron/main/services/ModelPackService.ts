@@ -125,7 +125,7 @@ function expectWorkerReady(command: string, args: string[], env?: NodeJS.Process
 }
 
 export async function verifyBundledModelPacks(): Promise<void> {
-  if (!app.isPackaged) return;
+  if (!app.isPackaged || process.platform === 'win32') return;
   for (const name of ['conomo', 'pnc'] as const) {
     const source = bundledPackPath(name);
     if (!isCompleteModelPack(name, source)) throw new Error(`Bundled ${name} pack is incomplete`);

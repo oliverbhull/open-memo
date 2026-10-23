@@ -25,6 +25,7 @@ function harness() {
       if (name === 'electron') return { app: { isPackaged: false } };
       if (name === '../utils/logger') return { logger };
       if (name === './SettingsService') return { loadSettings: () => ({ vocabWords: [] }), store: { get() {} } };
+      if (name === './windowsRuntime') return { windowsDictationPath: () => '/test-dictation.exe', configureWindowsSpeech() {} };
       if (name === './conomoRuntime') return { configureConomo(env) { env.MEMO_ASR_BACKEND = 'conomo'; env.MEMO_ASR_WORKER = '/conomo-worker'; } };
       if (name === './ModelPackService') return { resolveModelPackPath: () => '/test-conomo' };
       if (name.includes('transcription') || name.includes('textProcessing')) return {};

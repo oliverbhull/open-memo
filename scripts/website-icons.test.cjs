@@ -6,7 +6,7 @@ const { buildSync } = require('esbuild');
 
 function loadIcons() {
   const entry = path.resolve('electron/main/services/ApplicationIconService.ts');
-  const js = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', write: false,
+  const js = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', write: false, define: { 'process.platform': '"darwin"' },
     external: ['electron', '../utils/logger'] }).outputFiles[0].text;
   const loaded = new Module(entry, module), original = Module._load;
   Module._load = (name, ...args) => {

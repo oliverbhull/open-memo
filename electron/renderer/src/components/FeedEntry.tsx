@@ -111,7 +111,7 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
 
     const displayText = isProcessing ? 'Transcribing...' : entry.text;
     const sourceIcon = isDesktopEntry ? (
-      <AppIcon appName={appContext.appName || 'Unknown'} bundleId={appContext.bundleId} websiteDomain={appContext.websiteDomain} size={18} />
+      <AppIcon appName={appContext.appName || 'Unknown'} bundleId={appContext.bundleId} websiteDomain={appContext.websiteDomain} appPath={appContext.appPath} size={window.electronAPI.platform === 'win32' ? 14 : 18} />
     ) : isMemoDeviceEntry ? (
       <img
         src={appIconBase}

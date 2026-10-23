@@ -6,7 +6,5 @@ interface GlassContainerProps {
 }
 
 export const GlassContainer: React.FC<GlassContainerProps> = ({ children }) => {
-  return <div className="glass-container">{children}</div>;
+  return <div className="glass-container" data-platform={window.electronAPI.platform}>{children}</div>;
 };
-
-

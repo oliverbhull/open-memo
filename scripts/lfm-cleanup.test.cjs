@@ -9,10 +9,11 @@ const { buildSync } = require('esbuild');
 
 function loadService({ packaged = false, spawn } = {}) {
   const entry = path.resolve('electron/main/services/CleanupService.ts');
-  const compiled = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', external: ['electron', './ModelPackService'], write: false }).outputFiles[0].text;
+  const compiled = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', external: ['electron', './ModelPackService'], define: { 'process.platform': '"darwin"' }, write: false }).outputFiles[0].text;
   const loaded = new Module(entry, module);
   const original = Module._load;
   Module._load = (request, parent, isMain) => {
+    if (request === 'node:path') return path.posix;
     if (request === 'electron') return { app: { isPackaged: packaged } };
     if (request === './ModelPackService') return {
       resolveModelPackPath: () => '/Users/test/Library/Application Support/Memo/model-packs/cleanup/pack',
@@ -69,9 +70,11 @@ test('fresh installs default to As spoken so LFM is opt-in', () => {
   assert.equal(loadStoreDefaults().writingMode, 'as-spoken');
 });
 
-test('Cleaned remains selectable after As spoken stops the cleanup worker', () => {
+test('Cleaned remains selectable on Mac and is hidden on Windows', () => {
   const settings = fs.readFileSync(path.resolve('electron/renderer/src/components/Settings.tsx'), 'utf8');
-  assert.match(settings, /<option value="clean">Cleaned – 1\.03 GB model download<\/option>/);
+  assert.match(settings, /window\.electronAPI\.platform !== 'win32' && <option value="clean">/);
+  assert.match(settings, /window\.electronAPI\.platform !== 'win32' && <ToggleTile experimental title="Email formatting"/);
+  assert.match(settings, /Cleaned – 1\.03 GB model download/);
   assert.doesNotMatch(settings, /disabled=\{cleanupState\.status === 'disabled'\}/);
 });
 
@@ -84,8 +87,8 @@ test('packaged builds start the downloaded LFM', async t => {
     return fakeWorker((request, child) => child.reply({ id: request.id, text: 'Cleaned.', status: 'accepted' }));
   } });
   const service = new Service(); t.after(() => service.stop()); await ready(service);
-  assert.equal(service.isEnabled(), process.platform === 'darwin');
-  if (process.platform === 'darwin') assert.equal((await service.format('Original.', [])).text, 'Cleaned.');
+  assert.equal(service.isEnabled(), true);
+  assert.equal((await service.format('Original.', [])).text, 'Cleaned.');
 });
 
 test('fused model receives raw speech; rapid requests and fallback stay ordered', async t => {

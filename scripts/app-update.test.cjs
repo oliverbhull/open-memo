@@ -4,7 +4,7 @@ const { EventEmitter } = require('node:events');
 const { buildSync } = require('esbuild');
 const vm = require('node:vm');
 const compiled = buildSync({ entryPoints: ['electron/main/services/AppUpdateService.ts'], bundle: true, platform: 'node', format: 'cjs', write: false, external: ['electron', 'electron-updater', '../utils/logger', './MacUpdateInstaller'] }).outputFiles[0].text;
-function service(beforeInstall, installer, dialogResponse = 0) {
+function service(beforeInstall, installer, dialogResponse = 0, platform = 'darwin') {
   const updater = new EventEmitter();
   let downloads = 0;
   updater.downloadUpdate = async () => { downloads++; return []; };
@@ -14,7 +14,7 @@ function service(beforeInstall, installer, dialogResponse = 0) {
   };
   const messages = [];
   const module = { exports: {} };
-  vm.runInNewContext(compiled, { module, exports: module.exports, setTimeout, setInterval, clearTimeout, clearInterval, require: name => {
+  vm.runInNewContext(compiled, { process: { platform }, module, exports: module.exports, setTimeout, setInterval, clearTimeout, clearInterval, require: name => {
     if (name === 'electron') return { app: { isPackaged: true, getVersion: () => '1.0.0' }, dialog: { showMessageBox: async options => { messages.push(options); return { response: dialogResponse }; } } };
     if (name === 'electron-updater') return { autoUpdater: updater };
     if (name === '../utils/logger') return { logger: { info() {}, warn() {} } };
@@ -147,4 +147,14 @@ test('header can reopen a declined update', async () => {
   assert.equal(messages.length, 1);
   await instance.openUpdate();
   assert.equal(messages.length, 2);
+});
+
+ test('Windows never starts the Mac updater and explains manual downloads', async () => {
+  const { instance, updater, messages, installs } = service(undefined, undefined, 0, 'win32');
+  updater.checkForUpdates = () => { throw new Error('Windows updater must stay disabled'); };
+  instance.start();
+  await instance.checkManually();
+  assert.equal(messages.length, 1);
+  assert.match(messages[0].detail, /Download for Windows/);
+  assert.deepEqual(installs, []);
 });

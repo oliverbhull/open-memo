@@ -1,0 +1,2 @@
+# These vendored license bytes are verified against pnc-dependencies.lock.json.
+/scripts/windows/pnc-licenses/* -text

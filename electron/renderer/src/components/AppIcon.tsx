@@ -2,6 +2,7 @@ import { memo, useEffect, useState, type CSSProperties } from 'react';
 import { useTheme } from '../context/ThemeContext';
 
 interface AppIconProps {
+  appPath?: string;
   appName: string;
   bundleId?: string;
   websiteDomain?: string;
@@ -12,16 +13,17 @@ interface AppIconProps {
 
 const iconCache = new Map<string, Promise<string | null>>();
 
-function loadIcon(appName: string, bundleId?: string, websiteDomain?: string): Promise<string | null> {
-  const key = `${bundleId || appName.toLowerCase()}:${websiteDomain || ''}`;
+function loadIcon(appName: string, bundleId?: string, websiteDomain?: string, appPath?: string): Promise<string | null> {
+  const key = `${appPath || bundleId || appName.toLowerCase()}:${websiteDomain || ''}`;
   const cached = iconCache.get(key);
   if (cached) return cached;
-  const request = window.electronAPI.appIcons.get(appName, bundleId, websiteDomain).catch(() => null);
+  const request = window.electronAPI.appIcons.get(appName, bundleId, websiteDomain, appPath).catch(() => null);
   iconCache.set(key, request);
   return request;
 }
 
 export const AppIcon = memo(function AppIcon({
+  appPath,
   appName,
   bundleId,
   websiteDomain,
@@ -41,11 +43,11 @@ export const AppIcon = memo(function AppIcon({
   useEffect(() => {
     let cancelled = false;
     setIconUrl(null);
-    loadIcon(appName, bundleId, websiteDomain).then((url) => {
+    loadIcon(appName, bundleId, websiteDomain, appPath).then((url) => {
       if (!cancelled) setIconUrl(url);
     });
     return () => { cancelled = true; };
-  }, [appName, bundleId, websiteDomain]);
+  }, [appName, bundleId, websiteDomain, appPath]);
 
   if (iconUrl) {
     return (
@@ -53,7 +55,7 @@ export const AppIcon = memo(function AppIcon({
         src={iconUrl}
         onError={() => {
           if (websiteDomain) {
-            loadIcon(appName, bundleId).then(setIconUrl);
+            loadIcon(appName, bundleId, undefined, appPath).then(setIconUrl);
           } else {
             setIconUrl(null);
           }
