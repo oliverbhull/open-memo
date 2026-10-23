@@ -26,6 +26,14 @@ jobs:
   windows:
     runs-on: windows-2022
     timeout-minutes: 60
+    env:
+      WIN_AZURE_ENDPOINT: ${{ vars.WIN_AZURE_ENDPOINT }}
+      WIN_AZURE_ACCOUNT_NAME: ${{ vars.WIN_AZURE_ACCOUNT_NAME }}
+      WIN_AZURE_CERTIFICATE_PROFILE: ${{ vars.WIN_AZURE_CERTIFICATE_PROFILE }}
+      WIN_AZURE_PUBLISHER_NAME: ${{ vars.WIN_AZURE_PUBLISHER_NAME }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,7 +69,14 @@ jobs:
           if ($LASTEXITCODE) { throw 'Release commit must be on main.' }
           $conclusion = gh api "repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$sha&status=completed" --jq '[.workflow_runs[] | select(.event == "push" and .head_branch == "main")] | sort_by(.created_at) | last | .conclusion // ""'
           if ($LASTEXITCODE -or $conclusion -ne 'success') { throw 'A successful main push CI run is required.' }
-          if (!$env:WIN_CSC_LINK -or !$env:WIN_CSC_KEY_PASSWORD) { throw 'Configure WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD before publishing.' }
+          $azureFields = @($env:WIN_AZURE_ENDPOINT, $env:WIN_AZURE_ACCOUNT_NAME, $env:WIN_AZURE_CERTIFICATE_PROFILE, $env:WIN_AZURE_PUBLISHER_NAME)
+          $azureConfigured = @($azureFields | Where-Object { $_ }).Count
+          if ($azureConfigured -gt 0) {
+            if ($azureConfigured -ne 4 -or !$env:AZURE_TENANT_ID -or !$env:AZURE_CLIENT_ID -or !$env:AZURE_CLIENT_SECRET) { throw 'Complete Azure signing variables and credentials before publishing.' }
+            if ($env:WIN_CSC_LINK) { throw 'Choose Azure signing or WIN_CSC_LINK, not both.' }
+          } elseif (!$env:WIN_CSC_LINK -or !$env:WIN_CSC_KEY_PASSWORD) {
+            throw 'Configure Azure signing or WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD before publishing.'
+          }
       - run: npm ci
       - name: Test source
         run: npm run check:windows

@@ -29,3 +29,29 @@ test('Windows publication is explicit, signed, and separate from the Mac latest 
   assert.equal((source.match(/'create'.*'--latest=false'/g) || []).length, 2);
   assert.doesNotMatch(source, /latest-mac\.yml|Open-Memo-latest-arm64\.dmg/);
 });
+
+test('Azure signing requires complete configuration and rejects competing credentials', () => {
+  const { spawnSync } = require('node:child_process');
+  const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('WIN_AZURE_') && key !== 'WIN_CSC_LINK'));
+  const fields = {
+    WIN_AZURE_ENDPOINT: 'https://eus.codesigning.azure.net',
+    WIN_AZURE_ACCOUNT_NAME: 'memo',
+    WIN_AZURE_CERTIFICATE_PROFILE: 'public',
+    WIN_AZURE_PUBLISHER_NAME: 'Memo Labs Inc.',
+  };
+  const inspect = extra => spawnSync(process.execPath, ['-e', "console.log(JSON.stringify(require('./config/electron-builder.windows.cjs').win))"], {
+    cwd: require('node:path').resolve(__dirname, '..'), env: { ...cleanEnv, ...extra }, encoding: 'utf8',
+  });
+  assert.equal(inspect({}).status, 0);
+  assert.equal(JSON.parse(inspect({}).stdout).azureSignOptions, undefined);
+  const configured = inspect(fields);
+  assert.equal(configured.status, 0, configured.stderr);
+  assert.deepEqual(JSON.parse(configured.stdout).azureSignOptions, {
+    endpoint: fields.WIN_AZURE_ENDPOINT, codeSigningAccountName: 'memo', certificateProfileName: 'public', publisherName: 'Memo Labs Inc.',
+  });
+  for (const key of Object.keys(fields)) {
+    const partial = { ...fields }; delete partial[key];
+    assert.notEqual(inspect(partial).status, 0, key);
+  }
+  assert.notEqual(inspect({ ...fields, WIN_CSC_LINK: '/certificate.pfx' }).status, 0);
+});

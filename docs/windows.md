@@ -81,7 +81,7 @@ The Windows installer-check workflow runs on relevant pull requests and uploads
 an artifact. It does not publish. The separate manual Windows release workflow
 defaults to build-only. Publishing requires an existing v-version source tag
 matching package.json, the commit on main with successful main CI, and
-WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD signing secrets.
+configured Windows signing (Azure or a certificate).
 
 Public builds require code signing and a Valid Authenticode installer signature.
 The workflow publishes immutable windows-v-version releases, plus a moving
@@ -114,3 +114,33 @@ installer production-verified. Before public publication:
 Local release-to-text timings cover native release through paste dispatch,
 including formatting. They omit native stdout transit and target-app rendering.
 Timing logs contain durations/backend names, not transcript text or microphone audio.
+
+## Set up cloud signing for production
+
+Microsoft Artifact Signing (formerly Trusted Signing) is supported through
+our pinned electron-builder v26 Azure integration. Setup requires an Azure
+subscription, a signing account, verified Public Trust publisher identity, and a
+Public Trust certificate profile. Identity validation must be completed in the
+Azure portal: https://learn.microsoft.com/azure/artifact-signing/quickstart
+
+Create an Entra app registration/service principal, grant it the certificate
+profile signer role scoped to that profile, and add these GitHub repository
+secrets: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`.
+Use the secret value, not its ID. Do not put credentials in source or chat.
+
+Add these GitHub repository Actions variables:
+
+- `WIN_AZURE_ENDPOINT`: the signing account's regional HTTPS endpoint.
+- `WIN_AZURE_ACCOUNT_NAME`: the signing account name.
+- `WIN_AZURE_CERTIFICATE_PROFILE`: the Public Trust profile name.
+- `WIN_AZURE_PUBLISHER_NAME`: the exact certificate subject common name.
+
+Alternatively, configure `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` for an
+existing exportable signing certificate. Configure only one signing method.
+Partial Azure configuration fails rather than producing an unsigned installer.
+The publish workflow also requires a Valid Authenticode signature before upload.
+
+After main CI passes for the release commit, create its matching `v` version tag
+and dispatch **Windows release** with that tag as `ref` and `publish=true`.
+Complete the clean Windows installation/offline acceptance checks above before
+publishing. Merging the PR does not make the Windows download button live.
