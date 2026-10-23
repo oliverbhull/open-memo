@@ -22,6 +22,7 @@ interface DeviceSyncOptions {
   pauseDictation: () => Promise<boolean>;
   resumeDictation: () => Promise<void> | void;
   firmwareReleases?: FirmwareReleaseService;
+  isEnabled?: () => boolean;
 }
 
 interface WorkerStatusMessage extends Partial<DeviceSyncStatus> {
@@ -65,7 +66,14 @@ export class DeviceSyncService extends EventEmitter {
     return this.status.state === 'transcribing';
   }
 
+  private isEnabled(): boolean {
+    return this.options.isEnabled?.() ?? loadSettings().experimentalSupermicrophone === true;
+  }
+
+  isUpdatingFirmware(): boolean { return this.updateChild !== null; }
+
   async start(): Promise<void> {
+    if (!this.isEnabled()) return;
     const generation = this.generation;
     if (this.stopPromise) await this.stopPromise;
     if (generation !== this.generation) return;
@@ -78,7 +86,7 @@ export class DeviceSyncService extends EventEmitter {
       });
       return;
     }
-    if (generation !== this.generation || this.child) return;
+    if (generation !== this.generation || this.child || !this.isEnabled()) return;
 
     const resources = this.resolveResources();
     for (const [label, resource] of Object.entries(resources)) {
@@ -293,7 +301,8 @@ export class DeviceSyncService extends EventEmitter {
 
   private scheduleFirmwareCheck(status: DeviceSyncStatus): void {
     if (
-      status.transport !== 'usb'
+      !this.isEnabled()
+      || status.transport !== 'usb'
       ||
       status.protocolVersion !== 2
       || !status.deviceUid
@@ -328,7 +337,7 @@ export class DeviceSyncService extends EventEmitter {
     let updateGeneration = initialGeneration;
     try {
       const artifact = await this.firmwareReleases.findUpdate(connected.firmwareVersion!);
-      if (this.generation !== initialGeneration || this.stopped) {
+      if (this.generation !== initialGeneration || this.stopped || !this.isEnabled()) {
         this.lastFirmwareCheckKey = null;
         return;
       }
@@ -345,6 +354,7 @@ export class DeviceSyncService extends EventEmitter {
         ...baseStatus,
         targetFirmwareVersion: artifact.firmwareVersion,
       });
+      if (!this.isEnabled() || this.generation !== updateGeneration) return;
       await this.runFirmwareUpdater(artifact, connected.deviceUid!);
       if (this.generation !== updateGeneration) return;
       this.publishStatus({
@@ -364,7 +374,7 @@ export class DeviceSyncService extends EventEmitter {
         error: message,
       });
     } finally {
-      if (workerStopped && this.generation === updateGeneration) {
+      if (workerStopped && this.generation === updateGeneration && this.isEnabled()) {
         this.stopped = false;
         await this.start();
       }

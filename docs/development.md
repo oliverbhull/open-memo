@@ -73,3 +73,12 @@ artifacts are excluded from Git.
 
 As spoken uses the included punctuation model. Cleaned downloads an optional 6-bit
 LFM model when selected and then runs it offline. Model bundles are not stored in Git.
+
+## Experimental Supermicrophone support
+
+Settings → General → Supermicrophone enables USB/BLE recorder discovery, sync,
+recording import and automatic firmware updates together. It defaults off for
+new and existing installations. Regular microphone dictation does not require it.
+Disabling stops the worker and cancels pending update checks; an active firmware
+write must finish before the setting can be disabled. Existing feed entries and
+saved recording audio remain available while the experiment is off.
