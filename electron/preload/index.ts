@@ -202,6 +202,7 @@ const electronAPI = {
       saveAudio: boolean;
       writingMode: WritingMode;
       experimentalEmailFormatting: boolean;
+  experimentalSupermicrophone: boolean;
       cleanupState: CleanupState;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
@@ -235,6 +236,7 @@ const electronAPI = {
     setSaveAudio: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setSaveAudio', enabled);
     },
+    setExperimentalSupermicrophone: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setExperimentalSupermicrophone', enabled),
     setExperimentalEmailFormatting: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setExperimentalEmailFormatting', enabled),
     setWritingMode: (mode: WritingMode): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setWritingMode', mode);

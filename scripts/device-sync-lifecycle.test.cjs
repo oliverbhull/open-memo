@@ -16,6 +16,7 @@ function setup(options = {}) {
   Module._load = (request, parent, isMain) => {
     if (request === 'electron') return { app: { isPackaged: false, getPath: () => '/test-memo' } };
     if (request === 'node:fs') return { ...fs, existsSync: () => true };
+    if (request === './conomoRuntime') return { configureConomo(env) { env.MEMO_ASR_BACKEND = 'conomo'; env.MEMO_ASR_WORKER = '/conomo-worker'; } };
     if (request === './ModelPackService') return { resolveModelPackPath: () => '/test-conomo' };
     if (request === './FirmwareReleaseService') return { FirmwareReleaseService: class {} };
     if (request === './SettingsService') return { loadSettings: () => ({ asrModel: 'conomo' }) };
@@ -34,7 +35,7 @@ function setup(options = {}) {
   };
   try { loaded._compile(transformSync(fs.readFileSync(entry, 'utf8'), { loader: 'ts', format: 'cjs' }).code, entry); }
   finally { Module._load = original; }
-  const service = new loaded.exports.DeviceSyncService({ pauseDictation: async () => true, resumeDictation() {}, ...options });
+  const service = new loaded.exports.DeviceSyncService({ pauseDictation: async () => true, resumeDictation() {}, isEnabled: () => true, ...options });
   service.legacyOwnerIsLoaded = async () => false;
   return { service, children };
 }
@@ -106,4 +107,28 @@ test('firmware updater shares sync lock and preserves owner-conflict diagnostics
   child.exitCode = 1;
   child.emit('close', 1, null);
   await assert.rejects(update, /Another Memo app is syncing/);
+});
+
+test('disabled Supermicrophone starts no worker and schedules no firmware lookup', async () => {
+  let checks = 0;
+  const { service, children } = setup({ isEnabled: () => false, firmwareReleases: { async findUpdate() { checks++; } } });
+  await service.start();
+  service.scheduleFirmwareCheck({ transport: 'usb', protocolVersion: 2, deviceUid: 'test', firmwareVersion: '1.0.0' });
+  await tick();
+  assert.equal(children.length, 0);
+  assert.equal(checks, 0);
+});
+
+test('disabling during a firmware lookup cannot launch an updater', async () => {
+  let enabled = true, resolve;
+  const { service, children } = setup({ isEnabled: () => enabled, firmwareReleases: { findUpdate() { return new Promise(r => { resolve = r; }); } } });
+  await service.start();
+  service.scheduleFirmwareCheck({ transport: 'usb', protocolVersion: 2, deviceUid: 'test', firmwareVersion: '1.0.0' });
+  enabled = false;
+  await service.stop();
+  resolve({ path: '/firmware.uf2', firmwareVersion: '2.0.0' });
+  await tick();
+  assert.equal(children.length, 1);
+  await service.start();
+  assert.equal(children.length, 1);
 });

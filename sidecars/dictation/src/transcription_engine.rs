@@ -44,6 +44,13 @@ impl TranscriptionEngine {
         Ok(())
     }
 
+    pub fn set_vocabulary(&mut self, phrases: &[String]) {
+        let Self::Worker(engine) = self;
+        if let Err(error) = engine.send_message(json!({ "type": "context", "phrases": phrases })) {
+            eprintln!("vocabulary update failed: {error}");
+        }
+    }
+
     pub fn set_prompt(&mut self, prompt: Option<String>) {
         let Self::Worker(engine) = self;
         if env::var("MEMO_CONTEXTUAL_VOCAB").as_deref() == Ok("1") {

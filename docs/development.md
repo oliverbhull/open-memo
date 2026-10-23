@@ -22,13 +22,21 @@ checks basic integration, not audio-grounded accuracy or release readiness.
 
 ## Local dictation
 
-`npm run dev` is the existing local development experience. It first checks
-contextual Granite and LFM assets, builds native helpers, then starts Electron
-and Vite. It is not a clean-checkout bootstrap: the recognition prototype still
-requires development Python/model assets, and trained cleanup weights are not
-distributed by this repository. Read the setup scripts before supplying paths.
-Missing assets must be provisioned explicitly; do not copy private training data
-into source to make startup pass.
+`npm run dev` builds the standalone Conomo runtime before starting Memo. Conomo
+owns the shared streaming ASR process and vocabulary decoder. Memo supplies audio
+and hints through the worker/socket interface; model selection stays in Conomo.
+
+`npm run build:conomo` provisions a managed Python 3.12 runtime and fetches the
+public model revision pinned in `runtimes/conomo/conomo/model-manifest.json`.
+Every file is checked for size and SHA-256 before installation, including cache
+hits. `CONOMO_MODEL_SOURCE=/path/to/existing/model` reuses verified local files;
+`CONOMO_OFFLINE=1` prohibits model downloads and fails if required files are missing
+or corrupt. Python dependencies must already be cached for an entirely offline
+first build. No private model-archive secret is needed.
+
+See [the Conomo package](../runtimes/conomo/README.md) for standalone installation,
+streaming, endpoint ownership, phrase boosting, and test commands. Existing
+punctuation and optional cleanup prerequisites still apply.
 
 The LFM worker source is `scripts/python/transcript-cleanup-worker.py`, with the
 unchanged trained prompt in `cleanup_prompt.py` and technical completion checks
@@ -51,12 +59,26 @@ artifacts.
 
 ## Packaging boundary
 
-`build:dir` builds an unsigned application directory. CI uses protocol-only Conomo
-fixtures to validate packaging shape; those fixtures do not recognize speech.
-Signed builds reject fixtures. Every release ZIP and DMG includes Conomo and the
-punctuation model. The release signs nested native code, signs and notarizes the
-app, and verifies both artifacts before upload. Memo runs included models directly
-from the app bundle and removes legacy saved copies after verifying both workers.
+`build:dir` builds an unsigned application directory. CI builds with the real
+pinned Conomo model, validates its file hashes, and checks that the packaged worker
+starts. Every release ZIP and DMG includes the runtime, ASR model and punctuation
+model. Users do not need Python or a first-launch model download. Dictation works
+offline after installation.
+
+The release signs nested native code, signs and notarizes the app, and verifies
+both artifacts before upload. Memo verifies the bundled content manifest before
+using it. Conomo validates the pinned model hashes before starting its model
+process; it does not silently load a different revision. Model weights and build
+artifacts are excluded from Git.
 
 As spoken uses the included punctuation model. Cleaned downloads an optional 6-bit
 LFM model when selected and then runs it offline. Model bundles are not stored in Git.
+
+## Experimental Supermicrophone support
+
+Settings → General → Supermicrophone enables USB/BLE recorder discovery, sync,
+recording import and automatic firmware updates together. It defaults off for
+new and existing installations. Regular microphone dictation does not require it.
+Disabling stops the worker and cancels pending update checks; an active firmware
+write must finish before the setting can be disabled. Existing feed entries and
+saved recording audio remain available while the experiment is off.

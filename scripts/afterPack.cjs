@@ -80,12 +80,11 @@ module.exports = async function afterPack(context) {
   const conomoRequired = [
     conomoWorker,
     devicePython,
-    path.join(conomoPath, 'compiled'),
-    path.join(conomoPath, 'tokenizer.json'),
-    path.join(conomoPath, 'manifest.json'),
+    path.join(conomoPath, 'model'),
+    path.join(conomoPath, 'runtime', 'conomo', 'model-manifest.json'),
     path.join(conomoPath, 'model-pack.json'),
-    path.join(conomoPath, 'LICENSE-APACHE-2.0.txt'),
-    path.join(conomoPath, 'NOTICE.txt'),
+    path.join(conomoPath, 'LICENSE'),
+    path.join(conomoPath, 'THIRD_PARTY_NOTICES'),
     path.join(conomoPath, 'VERSIONS'),
   ];
   const missingFiles = conomoRequired.filter((required) => !fs.existsSync(required));
@@ -95,17 +94,10 @@ module.exports = async function afterPack(context) {
   await sh(devicePython, ['-B', '-c', 'import serial; print(serial.VERSION)'], {
     env: { ...process.env, PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' },
   });
-  const conomoModels = fs.readdirSync(path.join(conomoPath, 'compiled'))
-    .filter((name) => name.endsWith('.mlmodelc'));
-  if (conomoModels.length !== 1) throw new Error('Conomo bundle must contain exactly one compiled Core ML model');
-  const conomoManifest = JSON.parse(fs.readFileSync(path.join(conomoPath, 'manifest.json'), 'utf8'));
-  if (shouldSign && conomoManifest.fixture === true) {
-    throw new Error('Refusing to sign a release containing the protocol-only Conomo fixture');
-  }
-  if (conomoManifest.quantization !== 'int4' || !(conomoManifest.int4_operations > 0)) {
-    throw new Error('Packaged Conomo model is not verified as INT4');
-  }
-  console.log('✓ Bundled Conomo Core ML INT4 runtime verified');
+  await sh(devicePython, ['-B', '-m', 'conomo.models', '--verify', path.join(conomoPath, 'model')], {
+    env: { ...process.env, PYTHONPATH: path.join(conomoPath, 'runtime'), PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' },
+  });
+  console.log('✓ Bundled Conomo streaming model matches the pinned SHA-256 manifest');
 
   const pncPath = path.join(appPath, 'Contents', 'Resources', 'pnc');
   const pncCompiledModels = fs.readdirSync(path.join(pncPath, 'compiled'))
@@ -149,14 +141,9 @@ module.exports = async function afterPack(context) {
     await codesign([
       '--force', '--options', 'runtime',
       '--entitlements', path.resolve('config/entitlements.mac.plist'),
-      '--sign', signer, conomoWorker,
-    ]);
-    await codesign([
-      '--force', '--options', 'runtime',
-      '--entitlements', path.resolve('config/entitlements.mac.plist'),
       '--sign', signer, pncWorker,
     ]);
-    console.log(`✓ Signed ${nativeLibraries.length} device runtime libraries, Python, conomo worker, and PnC worker`);
+    console.log(`✓ Signed ${nativeLibraries.length} device runtime libraries, Python and PnC worker`);
     await codesign([
       '--force',
       '--options', 'runtime',

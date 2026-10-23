@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "conomo"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["numpy==2.5.0", "onnxruntime==1.24.4", "tokenizers==0.22.2"]
+
+[tool.setuptools.package-data]
+conomo = ["model-manifest.json"]
+[project.scripts]
+conomo-model = "conomo.models:main"
+conomo-server = "conomo.server:main"
+conomo-worker = "conomo.worker:main"

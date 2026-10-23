@@ -49,7 +49,7 @@ function activeManifestPath(name: ModelPackName): string {
 }
 
 function requiredPaths(name: ModelPackName): string[] {
-  if (name === 'conomo') return ['model-pack.json', 'conomo', 'compiled', 'tokenizer.json', 'manifest.json', 'VERSIONS', 'device-runtime/bin/python3.12'];
+  if (name === 'conomo') return ['model-pack.json', 'conomo', 'model', 'runtime/conomo/model-manifest.json', 'VERSIONS', 'device-runtime/bin/python3.12'];
   if (name === 'pnc') return ['model-pack.json', 'memo-pnc', 'compiled', 'tokenizer.vocab', 'manifest.json', 'VERSIONS'];
   return ['manifest.json', 'model/model.safetensors', 'model/memo-cleanup-model.json', 'runtime/bin/python', 'worker/transcript-cleanup-worker.py', 'VERSIONS'];
 }
@@ -131,14 +131,7 @@ export async function verifyBundledModelPacks(): Promise<void> {
     if (!isCompleteModelPack(name, source)) throw new Error(`Bundled ${name} pack is incomplete`);
     await verifyModelPack(name, source);
     if (name === 'conomo') {
-      await expectWorkerReady(path.join(process.resourcesPath, 'dictation', 'run-contextual-conomo'), ['--worker'], {
-        ...process.env,
-        MEMO_CONTEXTUAL_PYTHON: path.join(source, 'device-runtime', 'bin', 'python3.12'),
-        MEMO_CONTEXTUAL_BROKER: path.join(process.resourcesPath, 'dictation', 'contextual-worker.py'),
-        MEMO_CONTEXTUAL_NATIVE: path.join(process.resourcesPath, 'dictation', 'memo-conomo-contextual'),
-        MEMO_ASR_MODEL_PATH: compiledModelPath(source),
-        MEMO_ASR_TOKENIZER_PATH: path.join(source, 'tokenizer.json'),
-      });
+      await expectWorkerReady(path.join(source, 'conomo'), ['--worker']);
     } else {
       await expectWorkerReady(path.join(source, 'memo-pnc'), [
         '--model-path', compiledModelPath(source),

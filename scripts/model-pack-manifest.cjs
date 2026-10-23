@@ -4,7 +4,7 @@ const path = require('node:path');
 
 const PACKS = ['conomo', 'pnc'];
 const INCLUDED_TOP_LEVEL = {
-  conomo: new Set(['conomo', 'compiled', 'tokenizer.json', 'manifest.json', 'LICENSE-APACHE-2.0.txt', 'NOTICE.txt', 'VERSIONS', 'device-runtime']),
+  conomo: new Set(['conomo', 'model', 'runtime', 'LICENSE', 'THIRD_PARTY_NOTICES', 'VERSIONS', 'device-runtime']),
   pnc: new Set(['memo-pnc', 'compiled', 'tokenizer.vocab', 'manifest.json', 'VERSIONS', 'NOTICE.md']),
   cleanup: null,
 };
@@ -15,7 +15,7 @@ function isStablePackFile(name, relative) {
   // executable integrity boundary; the content manifest covers immutable
   // weights, tokenizers, configuration, notices, and worker source.
   if (name === 'conomo' && relative === 'device-runtime/.memo-runtime-version') return true;
-  if (name === 'conomo' && (relative === 'conomo' || relative.startsWith('device-runtime/'))) return false;
+  if (name === 'conomo' && relative.startsWith('device-runtime/')) return false;
   if (name === 'pnc' && relative === 'memo-pnc') return false;
   if (name === 'cleanup' && relative.startsWith('runtime/')) return false;
   return true;
