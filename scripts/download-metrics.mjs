@@ -58,6 +58,6 @@ if (process.env.POSTHOG_PROJECT_TOKEN && process.env.POSTHOG_API_HOST) {
   });
   if (!response.ok) throw new Error(`PostHog snapshot failed: ${response.status}`);
   const result = await response.json();
-  if (result.status !== 1) throw new Error('PostHog rejected snapshot.');
+  if (![1, '1', 'Ok'].includes(result.status)) throw new Error('PostHog rejected snapshot.');
   console.log('PostHog installer count snapshot accepted.');
 }
