@@ -9,7 +9,7 @@
     <img src="assets/readme/download-macos.svg" alt="Download Open Memo for macOS">
   </a>
   <a href="https://github.com/oliverbhull/open-memo/releases/download/windows-latest/Open-Memo-latest-windows-x64-setup.exe">
-    <img src="assets/readme/download-windows.svg" alt="Download Open Memo for Windows">
+    <img src="assets/readme/download-windows.svg" alt="Download Open Memo Windows unsigned preview">
   </a>
 </p>
 
@@ -66,8 +66,10 @@ Conomo is included and ready to use. It streams audio to a separate local runtim
 and applies your vocabulary hints during recognition. The verified model ships
 inside the installer; no first-launch model download is needed.
 
-**Windows:** [Download for Windows](https://github.com/oliverbhull/open-memo/releases/download/windows-latest/Open-Memo-latest-windows-x64-setup.exe),
+**Windows unsigned preview:** [Download for Windows](https://github.com/oliverbhull/open-memo/releases/download/windows-latest/Open-Memo-latest-windows-x64-setup.exe),
 run the installer, and complete the microphone test. Hold **Right Ctrl** to dictate.
+This preview is unsigned, so Windows may display an unknown publisher or SmartScreen
+warning. See the [preview release notes and checksums](https://github.com/oliverbhull/open-memo/releases/tag/windows-latest).
 Windows 11 x64 with an x86-64-v3 processor (AVX2, FMA, F16C and BMI2) is supported.
 Nemotron streaming, punctuation and capitalization,
 and Whisper Base fallback are included; no separate Python, model, GPU driver,
