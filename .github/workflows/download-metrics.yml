@@ -1,0 +1,60 @@
+name: Snapshot installer download counts
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Publish Windows unsigned preview, Windows release, Release]
+    types: [completed]
+permissions:
+  contents: write
+concurrency:
+  group: installer-download-metrics
+  cancel-in-progress: false
+jobs:
+  snapshot:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Read previous installer count ledger
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only a confirmed missing branch starts a new ledger. Other errors fail.
+          gh api "repos/$GITHUB_REPOSITORY/branches" --paginate > branches.json
+          if jq -e '.[] | select(.name == "download-metrics")' branches.json > /dev/null; then
+            gh api "repos/$GITHUB_REPOSITORY/contents/download-metrics.json?ref=download-metrics" --jq .content | base64 --decode > download-metrics.json
+          fi
+      - name: Snapshot GitHub installer counts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          POSTHOG_PROJECT_TOKEN: ${{ vars.POSTHOG_PROJECT_TOKEN }}
+          POSTHOG_API_HOST: ${{ vars.POSTHOG_API_HOST }}
+        run: node scripts/download-metrics.mjs
+      - name: Retain counts independently of moving release aliases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if jq -e '.[] | select(.name == "download-metrics")' branches.json > /dev/null; then
+            git fetch origin download-metrics
+            mv download-metrics.json /tmp/download-metrics.json
+            git switch --force-create download-metrics origin/download-metrics
+            cp /tmp/download-metrics.json download-metrics.json
+          else
+            git switch --orphan download-metrics
+            git rm -rf --ignore-unmatch .
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add download-metrics.json
+          git commit -m 'Snapshot installer asset download counts'
+          git push origin HEAD:download-metrics
