@@ -90,8 +90,16 @@ Windows release is marked GitHub's latest release, preserving the Mac latest
 pointer and updater. The moving tag changes only in the explicit publish action.
 No workflow has been triggered by this local work.
 
-The Windows button will not be live until the first signed Windows release is
-actually published. Merging, publishing, and local tests are separate actions.
+The public Windows preview can also be distributed without signing through
+**Publish Windows unsigned preview**. This is an explicit opt-in: provide the run
+ID of a successful **Windows installer check** and set `publish_unsigned=true`.
+It promotes that exact artifact, publishes an immutable `windows-preview-<sha>`
+release with checksums/provenance, and updates the `windows-latest` URL. Both
+releases are marked prerelease and never replace GitHub's latest macOS release.
+The website and release notes must identify it as an **unsigned preview**. Windows
+may display an unknown publisher or SmartScreen warning. Signing and clean-machine
+acceptance are not claimed for this channel. The separate signed release workflow
+continues to require signing. Merging, publishing, and local tests are separate actions.
 
 ## Release acceptance gates
 
@@ -109,7 +117,8 @@ installer production-verified. Before public publication:
 - Measure release-to-text delay and peak RAM for short/long speech with ordinary
   applications open; confirm a busy machine stays responsive.
 - Test install-over-update/uninstall behavior, signature validation, and both
-  download buttons after publication. Never publish unsigned test artifacts.
+  download buttons after publication. Signed production releases require all
+  these checks; an unsigned preview must disclose its narrower validation.
 
 Local release-to-text timings cover native release through paste dispatch,
 including formatting. They omit native stdout transit and target-app rendering.

@@ -1,0 +1,106 @@
+name: Publish Windows unsigned preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Windows installer check run containing the installer
+        required: true
+        type: string
+      publish_unsigned:
+        description: Publish this unsigned installer as a public Windows preview
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
+
+jobs:
+  distribute:
+    if: inputs.publish_unsigned
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN: ${{ inputs.run_id }}
+    steps:
+      - name: Validate successful source build
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]] || { echo 'Invalid run ID'; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" > run.json
+          jq -e --arg repo "$GITHUB_REPOSITORY" '.conclusion == "success" and .status == "completed" and .path == ".github/workflows/windows-preview.yml" and .head_repository.full_name == $repo' run.json
+          sha="$(jq -r '.head_sha' run.json)"
+          echo "SOURCE_SHA=$sha" >> "$GITHUB_ENV"
+          echo "PREVIEW_TAG=windows-preview-${sha:0:12}" >> "$GITHUB_ENV"
+          gh api "repos/$GITHUB_REPOSITORY/contents/package.json?ref=$sha" --jq .content | base64 --decode > source-package.json
+          version="$(jq -r .version source-package.json)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][a-zA-Z0-9.-]+)?$ ]] || exit 1
+          echo "APP_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Download verified build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Open-Memo-Windows-preview
+          path: installer
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run_id }}
+      - name: Prepare installer checksums and provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          installers=(installer/*-windows-x64-setup.exe)
+          [[ ${#installers[@]} == 1 ]] || { echo 'Expected one Windows installer'; exit 1; }
+          [[ "$(head -c 2 "${installers[0]}")" == MZ ]] || { echo 'Invalid Windows executable'; exit 1; }
+          mkdir versioned moving
+          cp "${installers[0]}" "versioned/Open-Memo-$APP_VERSION-windows-x64-setup.exe"
+          cp "${installers[0]}" moving/Open-Memo-latest-windows-x64-setup.exe
+          (cd versioned && sha256sum ./*.exe | sed 's|  ./|  |' > SHA256SUMS.txt)
+          (cd moving && sha256sum ./*.exe | sed 's|  ./|  |' > SHA256SUMS.txt)
+          jq -n --arg source_commit "$SOURCE_SHA" --argjson source_run "$SOURCE_RUN" --arg version "$APP_VERSION" '{source_commit:$source_commit,source_run:$source_run,version:$version,channel:"unsigned-preview",signed:false}' > versioned/build-provenance.json
+          cp versioned/build-provenance.json moving/
+          cat > notes.md <<'NOTES'
+          ## Windows unsigned preview
+
+          Windows 11 on Intel/AMD x64 with AVX2, FMA, F16C and BMI2. Windows ARM is unsupported. English dictation, local speech and punctuation models are bundled; no developer tools or separate model downloads are required.
+
+          **This preview is unsigned.** Windows may display an unknown publisher or SmartScreen warning. Review the source and SHA-256 checksum before deciding whether to run it. Code signing and clean-machine release acceptance are not claimed for this preview.
+
+          Hold Right Ctrl to dictate. Right Ctrl + Left Shift locks recording. Shortcuts can be changed in Settings. Cleaned mode, Memo recorder sync and automatic app updates are unavailable on Windows. Install a newer installer to update; settings and history are retained.
+
+          The macOS stable release and automatic updater are independent of this preview.
+          NOTES
+          printf '\nVersion: %s\n\nSource: https://github.com/%s/commit/%s\n\nBuild: https://github.com/%s/actions/runs/%s\n' "$APP_VERSION" "$GITHUB_REPOSITORY" "$SOURCE_SHA" "$GITHUB_REPOSITORY" "$SOURCE_RUN" >> notes.md
+      - name: Publish immutable preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Refuse to replace the bytes of an existing versioned preview.
+          if gh release view "$PREVIEW_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Existing preview: $PREVIEW_TAG"
+          else
+            gh release create "$PREVIEW_TAG" versioned/* --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Windows $APP_VERSION unsigned preview (${SOURCE_SHA:0:7})" --notes-file notes.md --prerelease --latest=false
+          fi
+      - name: Publish stable Windows download URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view windows-latest --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            # An alias update must match the immutable preview bytes.
+            gh release download "$PREVIEW_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.exe' --dir immutable
+            cmp "immutable/Open-Memo-$APP_VERSION-windows-x64-setup.exe" moving/Open-Memo-latest-windows-x64-setup.exe
+            gh release upload windows-latest moving/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/windows-latest" -f "sha=$SOURCE_SHA" -F force=true
+            gh release edit windows-latest --repo "$GITHUB_REPOSITORY" --title "Windows $APP_VERSION unsigned preview" --notes-file notes.md --prerelease --latest=false
+          else
+            gh release create windows-latest moving/* --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Windows $APP_VERSION unsigned preview" --notes-file notes.md --prerelease --latest=false
+          fi
+          echo "### Public Windows installer" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://github.com/$GITHUB_REPOSITORY/releases/download/windows-latest/Open-Memo-latest-windows-x64-setup.exe" >> "$GITHUB_STEP_SUMMARY"
