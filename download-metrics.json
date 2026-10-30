@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "oliverbhull/open-memo",
-  "observed_at": "2026-10-30T02:03:03.091Z",
+  "observed_at": "2026-10-30T08:48:26.893Z",
   "tracking_started_at": "2026-10-28T18:11:53.753Z",
   "description": "Cumulative GitHub installer asset requests, including direct GitHub downloads, retries and verification. Not unique people, completed transfers or installations. Retains last observed counts for removed assets; requests between final observation and deletion cannot be recovered.",
   "totals": {
@@ -16,7 +16,7 @@
       "release": "v0.1.0",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "478327473": {
       "id": 478327473,
@@ -25,7 +25,7 @@
       "release": "v0.1.2",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "478569186": {
       "id": 478569186,
@@ -34,7 +34,7 @@
       "release": "v0.2.0",
       "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "479585680": {
       "id": 479585680,
@@ -43,7 +43,7 @@
       "release": "v0.2.1",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "485116009": {
       "id": 485116009,
@@ -52,7 +52,7 @@
       "release": "v0.2.2",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "494297604": {
       "id": 494297604,
@@ -61,7 +61,7 @@
       "release": "v0.3.0",
       "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "525532868": {
       "id": 525532868,
@@ -70,7 +70,7 @@
       "release": "v0.4.0",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "529988009": {
       "id": 529988009,
@@ -79,7 +79,7 @@
       "release": "v0.5.0",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "531277065": {
       "id": 531277065,
@@ -88,7 +88,7 @@
       "release": "v0.6.0",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "531310011": {
       "id": 531310011,
@@ -97,7 +97,7 @@
       "release": "v0.7.1",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "531336596": {
       "id": 531336596,
@@ -106,7 +106,7 @@
       "release": "v0.7.2",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "531359395": {
       "id": 531359395,
@@ -115,7 +115,7 @@
       "release": "v0.7.3",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "531374244": {
       "id": 531374244,
@@ -124,7 +124,7 @@
       "release": "v0.7.4",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "531413884": {
       "id": 531413884,
@@ -133,7 +133,7 @@
       "release": "v0.7.5",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "539914957": {
       "id": 539914957,
@@ -142,7 +142,7 @@
       "release": "v0.8.0",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "539956020": {
       "id": 539956020,
@@ -151,7 +151,7 @@
       "release": "v0.8.1",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "540263684": {
       "id": 540263684,
@@ -160,7 +160,7 @@
       "release": "v0.8.2",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "540263686": {
       "id": 540263686,
@@ -169,7 +169,7 @@
       "release": "v0.8.2",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "540903375": {
       "id": 540903375,
@@ -178,7 +178,7 @@
       "release": "v0.8.6",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "540903376": {
       "id": 540903376,
@@ -187,7 +187,7 @@
       "release": "v0.8.6",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "542202410": {
       "id": 542202410,
@@ -196,7 +196,7 @@
       "release": "v0.8.10",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "542202412": {
       "id": 542202412,
@@ -205,7 +205,7 @@
       "release": "v0.8.10",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "571495898": {
       "id": 571495898,
@@ -214,7 +214,7 @@
       "release": "v0.8.11",
       "download_count": 3,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "571495902": {
       "id": 571495902,
@@ -223,7 +223,7 @@
       "release": "v0.8.11",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "573235054": {
       "id": 573235054,
@@ -232,7 +232,7 @@
       "release": "v0.8.12",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "573235056": {
       "id": 573235056,
@@ -241,7 +241,7 @@
       "release": "v0.8.12",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "573369509": {
       "id": 573369509,
@@ -250,7 +250,7 @@
       "release": "v0.8.13",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "573369511": {
       "id": 573369511,
@@ -259,7 +259,7 @@
       "release": "v0.8.13",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "573650629": {
       "id": 573650629,
@@ -268,7 +268,7 @@
       "release": "v0.8.15",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "573650632": {
       "id": 573650632,
@@ -277,7 +277,7 @@
       "release": "v0.8.15",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "577533935": {
       "id": 577533935,
@@ -286,7 +286,7 @@
       "release": "v0.8.17",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "577533943": {
       "id": 577533943,
@@ -295,7 +295,7 @@
       "release": "v0.8.17",
       "download_count": 3,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "578068297": {
       "id": 578068297,
@@ -304,7 +304,7 @@
       "release": "v0.8.18",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "578068299": {
       "id": 578068299,
@@ -313,7 +313,7 @@
       "release": "v0.8.18",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "601968921": {
       "id": 601968921,
@@ -322,7 +322,7 @@
       "release": "v0.8.19",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "601968925": {
       "id": 601968925,
@@ -331,7 +331,7 @@
       "release": "v0.8.19",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "602013216": {
       "id": 602013216,
@@ -340,7 +340,7 @@
       "release": "v0.8.20",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "602013219": {
       "id": 602013219,
@@ -349,7 +349,7 @@
       "release": "v0.8.20",
       "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "614071970": {
       "id": 614071970,
@@ -358,7 +358,7 @@
       "release": "v0.8.21",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "614071972": {
       "id": 614071972,
@@ -367,7 +367,7 @@
       "release": "v0.8.21",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "619813706": {
       "id": 619813706,
@@ -376,7 +376,7 @@
       "release": "v0.8.22",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "619813707": {
       "id": 619813707,
@@ -385,7 +385,7 @@
       "release": "v0.8.22",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "648173297": {
       "id": 648173297,
@@ -394,7 +394,7 @@
       "release": "v0.8.23",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "648173298": {
       "id": 648173298,
@@ -403,7 +403,7 @@
       "release": "v0.8.23",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "648888182": {
       "id": 648888182,
@@ -412,7 +412,7 @@
       "release": "v0.8.24",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "648888183": {
       "id": 648888183,
@@ -421,7 +421,7 @@
       "release": "v0.8.24",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "667545827": {
       "id": 667545827,
@@ -430,7 +430,7 @@
       "release": "v0.8.25",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "667545828": {
       "id": 667545828,
@@ -439,7 +439,7 @@
       "release": "v0.8.25",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "670380375": {
       "id": 670380375,
@@ -448,7 +448,7 @@
       "release": "v0.8.26",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "670380376": {
       "id": 670380376,
@@ -457,7 +457,7 @@
       "release": "v0.8.26",
       "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "670633177": {
       "id": 670633177,
@@ -466,7 +466,7 @@
       "release": "v0.8.27",
       "download_count": 3,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "670633178": {
       "id": 670633178,
@@ -475,7 +475,7 @@
       "release": "v0.8.27",
       "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "685895087": {
       "id": 685895087,
@@ -484,7 +484,7 @@
       "release": "windows-preview-900581adaae5",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:14:42.794Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     },
     "685896867": {
       "id": 685896867,
@@ -493,7 +493,7 @@
       "release": "windows-latest",
       "download_count": 2,
       "first_observed_at": "2026-10-28T18:14:42.794Z",
-      "last_observed_at": "2026-10-30T02:03:03.091Z"
+      "last_observed_at": "2026-10-30T08:48:26.893Z"
     }
   }
 }
