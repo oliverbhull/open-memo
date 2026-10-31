@@ -218,6 +218,9 @@ const electronAPI = {
       writingMode: WritingMode;
       experimentalEmailFormatting: boolean;
   experimentalSupermicrophone: boolean;
+      groqKeySaved: boolean;
+      groqEnabled: boolean;
+      groqCleanupEnabled: boolean;
       cleanupState: CleanupState;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
@@ -253,6 +256,11 @@ const electronAPI = {
     },
     setExperimentalSupermicrophone: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setExperimentalSupermicrophone', enabled),
     setExperimentalEmailFormatting: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setExperimentalEmailFormatting', enabled),
+    saveGroqApiKey: (apiKey: string): Promise<boolean> => ipcRenderer.invoke('settings:saveGroqApiKey', apiKey),
+    removeGroqApiKey: (): Promise<{ groqEnabled: boolean; groqCleanupEnabled: boolean }> => ipcRenderer.invoke('settings:removeGroqApiKey'),
+    setGroqEnabled: (enabled: boolean): Promise<{ groqEnabled: boolean; groqCleanupEnabled: boolean }> => ipcRenderer.invoke('settings:setGroqEnabled', enabled),
+    setGroqCleanupEnabled: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setGroqCleanupEnabled', enabled),
+    openGroqKeysPage: (): Promise<void> => ipcRenderer.invoke('settings:openGroqKeysPage'),
     setWindowsSpeechModel: (model: 'whisper-base.en-q5_1' | 'nemotron-streaming'): Promise<void> => ipcRenderer.invoke('settings:setWindowsSpeechModel', model),
     setWritingMode: (mode: WritingMode): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setWritingMode', mode);

@@ -36,7 +36,7 @@ wherever your cursor is. You can change the shortcut in Settings.
 
 Dictation runs locally, works without an internet connection, and never consumes
 credits or hits a weekly word limit. Your voice is not sent to a cloud
-transcription service.
+transcription service unless you choose the optional Groq setting.
 
 ## How it works
 
@@ -50,7 +50,7 @@ transcription service.
 
 - **It works anywhere you can type.** Use it for messages, email, notes, and documents.
 - **It makes speech readable.** Punctuation and capitalization are added automatically.
-- **It stays on your computer.** Your voice is transcribed locally, not sent to the cloud.
+- **It stays on your computer.** Your voice is transcribed locally by default, not sent to the cloud.
 
 Your recent dictations stay in a simple history so you can find and reuse them.
 Saving the original audio is optional and off by default.
@@ -81,8 +81,21 @@ updates use the download button; automatic Windows updates are not enabled yet.
 
 ## Private by design
 
-Speech is transcribed on your computer. Open Memo does not require an account and
-does not send your dictation to a transcription service.
+By default, speech is transcribed on your computer. Open Memo does not require an
+account and does not send your dictation to a transcription service.
+
+## Optional: use Groq
+
+You can add your own [Groq API key](https://console.groq.com/keys) in
+**Settings → Audio**. This is off by default. When you turn on **Use Groq**, each
+dictation's audio is sent to Groq for transcription, and **Groq cleanup** turns on
+automatically to remove filler words and fix grammar. You can turn cleanup off on
+its own. Groq's own pricing and data terms apply.
+
+Your key is encrypted on your computer. Memo still transcribes on-device first, so
+if Groq fails or you are offline, you still get your text.
+
+## Permissions
 
 Memo needs microphone access to hear you. On Mac, Accessibility access inserts text
 and Input Monitoring detects the hotkey. Bluetooth is only used if you
