@@ -216,6 +216,7 @@ export interface ElectronAPI {
       sayEnterToPressEnter: boolean;
       handsFreeMode: boolean;
       saveAudio: boolean;
+      dictationSounds: boolean;
       writingMode: WritingMode;
       experimentalEmailFormatting: boolean;
   experimentalSupermicrophone: boolean;
@@ -234,6 +235,7 @@ export interface ElectronAPI {
     endHotkeyCapture(): Promise<void>;
     onHotkeyCapture(callback: (capture: RecordingHotkeyCapture) => void): () => void;
     setSaveAudio(enabled: boolean): Promise<boolean>;
+    setDictationSounds(enabled: boolean): Promise<boolean>;
     setExperimentalSupermicrophone(enabled: boolean): Promise<boolean>;
     setExperimentalEmailFormatting(enabled: boolean): Promise<boolean>;
     setWritingMode(mode: WritingMode): Promise<boolean>;

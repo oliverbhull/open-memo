@@ -20,6 +20,7 @@ export interface Settings {
   sayEnterToPressEnter: boolean;
   handsFreeMode: boolean;
   saveAudio: boolean;
+  dictationSounds: boolean;
   writingMode: WritingMode;
   experimentalEmailFormatting: boolean;
   experimentalSupermicrophone: boolean;
@@ -60,6 +61,7 @@ export function loadSettings(): Settings {
     sayEnterToPressEnter: store.get('sayEnterToPressEnter', false),
     handsFreeMode: store.get('handsFreeMode', false),
     saveAudio: store.get('saveAudio', false),
+    dictationSounds: store.get('dictationSounds', true) !== false,
     experimentalSupermicrophone: store.get('experimentalSupermicrophone', false) === true,
     experimentalEmailFormatting: store.get('experimentalEmailFormatting', false) === true,
     writingMode: process.platform !== 'win32' && store.get('writingMode') === 'clean' ? 'clean' : 'as-spoken',
@@ -76,6 +78,7 @@ export function saveSettings(next: Settings): void {
     sayEnterToPressEnter: next.sayEnterToPressEnter === true,
     handsFreeMode: next.handsFreeMode === true,
     saveAudio: next.saveAudio === true,
+    dictationSounds: next.dictationSounds !== false,
     experimentalSupermicrophone: next.experimentalSupermicrophone === true,
     experimentalEmailFormatting: next.experimentalEmailFormatting === true,
     writingMode: process.platform !== 'win32' && next.writingMode === 'clean' ? 'clean' : 'as-spoken',
@@ -87,6 +90,7 @@ export function saveSettings(next: Settings): void {
   store.set('sayEnterToPressEnter', settings.sayEnterToPressEnter);
   store.set('handsFreeMode', settings.handsFreeMode);
   store.set('saveAudio', settings.saveAudio);
+  store.set('dictationSounds', settings.dictationSounds);
   store.set('writingMode', settings.writingMode);
   store.set('experimentalSupermicrophone', settings.experimentalSupermicrophone);
   store.set('experimentalEmailFormatting', settings.experimentalEmailFormatting);

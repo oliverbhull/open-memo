@@ -215,6 +215,7 @@ const electronAPI = {
       sayEnterToPressEnter: boolean;
       handsFreeMode: boolean;
       saveAudio: boolean;
+      dictationSounds: boolean;
       writingMode: WritingMode;
       experimentalEmailFormatting: boolean;
   experimentalSupermicrophone: boolean;
@@ -251,6 +252,7 @@ const electronAPI = {
     setSaveAudio: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setSaveAudio', enabled);
     },
+    setDictationSounds: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setDictationSounds', enabled),
     setExperimentalSupermicrophone: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setExperimentalSupermicrophone', enabled),
     setExperimentalEmailFormatting: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setExperimentalEmailFormatting', enabled),
     setWindowsSpeechModel: (model: 'whisper-base.en-q5_1' | 'nemotron-streaming'): Promise<void> => ipcRenderer.invoke('settings:setWindowsSpeechModel', model),
