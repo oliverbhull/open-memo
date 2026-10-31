@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { overlayBounds } from './overlayPosition';
+import { hideOverlayGlass, showOverlayGlass } from './OverlayGlassService';
 
 let overlayWindow: BrowserWindow | null = null;
 let overlayRecordingState = false; // Track last recording state to prevent unnecessary updates
@@ -16,6 +17,8 @@ let overlayRecordingState = false; // Track last recording state to prevent unne
 const OVERLAY_WINDOW_WIDTH = 200;
 const OVERLAY_WINDOW_HEIGHT = 48;
 const OVERLAY_MARGIN = 5;
+const OVERLAY_PILL_WIDTH = 80;
+const OVERLAY_PILL_HEIGHT = 40;
 
 function getActiveDisplay(): Display {
   return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
@@ -181,6 +184,16 @@ export function updateOverlayVisibility(isRecording: boolean, mainWindow: Browse
       return;
     }
 
+    // Keep the bars above the separate native glass panel.
+    currentOverlay.setAlwaysOnTop(true, 'screen-saver');
+    const windowBounds = currentOverlay.getBounds();
+    const nativeGlass = showOverlayGlass({
+      x: windowBounds.x + Math.floor((windowBounds.width - OVERLAY_PILL_WIDTH) / 2),
+      y: windowBounds.y + Math.floor((windowBounds.height - OVERLAY_PILL_HEIGHT) / 2),
+      width: OVERLAY_PILL_WIDTH,
+      height: OVERLAY_PILL_HEIGHT,
+    });
+
     currentOverlay.showInactive();
     currentOverlay.setFocusable(false);
     currentOverlay.blur();
@@ -197,12 +210,14 @@ export function updateOverlayVisibility(isRecording: boolean, mainWindow: Browse
           isRecording: true,
           isProcessing: false,
           primaryColor,
+          nativeGlass,
         });
       } catch (e) {
         console.warn('[Overlay] Failed to send status:', e);
       }
     })();
   } else {
+    hideOverlayGlass();
     destroyOverlay();
   }
 }
