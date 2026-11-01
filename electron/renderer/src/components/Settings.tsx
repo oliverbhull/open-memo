@@ -36,12 +36,13 @@ const FolderIcon = () => (
   </svg>
 );
 
-const ToggleTile = ({ title, description, checked, disabled = false, experimental = false, onChange }: {
+const ToggleTile = ({ title, description, checked, disabled = false, experimental = false, requires = 'Cleaned', onChange }: {
   title: string;
   description: string;
   checked: boolean;
   disabled?: boolean;
   experimental?: boolean;
+  requires?: string;
   onChange: (checked: boolean) => void;
 }) => (
   <label className="settings-tile settings-toggle-tile" data-active={checked && !disabled} data-disabled={disabled}>
@@ -52,7 +53,7 @@ const ToggleTile = ({ title, description, checked, disabled = false, experimenta
       <span className="settings-switch" aria-hidden="true" />
     </span>
     <span className="settings-tile__description">{description}</span>
-    {(disabled || experimental) && <span className="settings-tile__state">{disabled ? experimental ? 'Experimental · Requires Cleaned' : 'Requires Cleaned' : 'Experimental'}</span>}
+    {(disabled || experimental) && <span className="settings-tile__state">{disabled ? `${experimental ? 'Experimental · ' : ''}Requires ${requires}` : 'Experimental'}</span>}
   </label>
 );
 
@@ -113,6 +114,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [supermicrophoneBusy, setSupermicrophoneBusy] = useState(false);
   const [supermicrophoneError, setSupermicrophoneError] = useState('');
   const [experimentalEmailFormatting, setExperimentalEmailFormatting] = useState(false);
+  const [groqKeySaved, setGroqKeySaved] = useState(false);
+  const [groqKeyDraft, setGroqKeyDraft] = useState('');
+  const [groqEnabled, setGroqEnabled] = useState(false);
+  const [groqCleanupEnabled, setGroqCleanupEnabled] = useState(true);
+  const [groqBusy, setGroqBusy] = useState(false);
+  const [groqError, setGroqError] = useState<string | null>(null);
   const [writingMode, setWritingMode] = useState<WritingMode>('as-spoken');
   const [cleanupState, setCleanupState] = useState<CleanupState>({
     available: false,
@@ -172,6 +179,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       setSaveAudio(settings.saveAudio ?? false);
       setExperimentalSupermicrophone(settings.experimentalSupermicrophone ?? false);
       setExperimentalEmailFormatting(settings.experimentalEmailFormatting ?? false);
+      setGroqKeySaved(settings.groqKeySaved);
+      setGroqEnabled(settings.groqEnabled);
+      setGroqCleanupEnabled(settings.groqCleanupEnabled);
       setWritingMode(settings.writingMode ?? 'as-spoken');
       setCleanupState(settings.cleanupState);
       setVocabWords(Array.isArray(settings.vocabWords) ? settings.vocabWords : []);
@@ -458,6 +468,42 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     }
   };
 
+  const runGroqAction = async (action: () => Promise<void>, failure: string) => {
+    setGroqBusy(true);
+    setGroqError(null);
+    try {
+      await action();
+    } catch (error) {
+      setGroqError((error instanceof Error ? error.message : failure).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ''));
+    } finally {
+      setGroqBusy(false);
+    }
+  };
+
+  const saveGroqKey = () => runGroqAction(async () => {
+    await window.electronAPI.interface.saveGroqApiKey(groqKeyDraft);
+    setGroqKeySaved(true);
+    setGroqKeyDraft('');
+  }, 'Could not save the API key.');
+
+  const removeGroqKey = () => runGroqAction(async () => {
+    const state = await window.electronAPI.interface.removeGroqApiKey();
+    setGroqKeySaved(false);
+    setGroqEnabled(state.groqEnabled);
+    setGroqCleanupEnabled(state.groqCleanupEnabled);
+  }, 'Could not remove the API key.');
+
+  const changeGroqEnabled = (enabled: boolean) => runGroqAction(async () => {
+    const state = await window.electronAPI.interface.setGroqEnabled(enabled);
+    setGroqEnabled(state.groqEnabled);
+    setGroqCleanupEnabled(state.groqCleanupEnabled);
+  }, 'Could not change the Groq setting.');
+
+  const changeGroqCleanup = (enabled: boolean) => runGroqAction(async () => {
+    await window.electronAPI.interface.setGroqCleanupEnabled(enabled);
+    setGroqCleanupEnabled(enabled);
+  }, 'Could not change Groq cleanup.');
+
   const selectMicrophone = async (value: string) => {
     const deviceName = value === 'system-default'
       ? null
@@ -598,6 +644,36 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 <ToggleTile title='Say “ENTER” to submit' checked={sayEnterToPressEnter}
                   description='End dictation with “enter” to paste and press Return.'
                   onChange={async enabled => { setSayEnterToPressEnter(enabled); await window.electronAPI.interface.setSayEnterToPressEnter(enabled); }} />
+                <section className="settings-tile settings-tile--wide" data-active={groqEnabled} aria-labelledby="settings-groq-title" aria-busy={groqBusy}>
+                  <div className="settings-tile__top">
+                    <h3 id="settings-groq-title">Groq</h3>
+                    <span className="settings-badge">{groqEnabled ? 'On' : groqKeySaved ? 'Off' : 'Optional'}</span>
+                  </div>
+                  <p className="settings-help">Use your own Groq API key for cloud transcription and cleanup. While Groq is on, your audio and text are sent to Groq. If it fails, Memo uses on-device text.</p>
+                  {groqKeySaved ? <div className="settings-download">
+                    <span>API key saved and encrypted on this computer.</span>
+                    <button type="button" className="settings-text-button settings-text-button--danger" disabled={groqBusy}
+                      onClick={() => void removeGroqKey()}>Remove key</button>
+                  </div> : <>
+                    <form className="settings-vocab-form" onSubmit={event => { event.preventDefault(); void saveGroqKey(); }}>
+                      <label className="settings-sr-only" htmlFor="settings-groq-key">Groq API key</label>
+                      <input id="settings-groq-key" type="password" autoComplete="off" spellCheck={false} value={groqKeyDraft}
+                        placeholder="Paste your API key…" disabled={groqBusy}
+                        onChange={event => { setGroqKeyDraft(event.target.value); setGroqError(null); }} />
+                      <button type="submit" className="settings-button settings-button--primary" disabled={groqBusy || !groqKeyDraft.trim()}>
+                        {groqBusy ? 'Testing…' : 'Save'}</button>
+                    </form>
+                    <button type="button" className="settings-text-button settings-text-button--accent settings-groq-link"
+                      onClick={() => { void window.electronAPI.interface.openGroqKeysPage(); }}>Get a key from Groq <span aria-hidden="true">↗</span></button>
+                  </>}
+                  {groqError && <p role="alert" className="settings-error">{groqError}</p>}
+                </section>
+                <ToggleTile title="Use Groq" checked={groqEnabled} disabled={!groqKeySaved || groqBusy} requires="a Groq key"
+                  description="Transcribe with Groq's Whisper model. Memo still runs on-device as the fallback."
+                  onChange={enabled => void changeGroqEnabled(enabled)} />
+                <ToggleTile title="Groq cleanup" checked={groqEnabled && groqCleanupEnabled} disabled={!groqEnabled || groqBusy} requires="Use Groq"
+                  description="Remove filler words and fix grammar and punctuation. Turns on when you use Groq."
+                  onChange={enabled => void changeGroqCleanup(enabled)} />
               </div>
             </section>
             <section id="settings-panel-writing" className="settings-panel" aria-label="Writing" hidden={activeSection !== 'writing'}>
@@ -630,6 +706,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       aria-label="Remove Cleaned download">{cleanedRemoving ? 'Removing…' : 'Remove download'}</button>
                   </div>}
                   {cleanupActionError && <p role="alert" className="settings-error">{cleanupActionError}</p>}
+                  {groqEnabled && groqCleanupEnabled && <p role="status" className="settings-help">Groq cleanup is on, so this mode only applies when Groq is unavailable.</p>}
                 </section>
                 {window.electronAPI.platform !== 'win32' && <ToggleTile experimental title="Email formatting" checked={experimentalEmailFormatting} disabled={writingMode !== 'clean'}
                   description="In Cleaned mode, formats Gmail and all Safari dictation as email using the app and URL locally."

@@ -88,7 +88,7 @@
 .settings-toggle-tile input:disabled + .settings-switch { opacity: 0.45; }
 .settings-toggle-tile input:focus-visible + .settings-switch { outline: 2px solid var(--primary); outline-offset: 4px; }
 .settings-badge { font-size: 10px; line-height: 1.5; color: var(--settings-muted); padding: 0; }
-.settings-dashboard select, .settings-dashboard input[type='text'], .settings-dashboard input[type='datetime-local'], .settings-dashboard textarea {
+.settings-dashboard select, .settings-dashboard input[type='text'], .settings-dashboard input[type='password'], .settings-dashboard input[type='datetime-local'], .settings-dashboard textarea {
   width: 100%; min-width: 0; padding: 10px; border: 1px solid #303030; border-radius: 10px; background: #171717; color: #ededed; font: inherit; font-size: 12px; color-scheme: dark;
 }
 .settings-dashboard select {
@@ -123,6 +123,7 @@
 .settings-word:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 16%, #0f0f0f); }
 .settings-vocab-form { display: flex; gap: 8px; align-items: center; }
 .settings-vocab-form input { flex: 1; }
+.settings-groq-link { align-self: flex-start; }
 .settings-color-dot { width: 18px; height: 18px; border: 1px solid #ffffff50; border-radius: 50%; }
 .settings-hue { appearance: none; height: 8px; width: 100%; margin: 10px 0 2px; border: 1px solid #ffffff40; border-radius: 8px; cursor: pointer; background: linear-gradient(to right, #ff4040, #ffff40, #40ff40, #40ffff, #4040ff, #ff40ff, #ff4040); }
 .settings-hue::-webkit-slider-thumb { appearance: none; width: 10px; height: 20px; border-radius: 4px; border: 2px solid white; background: #242528; box-shadow: 0 1px 4px #0008; }

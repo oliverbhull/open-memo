@@ -14,6 +14,9 @@ export interface StoreSchema {
   writingMode: WritingMode;
   experimentalEmailFormatting: boolean;
   experimentalSupermicrophone: boolean;
+  groqEnabled: boolean;
+  groqCleanupEnabled: boolean;
+  groqApiKeyEncrypted: string | null;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
   userName: string | null;
@@ -38,6 +41,9 @@ export const storeDefaults: StoreSchema = {
   writingMode: 'as-spoken',
   experimentalEmailFormatting: false,
   experimentalSupermicrophone: false,
+  groqEnabled: false,
+  groqCleanupEnabled: true,
+  groqApiKeyEncrypted: null,
   vocabWords: [],
   phraseReplacements: [],
   userName: null,

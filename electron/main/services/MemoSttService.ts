@@ -162,6 +162,12 @@ export class MemoSttService extends EventEmitter {
     });
   }
 
+  /** Retained recordings and Groq transcription both need the recorder's WAV output. */
+  private needsAudio(): boolean {
+    const { saveAudio, groqEnabled } = loadSettings();
+    return saveAudio || groqEnabled;
+  }
+
   /**
    * Send a command to the owned dictation process via stdin.
    * Used for settings like "Press Enter After Paste"
@@ -341,7 +347,7 @@ export class MemoSttService extends EventEmitter {
 
       const env: NodeJS.ProcessEnv = {
         ...process.env,
-        MEMO_EMIT_AUDIO: settings.saveAudio ? '1' : '0',
+        MEMO_EMIT_AUDIO: this.needsAudio() ? '1' : '0',
         MEMO_HANDS_FREE: handsFreeMode ? '1' : '0',
       };
       if (process.platform === 'win32') {
@@ -713,12 +719,12 @@ export class MemoSttService extends EventEmitter {
     // memo-stt emits both OPUS and WAV. WAV is the only retained format because
     // browsers decode it reliably without another codec dependency.
     if (line.startsWith('AUDIO_DATA:')) {
-      if (loadSettings().saveAudio) this.pendingAudioData = {};
+      if (this.needsAudio()) this.pendingAudioData = {};
       return;
     }
 
     if (line.startsWith('AUDIO_DURATION:')) {
-      if (!loadSettings().saveAudio) return;
+      if (!this.needsAudio()) return;
       const duration = Number.parseFloat(line.slice('AUDIO_DURATION:'.length));
       if (Number.isFinite(duration) && duration >= 0) {
         this.pendingAudioData ??= {};
@@ -728,7 +734,7 @@ export class MemoSttService extends EventEmitter {
     }
 
     if (line.startsWith('AUDIO_WAV:')) {
-      if (!loadSettings().saveAudio) return;
+      if (!this.needsAudio()) return;
       const wavBuffer = Buffer.from(line.slice('AUDIO_WAV:'.length), 'base64');
       if (wavBuffer.length < 44 || wavBuffer.subarray(0, 4).toString('ascii') !== 'RIFF') {
         logger.warn('[MemoSttService] Ignored invalid WAV data from recorder');
@@ -828,7 +834,7 @@ export class MemoSttService extends EventEmitter {
   }
 
   private takePendingAudio(): CapturedAudio | undefined {
-    if (!loadSettings().saveAudio) {
+    if (!this.needsAudio()) {
       this.pendingAudioData = null;
       return undefined;
     }

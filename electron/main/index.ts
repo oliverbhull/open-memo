@@ -32,6 +32,18 @@ import { resolveApplicationContext } from './services/applicationContext';
 import { AppUpdateService } from './services/AppUpdateService';
 import { PunctuationService } from './services/PunctuationService';
 import { CleanupService } from './services/CleanupService';
+import {
+  abortGroqRequests,
+  applyGroqTranscription,
+  changeGroqEnabled,
+  cleanupWithGroq,
+  GROQ_KEYS_URL,
+  groqFailureNotice,
+  hasGroqApiKey,
+  removeGroqApiKey,
+  saveGroqApiKey,
+  transcribeWithGroq,
+} from './services/GroqService';
 import { gmailThreadUrl } from '../shared/emailContext';
 import { captureBrowserReply } from './services/BrowserContextService';
 import { pasteIntoFocusedTarget } from './services/checkedPaste';
@@ -338,18 +350,47 @@ async function setupMemoSttService(): Promise<void> {
           // Don't change state, just log the issue
         }
 
+        const showGroqNotice = (message: string) => {
+          if (isQuitting || !mainWindow || mainWindow.isDestroyed()) return;
+          mainWindow.webContents.send('audio:showToast', { message, severity: 'warning', duration: 5000 });
+        };
+        // The on-device transcript is already here, so Groq can only improve this dictation.
+        const groqTranscription = settings.groqEnabled && !isQuitting
+          ? await transcribeWithGroq(data.audioCapture?.wavBuffer, settings.vocabWords)
+          : undefined;
+        if (groqTranscription?.ok === false) {
+          showGroqNotice(groqFailureNotice(groqTranscription.reason, 'transcription'));
+        }
+        const transcript = groqTranscription ? applyGroqTranscription(data, groqTranscription) : data;
+        // Skip cleanup when transcription just failed: Groq is probably unreachable.
+        // Experimental email formatting stays with the local model that defines it.
+        const groqCleanup = !!groqTranscription?.ok && settings.groqCleanupEnabled && !isQuitting && !await emailTarget;
+
         // Update last transcript and paste: support "say enter" to press Enter after paste
         const entryId = randomUUID();
         const cleanMode = !isQuitting && settings.writingMode === 'clean' && cleanupService.isEnabled();
-        const rawText = resolveTranscriptionText(data);
+        const rawText = resolveTranscriptionText(transcript);
         const normalized = normalizeTranscriptionText(stripLeadingDashSpace(rawText));
-        const asSpoken = resolveCleanInput(data);
+        const asSpoken = resolveCleanInput(transcript);
         let formatted = '';
         let cleanProvenance: Record<string, unknown> | undefined;
         const { textToPaste, pressEnter: pressEnterThisTime } = await formatDictationForPaste(
           cleanMode || isQuitting ? asSpoken : normalized,
           settings.sayEnterToPressEnter ?? false,
           async input => {
+            if (groqCleanup) {
+              const cleanup = await cleanupWithGroq(input, settings.vocabWords);
+              cleanProvenance = { asSpoken, cleanupInput: input, candidate: cleanup.candidateText, selected: cleanup.text,
+                status: cleanup.status, reason: cleanup.reason, model: cleanup.model,
+                contract: cleanup.contract, latencyMs: cleanup.latencyMs };
+              logger.info(`[Main] Groq cleanup ${cleanup.status}${cleanup.reason ? ` (${cleanup.reason})` : ''}` +
+                `${cleanup.latencyMs === undefined ? '' : ` in ${cleanup.latencyMs.toFixed(0)} ms`}`);
+              if (cleanup.status === 'accepted') {
+                formatted = cleanup.text;
+                return applyPhraseReplacements(formatted, settings.phraseReplacements);
+              }
+              showGroqNotice(groqFailureNotice(cleanup.reason, 'cleanup'));
+            }
             if (cleanMode) {
               const cleanup = await cleanupService.format(input, settings.vocabWords, await emailTarget ? 'email' : 'plain', senderName);
               formatted = cleanup.text;
@@ -422,7 +463,7 @@ async function setupMemoSttService(): Promise<void> {
           }
         }
 
-        const latency = calculateDictationLatency(data.context, data.finalReceivedAtMs, performance.now(), delivery);
+        const latency = calculateDictationLatency(transcript.context, data.finalReceivedAtMs, performance.now(), delivery);
         if (latency) {
           logger.info('[Dictation latency] ' + JSON.stringify(latency));
           mainWindow?.webContents.send('dictation:latency', latency);
@@ -454,7 +495,7 @@ async function setupMemoSttService(): Promise<void> {
         }
 
         // Reuse the comparison ID for the memo and its optional WAV file.
-        const { audioCapture, finalReceivedAtMs: _timingReceipt, ...transcription } = data;
+        const { audioCapture, finalReceivedAtMs: _timingReceipt, ...transcription } = transcript;
         const appContext = resolveApplicationContext(
           applicationIconService.enrichContext(deliveryAppContext ?? data.appContext),
           !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused(),
@@ -476,9 +517,9 @@ async function setupMemoSttService(): Promise<void> {
         const completed = {
           ...transcription,
           processedText: textToPaste,
-          rawTranscript: data.rawTranscript ?? '',
-          wasProcessedByLLM: cleanMode ? cleanProvenance?.status === 'accepted' : data.wasProcessedByLLM,
-          context: { ...data.context, ...(cleanProvenance ? { cleanup: cleanProvenance } : {}), delivery },
+          rawTranscript: transcript.rawTranscript ?? '',
+          wasProcessedByLLM: cleanProvenance ? cleanProvenance.status === 'accepted' : data.wasProcessedByLLM,
+          context: { ...transcript.context, ...(cleanProvenance ? { cleanup: cleanProvenance } : {}), delivery },
           id: entryId,
           timestamp,
           ...(appContext ? { appContext } : {}),
@@ -767,6 +808,7 @@ const cleanupMemoStt = (): Promise<void> => {
     appUpdateService.stop();
     punctuationService.stop();
     cleanupService.stop();
+    abortGroqRequests();
     await Promise.all([
       deviceSyncService?.stop({ restoreDictation: false }),
       memoSttService?.suspend(),
@@ -1129,6 +1171,9 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
     writingMode: settings.writingMode,
     experimentalEmailFormatting: settings.experimentalEmailFormatting,
     experimentalSupermicrophone: settings.experimentalSupermicrophone,
+    groqKeySaved: hasGroqApiKey(),
+    groqEnabled: settings.groqEnabled,
+    groqCleanupEnabled: settings.groqCleanupEnabled,
     cleanupState: cleanupService.getState(),
     vocabWords: Array.isArray(settings.vocabWords) ? settings.vocabWords : [],
     phraseReplacements: Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : [],
@@ -1257,6 +1302,37 @@ ipcMain.handle('settings:setExperimentalEmailFormatting', (_event, enabled: unkn
   saveSettings(settings);
   return true;
 });
+
+function setGroqEnabled(enabled: boolean): { groqEnabled: boolean; groqCleanupEnabled: boolean } {
+  const { recorderNeedsRestart, ...state } = changeGroqEnabled(enabled);
+  if (recorderNeedsRestart) void memoSttService?.restart();
+  return state;
+}
+
+ipcMain.handle('settings:saveGroqApiKey', async (_event, apiKey: unknown) => {
+  await saveGroqApiKey(apiKey);
+  return true;
+});
+
+ipcMain.handle('settings:removeGroqApiKey', () => {
+  removeGroqApiKey();
+  return setGroqEnabled(false);
+});
+
+ipcMain.handle('settings:setGroqEnabled', (_event, enabled: unknown) => {
+  if (typeof enabled !== 'boolean') throw new Error('Groq setting must be a boolean.');
+  return setGroqEnabled(enabled);
+});
+
+ipcMain.handle('settings:setGroqCleanupEnabled', (_event, enabled: unknown) => {
+  if (typeof enabled !== 'boolean') throw new Error('Groq cleanup must be a boolean.');
+  const settings = loadSettings();
+  settings.groqCleanupEnabled = enabled;
+  saveSettings(settings);
+  return true;
+});
+
+ipcMain.handle('settings:openGroqKeysPage', () => shell.openExternal(GROQ_KEYS_URL));
 
 ipcMain.handle('settings:setWritingMode', async (_event, mode: unknown) => {
   if (removingCleanupModel) throw new Error('Wait for Cleaned removal to finish.');

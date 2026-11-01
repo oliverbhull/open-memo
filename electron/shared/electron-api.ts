@@ -219,6 +219,9 @@ export interface ElectronAPI {
       writingMode: WritingMode;
       experimentalEmailFormatting: boolean;
   experimentalSupermicrophone: boolean;
+      groqKeySaved: boolean;
+      groqEnabled: boolean;
+      groqCleanupEnabled: boolean;
       cleanupState: CleanupState;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
@@ -236,6 +239,11 @@ export interface ElectronAPI {
     setSaveAudio(enabled: boolean): Promise<boolean>;
     setExperimentalSupermicrophone(enabled: boolean): Promise<boolean>;
     setExperimentalEmailFormatting(enabled: boolean): Promise<boolean>;
+    saveGroqApiKey(apiKey: string): Promise<boolean>;
+    removeGroqApiKey(): Promise<{ groqEnabled: boolean; groqCleanupEnabled: boolean }>;
+    setGroqEnabled(enabled: boolean): Promise<{ groqEnabled: boolean; groqCleanupEnabled: boolean }>;
+    setGroqCleanupEnabled(enabled: boolean): Promise<boolean>;
+    openGroqKeysPage(): Promise<void>;
     setWritingMode(mode: WritingMode): Promise<boolean>;
     removeCleaned(): Promise<{ writingMode: WritingMode; cleanupState: CleanupState }>;
     setStartAtLogin(enabled: boolean): Promise<boolean>;

@@ -23,6 +23,8 @@ export interface Settings {
   writingMode: WritingMode;
   experimentalEmailFormatting: boolean;
   experimentalSupermicrophone: boolean;
+  groqEnabled: boolean;
+  groqCleanupEnabled: boolean;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
 }
@@ -63,6 +65,8 @@ export function loadSettings(): Settings {
     experimentalSupermicrophone: store.get('experimentalSupermicrophone', false) === true,
     experimentalEmailFormatting: store.get('experimentalEmailFormatting', false) === true,
     writingMode: process.platform !== 'win32' && store.get('writingMode') === 'clean' ? 'clean' : 'as-spoken',
+    groqEnabled: store.get('groqEnabled', false) === true,
+    groqCleanupEnabled: store.get('groqCleanupEnabled', true) !== false,
     vocabWords: stringArray(store.get('vocabWords')),
     phraseReplacements: clampPhraseReplacementRulesFromInput(store.get('phraseReplacements')),
   };
@@ -79,6 +83,8 @@ export function saveSettings(next: Settings): void {
     experimentalSupermicrophone: next.experimentalSupermicrophone === true,
     experimentalEmailFormatting: next.experimentalEmailFormatting === true,
     writingMode: process.platform !== 'win32' && next.writingMode === 'clean' ? 'clean' : 'as-spoken',
+    groqEnabled: next.groqEnabled === true,
+    groqCleanupEnabled: next.groqCleanupEnabled !== false,
     vocabWords: stringArray(next.vocabWords),
     phraseReplacements: clampPhraseReplacementRulesFromInput(next.phraseReplacements),
   };
@@ -90,6 +96,8 @@ export function saveSettings(next: Settings): void {
   store.set('writingMode', settings.writingMode);
   store.set('experimentalSupermicrophone', settings.experimentalSupermicrophone);
   store.set('experimentalEmailFormatting', settings.experimentalEmailFormatting);
+  store.set('groqEnabled', settings.groqEnabled);
+  store.set('groqCleanupEnabled', settings.groqCleanupEnabled);
   store.set('vocabWords', settings.vocabWords);
   store.set('phraseReplacements', settings.phraseReplacements);
 }
