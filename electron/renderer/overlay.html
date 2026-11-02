@@ -44,15 +44,24 @@
       align-items: center;
       justify-content: center;
       gap: 2px;
-      width: 46px;
-      height: 34px;
+      width: 80px;
+      height: 40px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.45);
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.75), inset 0 -1px 2px rgba(255, 255, 255, 0.22);
+      /* Without the native glass helper, this fill keeps the dark bars readable. */
+      background: rgba(255, 255, 255, 0.82);
+    }
+
+    .waveform.native-glass {
+      background: rgba(255, 255, 255, 0.35);
     }
 
     .bar {
       width: 3px;
       flex: 0 0 3px;
       height: 3px;
-      background: var(--primary-color);
+      background: #111111;
       border-radius: 999px;
       transform-origin: center center;
     }
@@ -82,7 +91,7 @@
     const waveform = document.getElementById("waveform");
     const bars = Array.from(document.querySelectorAll(".bar"));
     const MIN_HEIGHT = 3;
-    const MAX_HEIGHT = 32;
+    const MAX_HEIGHT = 28;
     const OPEN_THRESHOLD = 0.07;
     const CLOSE_THRESHOLD = 0.04;
     const ATTACK_MS = 30;
@@ -186,6 +195,7 @@
     window.memoOverlay.onStatus((status) => {
       const wasRecording = isRecording;
       isRecording = status.isRecording;
+      waveform.classList.toggle("native-glass", status.nativeGlass === true);
       if (status.primaryColor && status.primaryColor !== primaryColor) {
         primaryColor = status.primaryColor;
         document.documentElement.style.setProperty("--primary-color", primaryColor);

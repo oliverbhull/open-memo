@@ -68,6 +68,11 @@ module.exports = async function afterPack(context) {
   fs.chmodSync(browserContext, 0o755);
   console.log('✓ Memo browser context helper verified');
 
+  const overlayGlass = path.join(appPath, 'Contents', 'Resources', 'overlay-glass', 'memo-overlay-glass');
+  if (!fs.existsSync(overlayGlass)) throw new Error('Memo overlay glass helper was not copied from extraResources');
+  fs.chmodSync(overlayGlass, 0o755);
+  console.log('✓ Memo overlay glass helper verified');
+
   // A release must fail if bundle metadata cannot be cleaned before signing.
   await sh('xattr', ['-cr', appPath]);
   await sh('dot_clean', ['-m', appPath]);
