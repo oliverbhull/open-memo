@@ -109,6 +109,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [microphoneSelecting, setMicrophoneSelecting] = useState(false);
   const [microphoneError, setMicrophoneError] = useState<string | null>(null);
   const [saveAudio, setSaveAudio] = useState(false);
+  const [dictationSounds, setDictationSounds] = useState(true);
   const [experimentalSupermicrophone, setExperimentalSupermicrophone] = useState(false);
   const [supermicrophoneBusy, setSupermicrophoneBusy] = useState(false);
   const [supermicrophoneError, setSupermicrophoneError] = useState('');
@@ -170,6 +171,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       setHandsFreeMode(settings.handsFreeMode ?? false);
       setStartAtLogin(settings.startAtLogin);
       setSaveAudio(settings.saveAudio ?? false);
+      setDictationSounds(settings.dictationSounds ?? true);
       setExperimentalSupermicrophone(settings.experimentalSupermicrophone ?? false);
       setExperimentalEmailFormatting(settings.experimentalEmailFormatting ?? false);
       setWritingMode(settings.writingMode ?? 'as-spoken');
@@ -595,6 +597,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 <ToggleTile title="Hands free" checked={handsFreeMode}
                   description={`Speak to record. Pause to transcribe. The ${recordingHotkeyLabel(recordingHotkey)} key still works.`}
                   onChange={async enabled => { setHandsFreeMode(enabled); await window.electronAPI.interface.setHandsFreeMode(enabled); }} />
+                <ToggleTile title="Dictation sounds" checked={dictationSounds}
+                  description="Play a short sound when recording starts and stops. Silent in Hands free."
+                  onChange={async enabled => { setDictationSounds(enabled); await window.electronAPI.interface.setDictationSounds(enabled); }} />
                 <ToggleTile title='Say “ENTER” to submit' checked={sayEnterToPressEnter}
                   description='End dictation with “enter” to paste and press Return.'
                   onChange={async enabled => { setSayEnterToPressEnter(enabled); await window.electronAPI.interface.setSayEnterToPressEnter(enabled); }} />

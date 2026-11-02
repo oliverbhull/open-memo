@@ -13,6 +13,7 @@ import {
 } from './services/SettingsService';
 import { applyPhraseReplacements, clampPhraseReplacementRulesFromInput } from './services/phraseReplacement';
 import { updateOverlayVisibility, sendAudioLevels, sendStatusToOverlay } from './services/WindowService';
+import { playDictationSound, prepareDictationSounds } from './services/DictationSoundService';
 import path from 'path';
 import os from 'os';
 import { pathToFileURL } from 'node:url';
@@ -552,6 +553,8 @@ async function setupMemoSttService(): Promise<void> {
     logger.debug('[Main] Recording started event received');
     if (!isRecording) {
       isRecording = true;
+      // Before the overlay, whose window is recreated synchronously on each start.
+      playDictationSound('start');
       setRecordingState(true);
       updateOverlayVisibility(true, mainWindow);
       sendStatusToOverlay(true, mainWindow);
@@ -565,6 +568,7 @@ async function setupMemoSttService(): Promise<void> {
     logger.debug('[Main] Recording stopped event received');
     if (isRecording) {
       isRecording = false;
+      playDictationSound('stop');
       setRecordingState(false);
       updateOverlayVisibility(false, mainWindow);
       sendStatusToOverlay(false, mainWindow);
@@ -710,6 +714,8 @@ app.whenReady().then(async () => {
   // Resolve a remembered microphone before memo-stt starts. An unavailable
   // explicit selection remains selected and capture stays stopped.
   await refreshAudioInputDevices();
+
+  prepareDictationSounds();
 
   // Only start memo-stt service if user is onboarded
   // This prevents the Input Monitoring dialog from appearing before onboarding
@@ -1126,6 +1132,7 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
     sayEnterToPressEnter: settings.sayEnterToPressEnter ?? false,
     handsFreeMode: settings.handsFreeMode ?? false,
     saveAudio: settings.saveAudio ?? false,
+    dictationSounds: settings.dictationSounds,
     writingMode: settings.writingMode,
     experimentalEmailFormatting: settings.experimentalEmailFormatting,
     experimentalSupermicrophone: settings.experimentalSupermicrophone,
@@ -1234,6 +1241,13 @@ ipcMain.handle('settings:setSaveAudio', async (_event, enabled: boolean) => {
   saveSettings(settings);
   if (changed) memoSttService?.restart();
   updateMenuState();
+  return true;
+});
+
+ipcMain.handle('settings:setDictationSounds', async (_event, enabled: unknown) => {
+  const settings = loadSettings();
+  settings.dictationSounds = enabled === true;
+  saveSettings(settings);
   return true;
 });
 

@@ -11,6 +11,7 @@ export interface StoreSchema {
   sayEnterToPressEnter: boolean;
   handsFreeMode: boolean;
   saveAudio: boolean;
+  dictationSounds: boolean;
   writingMode: WritingMode;
   experimentalEmailFormatting: boolean;
   experimentalSupermicrophone: boolean;
@@ -35,6 +36,7 @@ export const storeDefaults: StoreSchema = {
   sayEnterToPressEnter: false,
   handsFreeMode: false,
   saveAudio: false,
+  dictationSounds: true,
   writingMode: 'as-spoken',
   experimentalEmailFormatting: false,
   experimentalSupermicrophone: false,
