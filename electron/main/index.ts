@@ -121,8 +121,8 @@ function createWindow(): void {
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
   mainWindow = new BrowserWindow({
-    width: 440,
-    height: 600,
+    width: 921,
+    height: 616,
     minWidth: 280,
     minHeight: 350,
     transparent: true,
