@@ -113,11 +113,12 @@
 .settings-text-button--danger { color: #ffabab; }
 .settings-button { border: 1px solid #303030; border-radius: 10px; padding: 7px 10px; background: #ffffff06; color: #eeedeb; font: inherit; font-size: 11px; cursor: pointer; width: fit-content; }
 .settings-button:hover { background: #ffffff12; }
-.settings-button--accent { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 40%, #303030); background: color-mix(in srgb, var(--primary) 6%, #0f0f0f); }
-.settings-button--accent:hover { background: color-mix(in srgb, var(--primary) 14%, #0f0f0f); border-color: var(--primary); }
+.settings-button--neutral { background: #ededed; border-color: #ededed; color: #080808; }
+.settings-button--neutral:hover { background: #d6d6d6; border-color: #d6d6d6; }
 .settings-button--primary { background: var(--primary); color: #080808; border-color: var(--primary); }
 .settings-button--primary:hover { background: color-mix(in srgb, var(--primary) 88%, white); }
 .settings-vocab { display: flex; flex-wrap: wrap; gap: 6px; }
+.settings-vocab:empty { display: none; }
 .settings-word { display: inline-flex; align-items: center; gap: 8px; border-radius: 10px; background: color-mix(in srgb, var(--primary) 10%, #0f0f0f); border: 1px solid color-mix(in srgb, var(--primary) 35%, #303030); color: var(--primary); font-size: 11px; padding: 7px 9px; cursor: pointer; }
 .settings-word span { color: inherit; }
 .settings-word:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 16%, #0f0f0f); }
