@@ -60,7 +60,6 @@ const SETTINGS_SECTIONS = [
   { id: 'activity', label: 'Activity' },
   { id: 'audio', label: 'Audio' },
   { id: 'writing', label: 'Writing' },
-  { id: 'vocabulary', label: 'Vocabulary' },
   { id: 'snippets', label: 'Snippets' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'general', label: 'General' },
@@ -73,7 +72,6 @@ const SectionIcon = ({ section }: { section: SettingsSection }) => {
     activity: <><path d="M4 19V9m5 10V5m5 14v-7m5 7V3" /></>,
     audio: <><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3m-4 0h8" /></>,
     writing: <><path d="m16 3 5 5-12 12-6 1 1-6L16 3ZM13 6l5 5" /></>,
-    vocabulary: <><path d="M12 5v16M3 4h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5v16h-5a4 4 0 0 0-4 1 4 4 0 0 0-4-1H3V4Z" /></>,
     snippets: <><rect x="7" y="7" width="14" height="14" rx="3" /><path d="M17 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2M11 12h6m-6 4h4" /></>,
     appearance: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></>,
     general: <><path d="M4 6h16M4 12h16M4 18h16" /><circle cx="8" cy="6" r="2" fill="currentColor" stroke="none" /><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none" /><circle cx="10" cy="18" r="2" fill="currentColor" stroke="none" /></>,
@@ -639,19 +637,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 {window.electronAPI.platform !== 'win32' && <ToggleTile experimental title="Email formatting" checked={experimentalEmailFormatting} disabled={writingMode !== 'clean'}
                   description="In Cleaned mode, formats Gmail and all Safari dictation as email using the app and URL locally."
                   onChange={async enabled => { if (await window.electronAPI.interface.setExperimentalEmailFormatting(enabled)) setExperimentalEmailFormatting(enabled); }} />}
-              </div>
-            </section>
-            <section id="settings-panel-vocabulary" className="settings-panel" aria-label="Vocabulary" hidden={activeSection !== 'vocabulary'}>
-              <div className="settings-grid">
                 <section className="settings-tile settings-tile--wide" aria-labelledby="settings-vocab-title">
-                  <div className="settings-tile__top"><span className="settings-badge">{vocabWords.length} words</span></div>
-                  <h3 id="settings-vocab-title" className="settings-sr-only">Vocabulary</h3>
-                  <p className="settings-help">Help Memo recognize names and words you use.</p>
-                  <div className="settings-vocab">
-                    {(vocabWords || []).map(word => <button key={word} type="button" className="settings-word"
-                      onClick={() => void removeVocabWord(word)} aria-label={`Remove ${word}`} title={`Remove ${word}`}>{word}<span aria-hidden="true">×</span></button>)}
-                    {!isAddingVocabWord && <button type="button" className="settings-button settings-button--accent" onClick={() => { setIsAddingVocabWord(true); setVocabWordDraft(''); }}>+ Add word</button>}
+                  <div className="settings-tile__top">
+                    <h3 id="settings-vocab-title">Vocabulary</h3>
+                    <span className="settings-badge">{vocabWords.length} {vocabWords.length === 1 ? 'word' : 'words'}</span>
                   </div>
+                  <p className="settings-help">Help Memo recognize names and words you use.</p>
                   {isAddingVocabWord && <form className="settings-vocab-form" onSubmit={event => { event.preventDefault(); void addVocabWord(vocabWordDraft); }}>
                     <label className="settings-sr-only" htmlFor="settings-new-word">New vocabulary word</label>
                     <input id="settings-new-word" ref={vocabInputRef} type="text" value={vocabWordDraft}
@@ -660,6 +651,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     <button type="submit" className="settings-button settings-button--primary" disabled={!vocabWordDraft.trim()}>Add</button>
                     <button type="button" className="settings-text-button" onClick={() => { setIsAddingVocabWord(false); setVocabWordDraft(''); }}>Cancel</button>
                   </form>}
+                  <div className="settings-vocab">
+                    {!isAddingVocabWord && <button type="button" className="settings-button settings-button--neutral" onClick={() => { setIsAddingVocabWord(true); setVocabWordDraft(''); }}>+ Add word</button>}
+                    {vocabWords.map(word => <button key={word} type="button" className="settings-word"
+                      onClick={() => void removeVocabWord(word)} aria-label={`Remove ${word}`} title={`Remove ${word}`}>{word}<span aria-hidden="true">×</span></button>)}
+                  </div>
                 </section>
               </div>
             </section>
