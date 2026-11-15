@@ -34,7 +34,10 @@ $unpack = Join-Path $cache 'nemo-sdk'
 if ((Split-Path -Parent ([IO.Path]::GetFullPath($unpack))) -ne $cache) { throw 'Invalid SDK extraction path.' }
 if (Test-Path -LiteralPath $unpack) { Remove-Item -LiteralPath $unpack -Recurse -Force }
 Write-Host 'Extracting verified NeMo CPU SDK.'
-Expand-Archive -LiteralPath $archive -DestinationPath $unpack -Force
+# Windows PowerShell's .NET Framework has the two-argument overload. The
+# extraction directory was removed above, so overwriting is unnecessary.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[IO.Compression.ZipFile]::ExtractToDirectory($archive, $unpack)
 $sdk = Join-Path $unpack $archiveName
 if (!(Test-Path "$sdk/include/nemo_speech/asr.h") -or !(Test-Path "$sdk/lib/nemo_speech_asr_c.lib")) { throw 'Incomplete NeMo SDK archive.' }
 $model = Join-Path $cache 'nemotron-en-q8.gguf'
