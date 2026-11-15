@@ -442,7 +442,7 @@ async function setupMemoSttService(): Promise<void> {
         if (!app.isPackaged) {
           logger.info('[Dictation comparison] ' + JSON.stringify({
             id: entryId,
-            rawGranite: asSpoken,
+            raw: asSpoken,
             lfmOutput: cleanProvenance?.status === 'accepted' ? formatted : null,
             cleanupStatus: cleanProvenance?.status ?? 'not_requested',
             cleanupReason: cleanProvenance?.reason ?? null,
