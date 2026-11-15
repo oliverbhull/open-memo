@@ -208,6 +208,7 @@ export interface ElectronAPI {
   isUserOnboarded(userName: string): Promise<boolean>;
   markUserOnboarded(userName: string): Promise<void>;
   interface: {
+    setOverlayAccentColor(color: string): Promise<void>;
     setWindowsSpeechModel(model: 'whisper-base.en-q5_1' | 'nemotron-streaming'): Promise<void>;
     getSettings(): Promise<{
       asrModel: AsrModelId;
@@ -219,7 +220,7 @@ export interface ElectronAPI {
       dictationSounds: boolean;
       writingMode: WritingMode;
       experimentalEmailFormatting: boolean;
-  experimentalSupermicrophone: boolean;
+      experimentalSupermicrophone: boolean;
       cleanupState: CleanupState;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];

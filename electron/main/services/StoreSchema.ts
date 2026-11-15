@@ -3,6 +3,7 @@ import type { AsrModelId, PhraseReplacementRule, ToastData, WritingMode } from '
 export interface StoreSchema {
   memoUid: string | null;
   desktopDeviceId: string | null;
+  overlayAccentColor: string | null;
   selectedSystemMicName: string | null;
   asrModel: AsrModelId;
   windowsSpeechModel: 'whisper-base.en-q5_1' | 'nemotron-streaming' | null;
@@ -28,6 +29,7 @@ export interface StoreSchema {
 export const storeDefaults: StoreSchema = {
   memoUid: null,
   desktopDeviceId: null,
+  overlayAccentColor: null,
   selectedSystemMicName: null,
   asrModel: 'conomo',
   windowsSpeechModel: null,

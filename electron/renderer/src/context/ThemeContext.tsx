@@ -21,6 +21,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     applyPrimary(primary);
     localStorage.setItem('primary', primary);
+    void window.electronAPI.interface.setOverlayAccentColor(primary).catch(error => {
+      console.warn('[Theme] Could not save the overlay accent color:', error);
+    });
   }, [primary]);
 
   const value: ThemeContextValue = {
