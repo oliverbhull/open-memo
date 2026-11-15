@@ -65,8 +65,7 @@
 .settings-dashboard .activity-insights__apps { gap: 9px; }
 .settings-dashboard .activity-insights__app { grid-template-columns: 24px minmax(68px, 1fr) minmax(0, 1fr) 30px; }
 .settings-dashboard .activity-insights__footer { margin-top: 12px; }
-.settings-lifetime { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-top: 1px solid #ffffff12; margin-top: 12px; padding-top: 10px; font-size: 10px; color: var(--settings-muted); }
-.settings-lifetime strong { color: #e0dfdd; font-weight: 600; }
+.settings-export-actions { display: flex; justify-content: flex-end; border-top: 1px solid #ffffff12; margin-top: 12px; padding-top: 10px; }
 .settings-grid-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0 0 10px; }
 .settings-grid-heading h2 { font-size: 14px; font-weight: 500; }
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -195,7 +194,6 @@
   .settings-grid { grid-template-columns: 1fr; }
   .settings-activity-panel { padding: 12px; }
   .settings-grid-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
-  .settings-lifetime { flex-wrap: wrap; }
   .settings-export__dates { grid-template-columns: 1fr; }
   .settings-download { align-items: flex-start; flex-direction: column; gap: 5px; }
   .settings-dashboard .activity-insights__header { flex-wrap: wrap; }
