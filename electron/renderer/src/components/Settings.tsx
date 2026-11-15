@@ -61,7 +61,6 @@ const SETTINGS_SECTIONS = [
   { id: 'audio', label: 'Audio' },
   { id: 'writing', label: 'Writing' },
   { id: 'snippets', label: 'Snippets' },
-  { id: 'appearance', label: 'Appearance' },
   { id: 'general', label: 'General' },
 ] as const;
 
@@ -73,7 +72,6 @@ const SectionIcon = ({ section }: { section: SettingsSection }) => {
     audio: <><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3m-4 0h8" /></>,
     writing: <><path d="m16 3 5 5-12 12-6 1 1-6L16 3ZM13 6l5 5" /></>,
     snippets: <><rect x="7" y="7" width="14" height="14" rx="3" /><path d="M17 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2M11 12h6m-6 4h4" /></>,
-    appearance: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></>,
     general: <><path d="M4 6h16M4 12h16M4 18h16" /><circle cx="8" cy="6" r="2" fill="currentColor" stroke="none" /><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none" /><circle cx="10" cy="18" r="2" fill="currentColor" stroke="none" /></>,
   };
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[section]}</svg>;
@@ -130,7 +128,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const snippetInputRef = useRef<HTMLInputElement>(null);
   const snippetTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [colorBarHue, setColorBarHue] = useState(0);
-  const [totalWordCount, setTotalWordCount] = useState<number | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportFrom, setExportFrom] = useState('');
   const [exportTo, setExportTo] = useState('');
@@ -370,17 +367,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     }
   }, [primary]);
 
-  // Load total word count from memo database (words dictated, not typed)
-  useEffect(() => {
-    let cancelled = false;
-    storageService.init().then(() => storageService.getTotalWordCount()).then((count) => {
-      if (!cancelled) setTotalWordCount(count);
-    }).catch(() => {
-      if (!cancelled) setTotalWordCount(null);
-    });
-    return () => { cancelled = true; };
-  }, []);
-
   const openExportPicker = async () => {
     setExportOpen(true);
     setExportStatus(null);
@@ -532,8 +518,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             <section id="settings-panel-activity" className="settings-panel" aria-label="Activity" hidden={activeSection !== 'activity'}>
               <section className="settings-activity-panel" aria-label="Dictation activity">
                 <ActivityInsights />
-                <div className="settings-lifetime">
-                  <span><strong>{totalWordCount !== null ? totalWordCount.toLocaleString() : '…'}</strong> words not typed · all time</span>
+                <div className="settings-export-actions">
                   <button type="button" className="settings-text-button settings-text-button--accent" aria-expanded={exportOpen} aria-controls="settings-export"
                     onClick={() => {
                       if (exportOpen) { setExportOpen(false); setExportStatus(null); }
@@ -701,11 +686,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 {snippetError && <p role="alert" className="settings-error">{snippetError}</p>}
               </div>
             </section>
-            <section id="settings-panel-appearance" className="settings-panel" aria-label="Appearance" hidden={activeSection !== 'appearance'}>
+            <section id="settings-panel-general" className="settings-panel" aria-label="General" hidden={activeSection !== 'general'}>
               <div className="settings-grid">
-                <section className="settings-tile settings-appearance" aria-labelledby="settings-appearance-title">
+                <section className="settings-tile" aria-labelledby="settings-accent-color-title">
                   <div className="settings-tile__top"><span className="settings-color-dot" style={{ background: primary }} aria-hidden="true" /></div>
-                  <h3 id="settings-appearance-title" className="settings-sr-only">Accent color</h3>
+                  <h3 id="settings-accent-color-title" className="settings-sr-only">Accent color</h3>
                   <p className="settings-help">Choose your accent color.</p>
                   <label className="settings-sr-only" htmlFor="settings-hue">Accent color hue</label>
                   <input id="settings-hue" className="settings-hue" type="range" min="0" max="360" value={colorBarHue}
@@ -713,22 +698,18 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     onChange={event => { const hue = Number(event.target.value); setColorBarHue(hue); setPrimary(accentColorAtHue(hue, primary)); }} />
                   <span className="settings-tile__state settings-color-value">{primary.toUpperCase()}</span>
                 </section>
-              </div>
-            </section>
-            <section id="settings-panel-general" className="settings-panel" aria-label="General" hidden={activeSection !== 'general'}>
-              <ToggleTile experimental title="Supermicrophone" checked={experimentalSupermicrophone}
-                description="Enable experimental USB and Bluetooth recorder sync, transcription, and automatic firmware updates. Off by default."
-                onChange={async enabled => {
-                  if (supermicrophoneBusy) return;
-                  setSupermicrophoneBusy(true); setSupermicrophoneError('');
-                  try {
-                    if (await window.electronAPI.interface.setExperimentalSupermicrophone(enabled)) setExperimentalSupermicrophone(enabled);
-                  } catch (error) { setSupermicrophoneError(error instanceof Error ? error.message : 'Could not change Supermicrophone setting.'); }
-                  finally { setSupermicrophoneBusy(false); }
-                }} />
-              {supermicrophoneError && <p role="alert">{supermicrophoneError}</p>}
+                <ToggleTile experimental title="Supermicrophone" checked={experimentalSupermicrophone}
+                  description="Enable experimental USB and Bluetooth recorder sync, transcription, and automatic firmware updates. Off by default."
+                  onChange={async enabled => {
+                    if (supermicrophoneBusy) return;
+                    setSupermicrophoneBusy(true); setSupermicrophoneError('');
+                    try {
+                      if (await window.electronAPI.interface.setExperimentalSupermicrophone(enabled)) setExperimentalSupermicrophone(enabled);
+                    } catch (error) { setSupermicrophoneError(error instanceof Error ? error.message : 'Could not change Supermicrophone setting.'); }
+                    finally { setSupermicrophoneBusy(false); }
+                  }} />
+                {supermicrophoneError && <p role="alert">{supermicrophoneError}</p>}
 
-              <div className="settings-grid">
                 <section className="settings-shortcuts" aria-label="Recording shortcuts" aria-busy={hotkeySaving}>
                     {window.electronAPI.platform === 'win32' && <p className="settings-help">Choose a key or combination, such as Right Control or F8. Most Windows keyboards do not expose the Fn key to apps; F1–F12 are separate keys.</p>}
                   {([
