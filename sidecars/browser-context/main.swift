@@ -25,13 +25,54 @@ func walk(_ e: AXUIElement, depth: Int, visit: (AXUIElement, String) -> Bool) {
     guard visit(e, role) else { return }
     for child in children(e) { walk(child, depth: depth - 1, visit: visit) }
 }
+// Electron apps (Claude, Slack, Notion, ...) often keep a static window title
+// such as "Claude". Their web contents' document title names the actual chat or
+// page. Read only that title: never page text, editor values or other windows.
+func isElectron(_ running: NSRunningApplication) -> Bool {
+    guard let url = running.bundleURL else { return false }
+    return FileManager.default.fileExists(atPath: url.appendingPathComponent("Contents/Frameworks/Electron Framework.framework").path)
+}
+func firstWebArea(_ root: AXUIElement) -> AXUIElement? {
+    var queue: [(AXUIElement, Int)] = [(root, 0)]
+    var seen = 0
+    while !queue.isEmpty, seen < 200, ProcessInfo.processInfo.systemUptime < deadline {
+        let (e, depth) = queue.removeFirst()
+        seen += 1
+        if text(e, "AXRole") == "AXWebArea" { return e }
+        if depth < 10 { queue.append(contentsOf: children(e).map { ($0, depth + 1) }) }
+    }
+    return nil
+}
+func electronSnapshot(_ running: NSRunningApplication, _ bundle: String) -> [String: Any] {
+    guard bundle != "com.memo.desktop", isElectron(running) else { return [:] }
+    let app = AXUIElementCreateApplication(running.processIdentifier)
+    AXUIElementSetMessagingTimeout(app, 0.03)
+    guard let window = element(app, "AXFocusedWindow") else { return [:] }
+    let windowTitle = text(window, "AXTitle")
+    var result: [String: Any] = ["bundleId": bundle, "windowTitle": windowTitle, "documentURL": ""]
+    // Only static titles need the web title; apps that already name the window keep theirs.
+    let appName = running.localizedName ?? ""
+    guard windowTitle.isEmpty || windowTitle.caseInsensitiveCompare(appName) == .orderedSame else { return result }
+    // Chromium builds its accessibility tree only after an assistive client asks.
+    // The first request after launch may need a moment, so retry within the deadline.
+    _ = AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+    for attempt in 0..<3 {
+        if let web = firstWebArea(window) {
+            let title = text(web, "AXTitle")
+            if !title.isEmpty { result["webTitle"] = String(title.prefix(1000)); break }
+        }
+        if attempt < 2 { usleep(40_000) }
+    }
+    return result
+}
 func snapshot() -> [String: Any] {
     // Explicit bundle selection is for read-only diagnostics; dictation passes no arguments.
     let diagnosticBundle = CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--bundle" ? CommandLine.arguments[2] : nil
     let runningApp = diagnosticBundle != nil ? NSRunningApplication.runningApplications(withBundleIdentifier: diagnosticBundle!).first : NSWorkspace.shared.frontmostApplication
-    guard let running = runningApp,
-          let bundle = running.bundleIdentifier,
-          ["com.apple.Safari", "com.apple.SafariTechnologyPreview", "com.google.Chrome", "com.google.Chrome.canary", "com.microsoft.edgemac", "com.brave.Browser", "company.thebrowser.Browser"].contains(bundle) else { return [:] }
+    guard let running = runningApp, let bundle = running.bundleIdentifier else { return [:] }
+    guard ["com.apple.Safari", "com.apple.SafariTechnologyPreview", "com.google.Chrome", "com.google.Chrome.canary", "com.microsoft.edgemac", "com.brave.Browser", "company.thebrowser.Browser"].contains(bundle) else {
+        return electronSnapshot(running, bundle)
+    }
     let app = AXUIElementCreateApplication(running.processIdentifier)
     AXUIElementSetMessagingTimeout(app, 0.03)
     guard let window = element(app, "AXFocusedWindow") else { return [:] }

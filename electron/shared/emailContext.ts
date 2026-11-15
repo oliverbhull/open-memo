@@ -23,6 +23,8 @@ export interface ReplySnapshot {
   focusedReply?: boolean;
   subject?: string;
   recipientLabels?: string[];
+  /** Document title of an Electron app whose window title is static (e.g. "Claude"). */
+  webTitle?: string;
 }
 
 export function matchEmailReply(snapshot: ReplySnapshot | undefined, context: AppContext, documentURL: string): EmailReplyContext | undefined {
