@@ -1,5 +1,6 @@
 // Private pipe adapter for the installed NeMo-Speech C ABI. Model stays resident.
-// Requests: byte opcode + uint32 payload bytes (little endian); PCM is mono i16/16k.
+// Requests: byte opcode + uint32 payload bytes (little endian).
+// Start carries NUL-separated UTF-8 phrases; audio is mono i16/16k.
 // Responses: byte status + uint32 UTF-8 byte count + text. Initial empty success = ready.
 #include <nemo_speech/asr.h>
 #include <cstdio>
@@ -67,6 +68,24 @@ static int worker_main(int argc, char** argv) {
                 stream=nullptr; transcript.clear();
                 auto options=nemo_speech_asr_recognition_options_default();
                 options.language_code="en-US"; options.interim_results=true;
+                std::vector<const char*> phrases;
+                if (!bytes.empty()) {
+                    // Preserve commas and other punctuation within phrases.
+                    bytes.push_back(0);
+                    for (size_t offset = 0; offset < bytes.size() - 1; ++offset) {
+                        if (bytes[offset] && (offset == 0 || bytes[offset - 1] == 0))
+                            phrases.push_back(reinterpret_cast<const char*>(bytes.data() + offset));
+                    }
+                }
+                nemo_speech_asr_speech_context context{};
+                if (!phrases.empty()) {
+                    context.size = sizeof(context);
+                    context.phrases = phrases.data();
+                    context.phrase_count = phrases.size();
+                    context.boost = 2.0f;
+                    options.speech_contexts = &context;
+                    options.speech_context_count = 1;
+                }
                 check(nemo_speech_asr_streaming_recognize(recognizer,&options,&stream));
             } else if (opcode==2) {
                 if (!stream || size%2) throw std::runtime_error("Invalid audio stream");

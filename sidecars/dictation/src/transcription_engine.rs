@@ -78,11 +78,17 @@ impl TranscriptionEngine {
     }
 
     pub fn set_vocabulary(&mut self, phrases: &[String]) {
-        let Self::Worker(engine) = self else {
-            return;
-        };
-        if let Err(error) = engine.send_message(json!({ "type": "context", "phrases": phrases })) {
-            eprintln!("vocabulary update failed: {error}");
+        match self {
+            Self::Worker(engine) => {
+                if let Err(error) = engine.send_message(json!({
+                    "type": "context",
+                    "phrases": phrases,
+                })) {
+                    eprintln!("vocabulary update failed: {error}");
+                }
+            }
+            Self::Nemotron(engine) => engine.set_vocabulary(phrases),
+            Self::Whisper(_) => {}
         }
     }
 
