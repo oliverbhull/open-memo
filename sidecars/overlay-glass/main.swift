@@ -32,6 +32,7 @@ final class GlassPanel {
       let glass = NSGlassEffectView()
       glass.style = .clear
       glass.cornerRadius = cornerRadius
+      glass.contentView = NSView()
       return glass
     }
     #endif
@@ -46,11 +47,27 @@ final class GlassPanel {
     return blur
   }
 
-  func show(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) {
+  func show(pill: CGRect) {
     guard let primary = NSScreen.screens.first else { return }
-    let bottom = primary.frame.maxY - y - height
-    panel.setFrame(NSRect(x: x, y: bottom, width: width, height: height), display: false)
-    panel.contentView = makeGlassView(cornerRadius: height / 2)
+    #if compiler(>=6.2)
+    if #available(macOS 26.0, *) {
+      let accessibility = NSWorkspace.shared
+      let useOpaqueMaterial = accessibility.accessibilityDisplayShouldReduceTransparency
+        || accessibility.accessibilityDisplayShouldIncreaseContrast
+      // Let the actual desktop detail show through the native backdrop blur.
+      panel.alphaValue = useOpaqueMaterial ? 1 : 0.5
+    }
+    #endif
+    let rect = NSRect(x: pill.minX, y: primary.frame.maxY - pill.maxY, width: pill.width, height: pill.height)
+    // Give the glass its own view inside the clear panel so AppKit can composite its edges.
+    let padding: CGFloat = 8
+    let frame = rect.insetBy(dx: -padding, dy: -padding)
+    panel.setFrame(frame, display: false)
+    let container = NSView(frame: NSRect(origin: .zero, size: frame.size))
+    let glass = makeGlassView(cornerRadius: pill.height / 2)
+    glass.frame = container.bounds.insetBy(dx: padding, dy: padding)
+    container.addSubview(glass)
+    panel.contentView = container
     panel.orderFrontRegardless()
     panel.invalidateShadow()
   }
@@ -72,13 +89,8 @@ DispatchQueue.global(qos: .userInitiated).async {
         glass.hide()
       } else if parts.first == "show", parts.count == 5 {
         let values = parts.dropFirst().compactMap { Double($0) }
-        guard values.count == 4 else { return }
-        glass.show(
-          x: CGFloat(values[0]),
-          y: CGFloat(values[1]),
-          width: CGFloat(values[2]),
-          height: CGFloat(values[3])
-        )
+        guard values.count == 4, values.allSatisfy(\.isFinite) else { return }
+        glass.show(pill: CGRect(x: values[0], y: values[1], width: values[2], height: values[3]))
       }
     }
   }

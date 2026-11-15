@@ -208,6 +208,7 @@ const electronAPI = {
   },
 
   interface: {
+    setOverlayAccentColor: (color: string): Promise<void> => ipcRenderer.invoke('overlay:set-accent-color', color),
     getSettings: (): Promise<{
       asrModel: AsrModelId;
       hotkey: string;
@@ -218,7 +219,7 @@ const electronAPI = {
       dictationSounds: boolean;
       writingMode: WritingMode;
       experimentalEmailFormatting: boolean;
-  experimentalSupermicrophone: boolean;
+      experimentalSupermicrophone: boolean;
       cleanupState: CleanupState;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];

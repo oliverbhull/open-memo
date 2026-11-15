@@ -12,7 +12,7 @@ import {
   store,
 } from './services/SettingsService';
 import { applyPhraseReplacements, clampPhraseReplacementRulesFromInput } from './services/phraseReplacement';
-import { updateOverlayVisibility, sendAudioLevels, sendStatusToOverlay } from './services/WindowService';
+import { updateOverlayVisibility, sendAudioLevels } from './services/WindowService';
 import { playDictationSound, prepareDictationSounds } from './services/DictationSoundService';
 import path from 'path';
 import os from 'os';
@@ -520,8 +520,7 @@ async function setupMemoSttService(): Promise<void> {
       if (isRecording) {
         isRecording = false;
         setRecordingState(false);
-        updateOverlayVisibility(false, mainWindow);
-        sendStatusToOverlay(false, mainWindow);
+        updateOverlayVisibility(false);
       }
     }
     
@@ -556,8 +555,7 @@ async function setupMemoSttService(): Promise<void> {
       // Before the overlay, whose window is recreated synchronously on each start.
       playDictationSound('start');
       setRecordingState(true);
-      updateOverlayVisibility(true, mainWindow);
-      sendStatusToOverlay(true, mainWindow);
+      updateOverlayVisibility(true);
     } else {
       logger.warn('[Main] Recording started event received but already recording');
     }
@@ -570,8 +568,7 @@ async function setupMemoSttService(): Promise<void> {
       isRecording = false;
       playDictationSound('stop');
       setRecordingState(false);
-      updateOverlayVisibility(false, mainWindow);
-      sendStatusToOverlay(false, mainWindow);
+      updateOverlayVisibility(false);
     } else {
       logger.warn('[Main] Recording stopped event received but not recording');
     }
@@ -601,8 +598,7 @@ async function setupMemoSttService(): Promise<void> {
       logger.warn('[Main] Recording state still set when processing failed, clearing it');
       isRecording = false;
       setRecordingState(false);
-      updateOverlayVisibility(false, mainWindow);
-      sendStatusToOverlay(false, mainWindow);
+      updateOverlayVisibility(false);
     }
   });
 
@@ -1120,6 +1116,11 @@ ipcMain.handle('settings:setWindowsSpeechModel', async (_event, model: unknown) 
   } finally {
     changingWindowsSpeechModel = false;
   }
+});
+
+ipcMain.handle('overlay:set-accent-color', (event, color: unknown) => {
+  if (event.sender !== mainWindow?.webContents || typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color)) return;
+  if (color !== store.get('overlayAccentColor')) store.set('overlayAccentColor', color);
 });
 
 ipcMain.handle('settings:getInterfaceSettings', () => {
