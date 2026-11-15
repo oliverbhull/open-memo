@@ -5,14 +5,19 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const { transformSync } = require('esbuild');
 const compiled = transformSync(fs.readFileSync('electron/main/services/MemoSttService.ts', 'utf8'), { loader: 'ts', format: 'cjs' }).code;
-function harness() {
+const vocabularyModule = { exports: {} };
+const compiledVocabulary = transformSync(fs.readFileSync('electron/main/services/asrVocabulary.ts', 'utf8'), { loader: 'ts', format: 'cjs' }).code;
+vm.runInNewContext(compiledVocabulary, { module: vocabularyModule });
+function harness(vocabWords = []) {
   const children = [];
+  const commands = [];
   const module = { exports: {} };
   const logger = { info() {}, warn() {}, error() {}, debug() {} };
   const spawn = () => {
     const child = new EventEmitter();
     Object.assign(child, { exitCode: null, signalCode: null, killed: false });
-    child.stdin = new EventEmitter(); child.stdin.write = () => true;
+    child.stdin = new EventEmitter();
+    child.stdin.write = command => { commands.push(command); return true; };
     child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
     child.kill = () => true;
     children.push(child); return child;
@@ -24,7 +29,8 @@ function harness() {
       if (name === 'fs') return { existsSync: () => true, readdirSync: () => ['GraniteSpeech.mlmodelc'] };
       if (name === 'electron') return { app: { isPackaged: false } };
       if (name === '../utils/logger') return { logger };
-      if (name === './SettingsService') return { loadSettings: () => ({ vocabWords: [] }), store: { get() {} } };
+      if (name === './SettingsService') return { loadSettings: () => ({ vocabWords }), store: { get() {} } };
+      if (name === './asrVocabulary') return vocabularyModule.exports;
       if (name === './windowsRuntime') return { windowsDictationPath: () => '/test-dictation.exe', configureWindowsSpeech() {} };
       if (name === './conomoRuntime') return { configureConomo(env) { env.MEMO_ASR_BACKEND = 'conomo'; env.MEMO_ASR_WORKER = '/conomo-worker'; } };
       if (name === './ModelPackService') return { resolveModelPackPath: () => '/test-conomo' };
@@ -35,8 +41,22 @@ function harness() {
   service.on('error', () => {});
   const lines = [];
   service.processLine = async line => { lines.push(line); };
-  return { service, children, lines };
+  return { service, children, lines, commands };
 }
+test('keeps valid recognition hints when saved vocabulary exceeds the decoder limits', async () => {
+  const longPhrase = 'x'.repeat(161);
+  const unicodePhrase = '𐐀'.repeat(160);
+  const vocabWords = [longPhrase, ' OpenMemo ', unicodePhrase, 'OpenMemo', ...Array.from({ length: 256 }, (_, i) => `Term ${i}`)];
+  const { service, children, commands } = harness(vocabWords);
+  await service.start();
+  const payload = JSON.parse(commands.find(command => command.startsWith('VOCAB:')).slice(6));
+  assert.equal(payload.boostWords.length, 256);
+  assert.deepEqual(payload.boostWords.slice(0, 2), ['OpenMemo', unicodePhrase]);
+  assert.equal(payload.boostWords.at(-1), 'Term 253');
+  const stop = service.stop();
+  children[0].emit('close', 0, null);
+  await stop;
+});
 test('stop drains split output after exit and restart waits for stream close', async () => {
   const { service, children, lines } = harness();
   await service.start();

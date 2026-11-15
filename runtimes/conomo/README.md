@@ -60,20 +60,21 @@ the downloaded files. Package source is MIT; see `THIRD_PARTY_NOTICES`.
 The JSON-lines Unix-socket protocol uses `hello`, `context`, `start`, `audio`,
 `end`, `abort` and `status`. Audio is 16 kHz mono PCM16LE, base64 in `pcm16le`.
 The worker emits `READY`, incremental `PARTIAL` text and one `FINAL` per completed
-utterance. It streams in 560 ms model chunks. `end` processes only the remaining
-audio. Client apps retain their microphone selection and endpoint detection:
-changing runtime does not alter Fn, hands-free or silence settings.
+utterance. It streams in 560 ms model chunks. `end` processes the remaining
+audio and scores vocabulary candidates. Clients handle microphone selection
+and endpoint detection.
 
-`context` takes a `phrases` array (maximum 256 phrases, 160 characters each) and
-optional `strength` from 0–5, default 2. Vocabulary is frozen at `start`; updates
-affect the next utterance. Memo forwards saved Vocabulary settings for dictation
-and device batches. Memo Agent can use the same socket and protocol.
+`context` takes a `phrases` array (maximum 256 phrases, 160 characters each).
+The service prepares the list on receipt and freezes it at `start`. Edits apply
+to the next utterance. Memo forwards saved Vocabulary settings for dictation
+and device batches. Callers can omit `strength` for automatic selection or pass
+a finite nonnegative ceiling on the score gap, with zero disabling vocabulary.
 
-Phrase hints bias RNNT joiner scores before token selection. The matcher handles
-alternative wordpiece segmentations and ignores case. Blank is never boosted;
-empty phrases or zero strength leave scores unchanged. This is decoder biasing,
-not transcript replacement or training. Large lists or excessive strength can
-hurt recognition; default strength remains provisional.
+The decoder considers saved spellings close to complete recognized spans and
+scores alternate wordpiece paths against the same encoded audio. The competing
+paths must pass a score gap check before the saved spelling can win. The
+automatic allowance uses spelling similarity and mid-sentence capitalization
+as context. The final transcript uses the saved casing for matched entries.
 
 ## Validation
 
@@ -81,8 +82,8 @@ hurt recognition; default strength remains provisional.
 PYTHONPATH=. .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Tests cover cancellation, source isolation, frozen vocabulary, wordpiece
-segmentation, zero bias, blank preservation, pinned downloads, cache corruption,
+Tests cover cancellation, source isolation, frozen vocabulary, whole-word
+candidate scoring, pinned downloads, cache corruption,
 interrupted downloads and offline local reuse. CI runs them with the bundled
 Python environment. No personal recordings or history are required.
 

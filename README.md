@@ -63,7 +63,7 @@ requested permissions, then hold **Fn** and start talking.
 
 Open Memo requires macOS 15 or newer and an Apple silicon Mac.
 Conomo is included and ready to use. It streams audio to a separate local runtime
-and applies your vocabulary hints during recognition. The verified model ships
+and boosts saved words and phrases during recognition. The verified model ships
 inside the installer; no first-launch model download is needed.
 
 **Windows unsigned preview:** [Download for Windows](https://github.com/oliverbhull/open-memo/releases/download/windows-latest/Open-Memo-latest-windows-x64-setup.exe),
@@ -78,6 +78,11 @@ or developer-tool installation is needed. Dictation currently supports English.
 The optional **Cleaned** writing mode is currently available on Mac only. Windows
 includes automatic punctuation and capitalization in **As spoken** mode. Windows
 updates use the download button; automatic Windows updates are not enabled yet.
+
+Add names, acronyms, and phrases in **Settings → Vocabulary**. Nemotron uses them
+as recognition hints on the next dictation. Memo keeps the saved spelling when
+it recognizes a term. Use **Settings → Snippets** to replace a recurring
+misrecognition with fixed text.
 
 ## Private by design
 

@@ -1,25 +1,21 @@
 """Socket isolation/dedup tests; no heavy model loaded in this suite."""
 import base64
-import importlib.util
 from pathlib import Path
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch
-import sys
 
 from conomo.client import SpeechClient
 
 from conomo import server as shared
 from types import SimpleNamespace
-from tokenizers import Tokenizer, models
-from conomo.nemotron import PhraseBias
+from conomo.vocabulary import Tokenizations, Vocabulary, VocabularyDecoder
 import numpy as np
 
 class FakeSession:
     instances = []
-    def __init__(self, phrases=(), strength=2.0, emit_fn=None):
-        self.phrases = phrases
+    def __init__(self, vocabulary, strength=None, emit_fn=None):
+        self.phrases = list(vocabulary.phrases)
         self.instances.append(self)
         self.output = emit_fn
         self.text = ''
@@ -39,15 +35,12 @@ class SharedSpeechTest(unittest.TestCase):
         self.path = str(Path(self.temp.name) / 's.sock')
         core = object.__new__(shared.SharedModel)
         core.path = '/model'
-        core.model = object()
-        core.tokenizer = object()
         core.chunk_samples = 8960
         core.lock = threading.RLock()
         core.memo_owner = None
         core.epoch = 0
         core.quiet_until = 0
         core.clients = {}
-        core.tokenizer = Tokenizer(models.Unigram([('<unk>', 0), ('▁', -1), ('M', -2), ('e', -3), ('m', -4), ('o', -5)], unk_id=0))
         core.backend = SimpleNamespace(session=FakeSession)
         self.server = shared.Server(self.path, shared.Handler)
         self.server.core = core
@@ -112,9 +105,12 @@ class SharedSpeechTest(unittest.TestCase):
             # The active utterance retains its snapshot; other clients start empty.
             self.assertEqual(system.request({'type':'context', 'phrases': []})['phrase_count'], 0)
             with self.assertRaises(RuntimeError):
-                system.request({'type':'context', 'phrases': ['Memo'], 'strength': 99})
+                system.request({'type':'context', 'phrases': ['Memo'], 'strength': -1})
             memo.request({'type':'end'})
             self.assertEqual(memo.request({'type':'context', 'phrases': []})['phrase_count'], 0)
+            memo.request({'type':'start'})
+            self.audio(memo)
+            self.assertEqual(FakeSession.instances[-1].phrases, [])
 
     def test_structured_vocabulary_is_not_replaced_by_window_prompt(self):
         with SpeechClient(self.path) as memo:
@@ -126,20 +122,60 @@ class SharedSpeechTest(unittest.TestCase):
             self.assertEqual(FakeSession.instances[-1].phrases, ['Memo, Inc.'])
             memo.request({'type':'end'})
 
-class BiasTest(unittest.TestCase):
-    def test_alternate_segmentation_blank_and_reset(self):
-        t = Tokenizer(models.Unigram([('<unk>', 0), ('▁', -1), ('▁me', -2), ('m', -3), ('o', -4), ('mo', -5), ('blank', -6)], unk_id=0))
-        b = PhraseBias(t, ['Memo'], 2)
-        scores = np.zeros(7, np.float32)
-        self.assertGreater(b.apply(scores, 6)[2], 0)
-        self.assertEqual(b.apply(scores, 6)[6], 0)
-        b.accept(2)
-        boosted = b.apply(scores, 6)
-        self.assertEqual(boosted[5], 2)
-        self.assertEqual(boosted[3], 2)
-        self.assertTrue(np.array_equal(PhraseBias(t, []).apply(scores,6), scores))
-        self.assertTrue(np.array_equal(PhraseBias(t, ['Memo'],0).apply(scores,6), scores))
-        self.assertEqual(PhraseBias(t, ['Memo']).history, '')
+class VocabularyDecoderTest(unittest.TestCase):
+    def decoder(self, pieces, phrases):
+        model = SimpleNamespace(pieces=pieces, tokenizations=Tokenizations(pieces, blank=0))
+        decoder = VocabularyDecoder(model, Vocabulary(phrases), strength=None)
+        decoder.capture_frames(np.arange(12).reshape(-1, 1))
+        for frame in (0, 3, 4, 5, 8):
+            decoder.capture_emission(frame, None, None, None)
+        return decoder
+
+    def test_same_candidate_needs_different_boost_on_different_audio(self):
+        decoder = self.decoder(
+            ['<blank>', '▁Ask', '▁Shiv', 'any', 'ani', '▁tomorrow'], ['Shivani'],
+        )
+        original = [1, 2, 3, 5]
+        compared_frames = []
+
+        def probability(frames, tokens, _predictors):
+            compared_frames.append(tuple(frames[:, 0]))
+            return -1.0 if tokens == (2, 3, 5) else -candidate_cost
+
+        decoder.log_probability = probability
+        candidate_cost = 10.0
+        self.assertEqual(decoder.resolve(original), '▁Ask▁Shivani▁tomorrow')
+        self.assertEqual(len(set(compared_frames)), 1)
+        candidate_cost = 18.0
+        self.assertEqual(decoder.resolve(original), '▁Ask▁Shivany▁tomorrow')
+
+    def test_exact_entry_stays_whole_and_preserves_surrounding_text(self):
+        pieces = ['<blank>', '▁an', '▁ARCGIS', '▁map', '.', '▁Plan']
+        decoder = self.decoder(pieces, ['ArcGIS', 'ArcGIS map', 'map plan'])
+        decoder.log_probability = lambda *_: self.fail('An exact entry needs no rescoring')
+        self.assertEqual(decoder.resolve([1, 2, 3, 4, 5]), '▁an▁ArcGIS map.▁Plan')
+
+    def test_exact_entry_preserves_literal_symbols(self):
+        pieces = ['<blank>', '▁with', '▁memo', ',', '▁inc', '.', '▁we', '▁use', '▁c++']
+        decoder = self.decoder(pieces, ['Memo, Inc.', 'C++'])
+        self.assertEqual(decoder.resolve(list(range(1, len(pieces)))), '▁with▁Memo, Inc.▁we▁use▁C++')
+
+    def test_first_letter_errors_still_reach_the_audio_scorer(self):
+        pieces = ['<blank>', '▁At', '▁Knomo', '▁Conomo', '▁Point', '▁Road']
+        decoder = self.decoder(pieces, ['Conomo', 'Vercel', 'Zainab'])
+        self.assertEqual(
+            [(entry.spelling, edits) for entry, edits in decoder.vocabulary.candidates('wersel', 1)],
+            [('Vercel', 2)],
+        )
+        self.assertEqual(
+            [(entry.spelling, edits) for entry, edits in decoder.vocabulary.candidates('sainab', 1)],
+            [('Zainab', 1)],
+        )
+
+        decoder.log_probability = lambda _, tokens, __: -1 if tokens[0] == 2 else -4
+        self.assertEqual(decoder.resolve([1, 2, 4, 5]), '▁At▁Conomo▁Point▁Road')
+        decoder.log_probability = lambda _, tokens, __: -1 if tokens[0] == 2 else -20
+        self.assertEqual(decoder.resolve([1, 2, 4, 5]), '▁At▁Knomo▁Point▁Road')
 
 if __name__ == '__main__':
     unittest.main()

@@ -1084,12 +1084,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         let boost_words = vocab.boost_words.clone();
                         drop(vocab);
-                        if std::env::var("MEMO_CONTEXTUAL_VOCAB").as_deref() == Ok("1") {
-                            engine_for_vocab
-                                .lock()
-                                .unwrap()
-                                .set_vocabulary(&boost_words);
-                        }
+                        engine_for_vocab
+                            .lock()
+                            .unwrap()
+                            .set_vocabulary(&boost_words);
                         let vocab = vocabulary_clone.lock().unwrap();
                         eprintln!(
                             "MIC: Vocabulary updated: {} boost words, {} app names, {} apps with commands, {} global commands",

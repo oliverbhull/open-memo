@@ -1,5 +1,6 @@
 import { configureWindowsSpeech, windowsDictationPath } from './windowsRuntime';
 import { configureConomo } from './conomoRuntime';
+import { asrVocabulary } from './asrVocabulary';
 import { spawn, spawnSync, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import path from 'path';
@@ -214,14 +215,7 @@ export class MemoSttService extends EventEmitter {
   /** Update native speech-recognition vocabulary. */
   updateVocabulary(): void {
     const settings = loadSettings();
-    const boostWordsRaw = Array.isArray(settings.vocabWords) ? settings.vocabWords : [];
-    const boostWords = Array.from(
-      new Set(
-        boostWordsRaw
-          .map(w => (typeof w === 'string' ? w.trim() : ''))
-          .filter(Boolean)
-      )
-    );
+    const boostWords = asrVocabulary(settings.vocabWords);
 
     const vocab = { boostWords, voiceCommandsEnabled: false };
     logger.info(`[MemoSttService] Updated vocabulary: ${boostWords.length} boost words`);

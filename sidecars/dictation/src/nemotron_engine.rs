@@ -31,6 +31,7 @@ pub struct NemotronEngine {
     streamed: usize,
     active: bool,
     fallback_used: bool,
+    vocabulary: Vec<String>,
 }
 
 #[cfg(test)]
@@ -75,6 +76,7 @@ impl NemotronEngine {
             streamed: 0,
             active: false,
             fallback_used: false,
+            vocabulary: Vec::new(),
         })
     }
     pub fn name(&self) -> String {
@@ -154,13 +156,11 @@ impl NemotronEngine {
         }
         Ok(())
     }
-    fn send(&self, opcode: u8, pcm: &[i16]) -> Result<()> {
-        let mut frame = Vec::with_capacity(5 + pcm.len() * 2);
+    fn send(&self, opcode: u8, payload: &[u8]) -> Result<()> {
+        let mut frame = Vec::with_capacity(5 + payload.len());
         frame.push(opcode);
-        frame.extend((pcm.len() as u32 * 2).to_le_bytes());
-        for sample in pcm {
-            frame.extend(sample.to_le_bytes());
-        }
+        frame.extend((payload.len() as u32).to_le_bytes());
+        frame.extend_from_slice(payload);
         let slot = self.worker.lock().unwrap();
         let worker = slot
             .as_ref()
@@ -170,6 +170,14 @@ impl NemotronEngine {
                 "Nemotron ingress unavailable or backlog limit reached: {e}"
             ))
         })
+    }
+    fn send_audio(&self, pcm: &[i16]) -> Result<()> {
+        let bytes: Vec<u8> = pcm.iter().flat_map(|sample| sample.to_le_bytes()).collect();
+        self.send(2, &bytes)
+    }
+    pub fn set_vocabulary(&mut self, phrases: &[String]) {
+        // The bundled English model recognizes lowercase tokens.
+        self.vocabulary = phrases.iter().map(|phrase| phrase.to_lowercase()).collect();
     }
     fn disable(&mut self, error: impl std::fmt::Display) {
         eprintln!("Nemotron unavailable; using Whisper Base fallback: {error}");
@@ -183,7 +191,9 @@ impl NemotronEngine {
         if self.fallback_used {
             return Ok(());
         }
-        if let Err(error) = self.ensure_worker().and_then(|_| self.send(1, &[])) {
+        // A start frame carries the vocabulary for this utterance.
+        let phrases = self.vocabulary.join("\0");
+        if let Err(error) = self.ensure_worker().and_then(|_| self.send(1, phrases.as_bytes())) {
             self.disable(error);
             return Ok(());
         }
@@ -198,7 +208,7 @@ impl NemotronEngine {
             self.begin()?;
         }
         let pcm = self.resampler.push(samples, false);
-        if let Err(error) = self.send(2, &pcm) {
+        if let Err(error) = self.send_audio(&pcm) {
             self.disable(error);
         } else {
             self.streamed += samples.len();
@@ -228,7 +238,7 @@ impl NemotronEngine {
             if !self.fallback_used {
                 let tail = self.resampler.push(&[], true);
                 let result = self
-                    .send(2, &tail)
+                    .send_audio(&tail)
                     .and_then(|_| self.send(3, &[]))
                     .and_then(|_| {
                         let slot = self.worker.lock().unwrap();

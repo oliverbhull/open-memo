@@ -33,6 +33,7 @@ import { resolveApplicationContext } from './services/applicationContext';
 import { AppUpdateService } from './services/AppUpdateService';
 import { PunctuationService } from './services/PunctuationService';
 import { CleanupService } from './services/CleanupService';
+import { applyVocabularySpelling } from './services/vocabularyProtection';
 import { gmailThreadUrl } from '../shared/emailContext';
 import { captureBrowserReply } from './services/BrowserContextService';
 import { pasteIntoFocusedTarget } from './services/checkedPaste';
@@ -369,7 +370,10 @@ async function setupMemoSttService(): Promise<void> {
             } else {
               formatted = !isQuitting ? await punctuationService.format(input) : input;
             }
-            return applyPhraseReplacements(formatted, settings.phraseReplacements);
+            return applyPhraseReplacements(
+              applyVocabularySpelling(formatted, settings.vocabWords),
+              settings.phraseReplacements,
+            );
           },
         );
         let delivery = isQuitting ? 'shutdown' : 'empty';
@@ -1197,7 +1201,7 @@ ipcMain.handle('settings:setVocabWords', async (_event, vocabWords: string[]) =>
   settings.vocabWords = Array.isArray(vocabWords) ? vocabWords : [];
   saveSettings(settings);
 
-  // Update memo-stt vocabulary for command and replacement handling.
+  // Apply the updated recognition hints to the next utterance.
   if (memoSttService) {
     memoSttService.updateVocabulary();
   }
