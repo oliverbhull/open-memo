@@ -138,17 +138,6 @@ export interface ToastData {
 
 export type AsrModelId = 'conomo' | 'whisper-small.en-q5_1' | 'whisper-base.en-q5_1' | 'whisper-custom' | 'nemotron-streaming';
 
-export type WritingMode = 'as-spoken' | 'clean';
-
-export interface CleanupState {
-  available: boolean;
-  installed?: boolean;
-  status: 'disabled' | 'not-downloaded' | 'downloading' | 'loading' | 'ready' | 'unavailable';
-  detail?: string;
-  downloadedBytes?: number;
-  totalBytes?: number;
-}
-
 export interface MicrophoneInputDevice {
   name: string;
   isDefault: boolean;
@@ -218,10 +207,10 @@ export interface ElectronAPI {
       handsFreeMode: boolean;
       saveAudio: boolean;
       dictationSounds: boolean;
-      writingMode: WritingMode;
       experimentalEmailFormatting: boolean;
       experimentalSupermicrophone: boolean;
-      cleanupState: CleanupState;
+      groqKeySaved: boolean;
+      groqCleanupEnabled: boolean;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
       startAtLogin: boolean;
@@ -239,10 +228,11 @@ export interface ElectronAPI {
     setDictationSounds(enabled: boolean): Promise<boolean>;
     setExperimentalSupermicrophone(enabled: boolean): Promise<boolean>;
     setExperimentalEmailFormatting(enabled: boolean): Promise<boolean>;
-    setWritingMode(mode: WritingMode): Promise<boolean>;
-    removeCleaned(): Promise<{ writingMode: WritingMode; cleanupState: CleanupState }>;
+    saveGroqApiKey(apiKey: string): Promise<boolean>;
+    removeGroqApiKey(): Promise<void>;
+    setGroqCleanupEnabled(enabled: boolean): Promise<boolean>;
+    openGroqKeysPage(): Promise<void>;
     setStartAtLogin(enabled: boolean): Promise<boolean>;
-    onCleanupStateChanged(callback: (state: CleanupState) => void): () => void;
   };
   microphone: {
     getState(): Promise<MicrophoneInputState>;

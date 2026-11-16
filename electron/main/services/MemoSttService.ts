@@ -9,7 +9,7 @@ import { app } from 'electron';
 import { logger } from '../utils/logger';
 import { loadSettings, store } from './SettingsService';
 import { resolveModelPackPath } from './ModelPackService';
-import { resolveTranscriptionText, resolveCleanInput } from '../../shared/transcription';
+import { resolveTranscriptionText } from '../../shared/transcription';
 import { normalizeTranscriptionText } from './textProcessing';
 import type { DictationReadiness, TranscriptionData as SharedTranscriptionData } from '../../shared/electron-api';
 import type { RecordingHotkeyCapture } from '../../shared/recordingHotkey';
@@ -791,11 +791,7 @@ export class MemoSttService extends EventEmitter {
         return;
       }
 
-      // Legacy mode respects native artifact suppression; Clean retains recognition text.
-      const cleanMode = !app.isPackaged && loadSettings().writingMode === 'clean';
-      const text = normalizeTranscriptionText(cleanMode
-        ? resolveCleanInput(transcription) : resolveTranscriptionText(transcription));
-      
+      const text = normalizeTranscriptionText(resolveTranscriptionText(transcription));
       if (!text) {
         logger.warn('Received empty or punctuation-only transcription text, skipping');
         this.pendingAudioData = null;

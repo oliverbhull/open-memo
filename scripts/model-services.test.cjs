@@ -74,25 +74,6 @@ test('upgrade resets Whisper selection and removes its downloads without touchin
   assert.equal(fs.readFileSync(otherModel, 'utf8'), 'keep');
 });
 
-test('removing Cleaned leaves included model packs in place', async t => {
-  const userData = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'memo-cleaned-removal-'));
-  t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
-  const root = path.join(userData, 'model-packs');
-  fs.mkdirSync(path.join(root, 'cleanup', 'pack'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'conomo', 'pack'), { recursive: true });
-  const entry = path.resolve('electron/main/services/ModelPackService.ts');
-  const compiled = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', external: ['electron'], define: { 'process.platform': '"darwin"' }, write: false }).outputFiles[0].text;
-  const loaded = new Module(entry, module);
-  const original = Module._load;
-  Module._load = (id, ...args) => id === 'electron'
-    ? { app: { getPath: () => userData } }
-    : original(id, ...args);
-  try { loaded._compile(compiled, entry); } finally { Module._load = original; }
-  await loaded.exports.removeCleanupModelPack();
-  assert.equal(fs.existsSync(path.join(root, 'cleanup')), false);
-  assert.equal(fs.existsSync(path.join(root, 'conomo')), true);
-});
-
 test('verified bundled models replace legacy copies without touching downloaded Cleaned', async t => {
   const temporary = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'memo-bundled-models-'));
   const oldResourcesPath = process.resourcesPath;
@@ -164,15 +145,4 @@ test('verified bundled models replace legacy copies without touching downloaded 
   assert.equal(fs.existsSync(legacyConomo), false);
   assert.equal(fs.existsSync(legacyPnc), false);
   assert.equal(fs.existsSync(downloadedCleaned), true);
-});
-
-test('cleanup download is immutable, verified, and absent from packaged resources', () => {
-  const service = fs.readFileSync(path.resolve('electron/main/services/ModelPackService.ts'), 'utf8');
-  const packageJson = require('../package.json');
-  assert.match(service, /cleanup-model-v1\/open-memo-cleanup-v1\.tar\.gz/);
-  assert.match(service, /CLEANUP_PACK_BYTES = 1_034_639_401/);
-  assert.match(service, /CLEANUP_PACK_SHA256 = '932c010ad09edf1331486a134c59b0fc5b850d78a2f15db839d79c1a5f6530c0'/);
-  assert.match(service, /downloadedBytes !== CLEANUP_PACK_BYTES \|\| hash\.digest\('hex'\) !== CLEANUP_PACK_SHA256/);
-  assert.match(service, /Downloaded Cleaned package is incomplete/);
-  assert.equal(packageJson.build.extraResources.some(resource => resource?.to === 'cleanup'), false);
 });
