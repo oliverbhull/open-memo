@@ -7,7 +7,7 @@ lives entirely in this package. No audio is sent over the network.
 
 ## Memo installers and source builds
 
-Memo installers include Conomo's Python environment, service, worker bridge and
+macOS installers include Conomo's Python environment, service, worker bridge and
 verified model weights. Nothing needs to be downloaded when an installed app
 starts. Each app connects through `conomo --worker`; the bridge starts one detached
 runtime process if necessary. The shared process survives a client disconnect;
@@ -37,6 +37,10 @@ To reuse a local model, set `CONOMO_MODEL_SOURCE=/path/to/model`. Add
 wheels must also be cached for a fully offline first build. Private runtime-archive
 tokens are not required. Weights, caches, captured audio and transcripts are not
 committed to the repository.
+
+Windows installers bundle the native NeMo worker, its DLLs, and pinned Nemotron
+GGUF weights under the same Conomo resource name. Both platforms verify packaged
+model assets. Windows retains Whisper Base for explicit selection and fallback.
 
 ## Standalone package
 

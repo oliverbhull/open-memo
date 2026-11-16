@@ -26,8 +26,7 @@ import { saveJsonExport } from './services/JsonExportService';
 import { audioInputService } from './services/AudioInputService';
 import type { AppContext } from '../shared/electron-api';
 import { resolveTranscriptionText, resolveCleanInput } from '../shared/transcription';
-import { UsbTranscriptService } from './services/UsbTranscriptService';
-import { DeviceSyncService } from './services/DeviceSyncService';
+import { readLegacyRecordingAudio } from './services/legacyRecordingAudio';
 import { MemoDatabaseService } from './services/MemoDatabaseService';
 import { resolveApplicationContext } from './services/applicationContext';
 import { AppUpdateService } from './services/AppUpdateService';
@@ -76,7 +75,6 @@ if (!gotSingleInstanceLock) {
 
 let mainWindow: BrowserWindow | null = null;
 let memoSttService: MemoSttService | null = null;
-let deviceSyncService: DeviceSyncService | null = null;
 const appUpdateService = new AppUpdateService(() => mainWindow, async () => {
   isQuitting = true;
   await cleanupMemoStt();
@@ -100,7 +98,6 @@ function cancelHotkeyCapture(): void {
 let isQuitting = false;
 let deliveryQueue: Promise<void> = Promise.resolve();
 let micDeviceRecoveryTimer: NodeJS.Timeout | null = null;
-const usbTranscriptService = new UsbTranscriptService();
 const punctuationService = new PunctuationService();
 const cleanupService = new CleanupService();
 let writingModeSelectionGeneration = 0;
@@ -733,31 +730,6 @@ app.whenReady().then(async () => {
   // starts so its transparency context is fresh for the active display.
   createTray();
 
-  if (process.platform !== 'win32') {
-    deviceSyncService = new DeviceSyncService({
-      pauseDictation: async () => {
-        if (!memoSttService) return false;
-        logger.info('[Main] Pausing live dictation for Memo device transcription');
-        await memoSttService.suspend();
-        return true;
-      },
-      resumeDictation: async () => {
-        if (isQuitting) return;
-        memoSttService?.resume();
-        if (!isQuitting && memoSttService && selectedSystemMicIsAvailable()) {
-          logger.info('[Main] Restoring live dictation after Memo device transcription');
-          await startLiveDictation();
-        }
-      },
-    });
-    deviceSyncService.on('status', (status) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('device-sync:status', status);
-      }
-    });
-    if (loadSettings().experimentalSupermicrophone) void deviceSyncService.start();
-  }
-  
   app.on('activate', () => {
     openMainWindow();
   });
@@ -773,12 +745,8 @@ const cleanupMemoStt = (): Promise<void> => {
     appUpdateService.stop();
     punctuationService.stop();
     cleanupService.stop();
-    await Promise.all([
-      deviceSyncService?.stop({ restoreDictation: false }),
-      memoSttService?.suspend(),
-    ]);
+    await memoSttService?.suspend();
     await deliveryQueue;
-    deviceSyncService = null;
     memoSttService = null;
     cleanupComplete = true;
   })();
@@ -822,7 +790,6 @@ ipcMain.handle('memo-stt:get-status', () => {
   return memoSttService?.getStatus() || 'stopped';
 });
 
-ipcMain.handle('usb-transcripts:list', () => loadSettings().experimentalSupermicrophone ? usbTranscriptService.list() : []);
 
 ipcMain.handle('entries:initialize', () => memoDatabaseService.initialize());
 
@@ -844,10 +811,6 @@ ipcMain.handle('entries:get-total-word-count', () => memoDatabaseService.getTota
 
 ipcMain.handle('app-update:get-status', () => appUpdateService.getStatus());
 ipcMain.handle('app-update:open', () => appUpdateService.openUpdate());
-
-ipcMain.handle('device-sync:get-status', () => (
-  deviceSyncService?.getStatus() || { state: 'disconnected', completed: 0, total: 0 }
-));
 
 ipcMain.handle('memo-stt:restart', async () => memoSttService?.restart());
 
@@ -1140,7 +1103,6 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
     dictationSounds: settings.dictationSounds,
     writingMode: settings.writingMode,
     experimentalEmailFormatting: settings.experimentalEmailFormatting,
-    experimentalSupermicrophone: settings.experimentalSupermicrophone,
     cleanupState: cleanupService.getState(),
     vocabWords: Array.isArray(settings.vocabWords) ? settings.vocabWords : [],
     phraseReplacements: Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : [],
@@ -1256,19 +1218,6 @@ ipcMain.handle('settings:setDictationSounds', async (_event, enabled: unknown) =
   return true;
 });
 
-ipcMain.handle('settings:setExperimentalSupermicrophone', async (_event, enabled: unknown) => {
-  if (typeof enabled !== 'boolean') throw new Error('Supermicrophone setting must be a boolean.');
-  if (!enabled && deviceSyncService?.isUpdatingFirmware()) {
-    throw new Error('Wait for the firmware update to finish before disabling Supermicrophone.');
-  }
-  const settings = loadSettings();
-  settings.experimentalSupermicrophone = enabled;
-  saveSettings(settings);
-  if (enabled) await deviceSyncService?.start();
-  else await deviceSyncService?.stop();
-  return true;
-});
-
 ipcMain.handle('settings:setExperimentalEmailFormatting', (_event, enabled: unknown) => {
   if (typeof enabled !== 'boolean') throw new Error('Email formatting must be a boolean.');
   const settings = loadSettings();
@@ -1339,7 +1288,7 @@ ipcMain.handle('settings:setStartAtLogin', async (_event, enabled: boolean) => {
 
 ipcMain.handle('audio:get', async (_event, entryId: string) => {
   try {
-    const data = await audioStorageService.read(entryId) ?? await usbTranscriptService.readAudio(entryId);
+    const data = await audioStorageService.read(entryId) ?? await readLegacyRecordingAudio(entryId);
     return data ? { success: true, data } : { success: false, error: 'Audio not found' };
   } catch (error) {
     logger.error(`[AudioStorage] Failed to read memo ${entryId}:`, error);

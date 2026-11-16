@@ -50,19 +50,6 @@ module.exports = async function afterPack(context) {
   fs.chmodSync(sttBinPath, 0o755);
   console.log(`✓ memo-dictation verified (${fs.statSync(sttBinPath).size} bytes)`);
 
-  const deviceSyncHelper = path.join(appPath, 'Contents', 'Resources', 'device-sync', 'device_sync.py');
-  if (!fs.existsSync(deviceSyncHelper)) {
-    throw new Error('Memo device sync helper was not copied from extraResources');
-  }
-  console.log('✓ Memo device sync helper verified');
-
-  const bleBridge = path.join(appPath, 'Contents', 'Resources', 'device-sync', 'memo-ble-bridge');
-  if (!fs.existsSync(bleBridge)) {
-    throw new Error('Memo BLE bridge was not copied from extraResources');
-  }
-  fs.chmodSync(bleBridge, 0o755);
-  console.log(`✓ Memo BLE bridge verified (${fs.statSync(bleBridge).size} bytes)`);
-
   const browserContext = path.join(appPath, 'Contents', 'Resources', 'browser-context', 'memo-browser-context');
   if (!fs.existsSync(browserContext)) throw new Error('Memo browser context helper was not copied from extraResources');
   fs.chmodSync(browserContext, 0o755);
@@ -96,9 +83,6 @@ module.exports = async function afterPack(context) {
   if (missingFiles.length > 0) throw new Error(`conomo bundle is incomplete:\n${missingFiles.join('\n')}`);
   fs.chmodSync(conomoWorker, 0o755);
   fs.chmodSync(devicePython, 0o755);
-  await sh(devicePython, ['-B', '-c', 'import serial; print(serial.VERSION)'], {
-    env: { ...process.env, PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' },
-  });
   await sh(devicePython, ['-B', '-m', 'conomo.models', '--verify', path.join(conomoPath, 'model')], {
     env: { ...process.env, PYTHONPATH: path.join(conomoPath, 'runtime'), PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' },
   });
@@ -123,7 +107,7 @@ module.exports = async function afterPack(context) {
   fs.chmodSync(pncWorker, 0o755);
   console.log('✓ Bundled DistilBERT punctuation and capitalization model verified');
 
-  // The device-sync Python runtime and conomo worker are nested native code.
+  // The Conomo Python runtime and worker are nested native code.
   if (shouldSign) {
     const signer = process.env.CSC_NAME || process.env.CODE_SIGN_IDENTITY || 'Developer ID Application';
     const nativeLibraries = walkFiles(path.join(conomoPath, 'device-runtime'))
@@ -148,16 +132,7 @@ module.exports = async function afterPack(context) {
       '--entitlements', path.resolve('config/entitlements.mac.plist'),
       '--sign', signer, pncWorker,
     ]);
-    console.log(`✓ Signed ${nativeLibraries.length} device runtime libraries, Python and PnC worker`);
-    await codesign([
-      '--force',
-      '--options', 'runtime',
-      '--entitlements', path.resolve('config/entitlements.mac.plist'),
-      '--sign', signer,
-      bleBridge,
-    ]);
-    await sh('codesign', ['--verify', '--verbose', bleBridge]);
-    console.log('✓ Memo BLE bridge signed');
+    console.log(`✓ Signed ${nativeLibraries.length} Conomo runtime libraries, Python and PnC worker`);
   }
 
   // Nested code signatures change executable bytes. Generate the persistent

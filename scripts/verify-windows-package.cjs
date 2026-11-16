@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const asar = require('@electron/asar');
+const { createManifest } = require('./model-pack-manifest.cjs');
 const root = path.resolve(process.argv[2] || 'dist/win-unpacked');
 const resources = path.join(root, 'resources');
 const resource = file => path.join(resources, file);
@@ -55,14 +56,15 @@ function replies(buffer, utteranceCount = 2) {
   return texts.slice(1);
 }
 (async () => {
-  for (const file of ['app-icon.ico', 'app.asar', 'dictation/memo-dictation.exe', 'whisper/memo-whisper-worker.exe', 'whisper/ggml-base.en-q5_1.bin', 'nemotron/memo-nemotron-worker.exe', 'nemotron/nemotron-en-q8.gguf', 'nemotron/Notice.txt', 'nemotron/NVIDIA-Open-Model-License.html', 'pnc/python/python.exe', 'pnc/worker.py', 'pnc/model.int8.onnx', 'pnc/bpe.vocab']) assert.ok(fs.existsSync(resource(file)), `Missing packaged resource: ${file}`);
-  for (const forbidden of ['conomo', 'cleanup', 'ble-bridge', 'browser-context']) assert.ok(!fs.existsSync(resource(forbidden)), `Mac-only resource in Windows package: ${forbidden}`);
+  for (const file of ['app-icon.ico', 'app.asar', 'dictation/memo-dictation.exe', 'whisper/memo-whisper-worker.exe', 'whisper/ggml-base.en-q5_1.bin', 'conomo/memo-nemotron-worker.exe', 'conomo/nemotron-en-q8.gguf', 'conomo/model-pack.json', 'conomo/Notice.txt', 'conomo/NVIDIA-Open-Model-License.html', 'pnc/python/python.exe', 'pnc/worker.py', 'pnc/model.int8.onnx', 'pnc/bpe.vocab']) assert.ok(fs.existsSync(resource(file)), `Missing packaged resource: ${file}`);
+  for (const forbidden of ['nemotron', 'cleanup', 'device-sync', 'ble-bridge', 'browser-context', 'conomo/runtime', 'conomo/device-runtime']) assert.ok(!fs.existsSync(resource(forbidden)), `Mac-only resource in Windows package: ${forbidden}`);
+  const pack = JSON.parse(fs.readFileSync(resource('conomo/model-pack.json'), 'utf8'));
+  assert.deepEqual(pack, createManifest('conomo', resource('conomo'), 'win32'));
   const archive = resource('app.asar');
   for (const file of ['dist/main.cjs', 'dist/preload.cjs', 'dist-react/index.html']) assert.ok(asar.extractFile(archive, file).length > 0, `Missing app asset: ${file}`);
-  for (const [folder, file] of [['whisper', 'ggml-base.en-q5_1.bin'], ['nemotron', 'nemotron-en-q8.gguf']]) {
-    const manifest = JSON.parse(fs.readFileSync(resource(`${folder}/manifest.json`), 'utf8').replace(/^\uFEFF/, ''));
-    assert.equal(await digest(resource(`${folder}/${file}`)), manifest.modelSha256, `${folder} model hash mismatch`);
-  }
+  const speechManifest = folder => JSON.parse(fs.readFileSync(resource(`${folder}/manifest.json`), 'utf8').replace(/^\uFEFF/, ''));
+  assert.equal(await digest(resource('whisper/ggml-base.en-q5_1.bin')), speechManifest('whisper').modelSha256, 'Whisper model hash mismatch');
+  assert.equal(pack.files['nemotron-en-q8.gguf'].sha256, speechManifest('conomo').modelSha256, 'Conomo model hash mismatch');
   const pcm = pcmFromWav('.build/whisper-source-d1be6fde11ac6e0407606b4e42fe72d34add8037/samples/jfk.wav');
   const length = Buffer.alloc(4); length.writeUInt32LE(pcm.length / 2);
   replies(run(resource('whisper/memo-whisper-worker.exe'), [resource('whisper/ggml-base.en-q5_1.bin')], Buffer.concat([length, pcm, length, pcm])));
@@ -71,8 +73,8 @@ function replies(buffer, utteranceCount = 2) {
   utterance.push(frame(3));
   const withVocabulary = [frame(1, Buffer.from('fellow american')), ...utterance.slice(1)];
   const [baseline, boosted] = replies(run(
-    resource('nemotron/memo-nemotron-worker.exe'),
-    [resource('nemotron/nemotron-en-q8.gguf')],
+    resource('conomo/memo-nemotron-worker.exe'),
+    [resource('conomo/nemotron-en-q8.gguf')],
     Buffer.concat([...utterance, ...withVocabulary, ...utterance]),
   ), 3);
   assert.match(baseline, /fellow americans\b/i);
@@ -82,5 +84,5 @@ function replies(buffer, utteranceCount = 2) {
   const output = run(python, [resource('pnc/worker.py'), '--model-path', resource('pnc/model.int8.onnx'), '--vocabulary-path', resource('pnc/bpe.vocab'), '--worker'], '{"id":"packaged","text":"how are you i am fine thank you"}\n', 'utf8').trim().split(/\r?\n/);
   assert.equal(output[0], 'READY');
   assert.equal(JSON.parse(output[1]).text, 'How are you? I am fine. Thank you.');
-  console.log('Packaged Windows app verified: assets, model hashes, resident Nemotron/Base speech, isolated punctuation runtime.');
+  console.log('Packaged Windows app verified: Conomo model pack, resident Nemotron/Base speech, isolated punctuation runtime.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

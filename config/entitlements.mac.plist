@@ -20,10 +20,6 @@
     <key>com.apple.security.inherit</key>
     <true/>
     
-    <!-- Bluetooth access -->
-    <key>com.apple.security.device.bluetooth</key>
-    <true/>
-    
     <!-- Accessibility (for text injection) -->
     <key>com.apple.security.automation.apple-events</key>
     <true/>

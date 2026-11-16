@@ -98,38 +98,6 @@ export interface PhraseReplacementRule {
   enabled?: boolean;
 }
 
-export type DeviceSyncState =
-  | 'disconnected'
-  | 'connected'
-  | 'transferring'
-  | 'transcribing'
-  | 'verifying'
-  | 'complete'
-  | 'checking-update'
-  | 'updating-firmware'
-  | 'firmware-updated'
-  | 'update-error'
-  | 'error';
-
-export interface DeviceSyncStatus {
-  state: DeviceSyncState;
-  completed: number;
-  total: number;
-  batchId?: string;
-  deviceUid?: string;
-  firmwareVersion?: string;
-  targetFirmwareVersion?: string;
-  protocolVersion?: number;
-  port?: string;
-  transport?: 'usb' | 'ble';
-  endpoint?: string;
-  pendingOnDevice?: number;
-  requestedModel?: AsrModelId;
-  actualModel?: AsrModelId;
-  error?: string;
-  code?: string;
-}
-
 export interface ToastData {
   message: string;
   severity: 'success' | 'warning' | 'error' | 'info';
@@ -166,7 +134,6 @@ export interface ElectronAPI {
   onDictationLatency(callback: (data: DictationLatency) => void): () => void;
   onDictationDelivery(callback: (data: DictationDelivery) => void): () => void;
   removeTranscriptionListener(): void;
-  listUsbTranscripts(): Promise<TranscriptionData[]>;
   entries: {
     initialize(): Promise<{ legacyImportComplete: boolean }>;
     importLegacy(entries: MemoEntry[]): Promise<{ imported: number }>;
@@ -180,10 +147,6 @@ export interface ElectronAPI {
     getStatus(): Promise<AppUpdateStatus>;
     open(): Promise<void>;
     onStatus(callback: (status: AppUpdateStatus) => void): () => void;
-  };
-  deviceSync: {
-    getStatus(): Promise<DeviceSyncStatus>;
-    onStatus(callback: (status: DeviceSyncStatus) => void): () => void;
   };
   onStatus(callback: (status: string) => void): void;
   removeStatusListener(): void;
@@ -220,7 +183,6 @@ export interface ElectronAPI {
       dictationSounds: boolean;
       writingMode: WritingMode;
       experimentalEmailFormatting: boolean;
-      experimentalSupermicrophone: boolean;
       cleanupState: CleanupState;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
@@ -237,7 +199,6 @@ export interface ElectronAPI {
     onHotkeyCapture(callback: (capture: RecordingHotkeyCapture) => void): () => void;
     setSaveAudio(enabled: boolean): Promise<boolean>;
     setDictationSounds(enabled: boolean): Promise<boolean>;
-    setExperimentalSupermicrophone(enabled: boolean): Promise<boolean>;
     setExperimentalEmailFormatting(enabled: boolean): Promise<boolean>;
     setWritingMode(mode: WritingMode): Promise<boolean>;
     removeCleaned(): Promise<{ writingMode: WritingMode; cleanupState: CleanupState }>;

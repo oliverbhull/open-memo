@@ -23,7 +23,7 @@ This is intentionally not full app implementation. No native AX helper, faithful
 
 References below refer to the original checkout audit snapshot, including dirty changes.
 
-- `electron/main/services/MemoSttService.ts:175-181,249-279`: owned Rust recorder, Conomo selection, development contextual Granite vs packaged backend; vocabulary at `120-138`.
+- `electron/main/services/MemoSttService.ts:175-181,249-279`: owned Rust recorder, Conomo selection, historical development and packaged backends; vocabulary at `120-138`.
 - `sidecars/dictation/src/transcription_engine.rs:201-241`: stream/resample -> Conomo `end` -> processed result; per-read response timeout is 120 seconds.
 - `sidecars/dictation/src/main.rs:87-164,1519-1529,1988-1999`: deletes trailing sign-offs, punctuation on short phrases and any leading dash. `173-198` joins segments and inserts periods. These precede Clean and can alter legitimate speech.
 - `MemoSttService.ts:704-723`: prioritizes processed text and suppresses explicitly empty processed output. Raw input must be established before calling fallback As Spoken.

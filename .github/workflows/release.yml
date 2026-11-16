@@ -85,7 +85,7 @@ jobs:
           version: "0.7.19"
 
       - name: Install native build tools
-        run: brew install autoconf automake libtool opus pkg-config
+        run: brew install autoconf automake libtool pkg-config
 
       - name: Cache Cargo registry
         uses: actions/cache@v4
@@ -94,7 +94,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .build/dictation-target
-          key: ${{ runner.os }}-dictation-${{ hashFiles('scripts/shell/build-dictation.sh', 'sidecars/dictation/Cargo.toml', 'sidecars/dictation/Cargo.lock', 'sidecars/dictation/src/**', 'sidecars/conomo/contextual_*') }}
+          key: ${{ runner.os }}-dictation-${{ hashFiles('scripts/shell/build-dictation.sh', 'sidecars/dictation/Cargo.toml', 'sidecars/dictation/Cargo.lock', 'sidecars/dictation/src/**') }}
           restore-keys: |
             ${{ runner.os }}-dictation-
 
@@ -118,9 +118,6 @@ jobs:
 
       - name: Test macOS signing policy
         run: node --test scripts/sign.test.cjs scripts/release-artifacts.test.cjs scripts/app-update.test.cjs
-
-      - name: Validate contextual replay manifest
-        run: npm run test:contextual-dictation -- --validate-only
 
       - name: Import Developer ID certificate
         env:
@@ -184,13 +181,11 @@ jobs:
           bash scripts/shell/verify-packaged-model-workers.sh dist/mac-arm64/Memo.app
           test ! -e dist/mac-arm64/Memo.app/Contents/Resources/cleanup
           dictation_bin="dist/mac-arm64/Memo.app/Contents/Resources/dictation/memo-dictation"
-          contextual_bin="dist/mac-arm64/Memo.app/Contents/Resources/dictation/memo-conomo-contextual"
           test -x "${dictation_bin}"
           codesign --verify --strict --verbose=2 "${dictation_bin}"
           codesign -d --entitlements :- "${dictation_bin}" > /tmp/memo-dictation-entitlements.plist
           grep -F '<key>com.apple.security.device.audio-input</key>' /tmp/memo-dictation-entitlements.plist
           grep -F '<key>com.apple.security.device.microphone</key>' /tmp/memo-dictation-entitlements.plist
-          codesign --verify --strict --verbose "${contextual_bin}"
           codesign -dv "${dictation_bin}" 2>&1 | grep -F 'Identifier=com.memo.desktop.dictation'
           codesign --verify --deep --strict --verbose=2 dist/mac-arm64/Memo.app
           spctl --assess --type execute --verbose dist/mac-arm64/Memo.app

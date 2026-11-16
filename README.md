@@ -71,7 +71,7 @@ run the installer, and complete the microphone test. Hold **Right Ctrl** to dict
 This preview is unsigned, so Windows may display an unknown publisher or SmartScreen
 warning. See the [preview release notes and checksums](https://github.com/oliverbhull/open-memo/releases/tag/windows-latest).
 Windows 11 x64 with an x86-64-v3 processor (AVX2, FMA, F16C and BMI2) is supported.
-Nemotron streaming, punctuation and capitalization,
+Conomo with bundled Nemotron streaming, punctuation and capitalization,
 and Whisper Base fallback are included; no separate Python, model, GPU driver,
 or developer-tool installation is needed. Dictation currently supports English.
 

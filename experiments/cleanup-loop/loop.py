@@ -52,10 +52,6 @@ REGISTRY = {
         'repo': 'Qwen/Qwen3.5-2B',
         'revision': '15852e8c16360a2fea060d615a32b45270f8a8fc',
     },
-    'granite-350m': {
-        'repo': 'ibm-granite/granite-4.0-350m',
-        'revision': 'bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2',
-    },
 }
 DATASET = {
     'repo': 'grammarly/coedit',

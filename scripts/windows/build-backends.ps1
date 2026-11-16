@@ -52,7 +52,7 @@ Invoke-Checked cmake @('--build', $buildDir, '--config', 'Release', '--target', 
 $binaryDir = if (Test-Path "$buildDir/bin/Release/memo-whisper-worker.exe") { "$buildDir/bin/Release" } else { "$buildDir/bin" }
 Copy-Item "$binaryDir/memo-whisper-worker.exe" $whisper -Force
 Copy-Item "$binaryDir/whisper-cli.exe" $whisper -Force
-Copy-Item "$binaryDir/memo-nemotron-worker.exe" "$stage/nemotron" -Force
+Copy-Item "$binaryDir/memo-nemotron-worker.exe" "$stage/conomo" -Force
 # Copy any runtime DLLs if an upstream build option introduces them.
 Get-ChildItem $binaryDir -Filter '*.dll' | Copy-Item -Destination $whisper -Force
 Copy-Item "$source/LICENSE" "$whisper/LICENSE-whisper.cpp.txt" -Force
@@ -90,7 +90,7 @@ foreach ($executable in @("$whisper/whisper-cli.exe", "$whisper/memo-whisper-wor
         throw "Windows backend depends on an unbundled Visual C++ runtime: $executable ($($Matches[0]))"
     }
 }
-& "$PSScriptRoot/verify-runtime-imports.ps1" -Directory "$stage/nemotron" -Dumpbin $dumpbins[0]
+& "$PSScriptRoot/verify-runtime-imports.ps1" -Directory "$stage/conomo" -Dumpbin $dumpbins[0]
 & "$PSScriptRoot/verify-runtime-imports.ps1" -Directory "$stage/pnc/python" -Dumpbin $dumpbins[0] -Recurse
 # Exercise the actual bundled model with upstream speech audio before packaging.
 Invoke-Checked "$whisper/whisper-cli.exe" @('-m', $model, '-f', "$source/samples/jfk.wav", '-l', 'en', '-t', '4', '-ng', '-nt', '-otxt', '-of', "$stage/smoke")
@@ -98,5 +98,6 @@ $transcript = Get-Content "$stage/smoke.txt" -Raw
 if ($transcript -notmatch 'country') { throw 'Whisper speech smoke test did not return the expected passage.' }
 Remove-Item "$stage/smoke.txt"
 & "$PSScriptRoot/test-whisper-worker.ps1" -Worker "$whisper/memo-whisper-worker.exe" -Model $model -Audio "$source/samples/jfk.wav"
-& "$PSScriptRoot/test-whisper-worker.ps1" -Worker "$stage/nemotron/memo-nemotron-worker.exe" -Model "$stage/nemotron/nemotron-en-q8.gguf" -Audio "$source/samples/jfk.wav" -Engine Nemotron
-Write-Host 'Windows Nemotron streaming, Base fallback and punctuation staged and smoke-tested.'
+& "$PSScriptRoot/test-whisper-worker.ps1" -Worker "$stage/conomo/memo-nemotron-worker.exe" -Model "$stage/conomo/nemotron-en-q8.gguf" -Audio "$source/samples/jfk.wav" -Engine Nemotron
+Invoke-Checked node @('scripts/model-pack-manifest.cjs', $stage, 'conomo')
+Write-Host 'Windows Conomo (Nemotron), Base fallback and punctuation staged and smoke-tested.'

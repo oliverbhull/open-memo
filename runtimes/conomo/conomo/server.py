@@ -49,7 +49,7 @@ class SharedModel:
             kind = message['type']
             if kind == 'hello':
                 source = message.get('source')
-                if source not in {'memo', 'memo-device', 'microphone', 'system', 'status'}:
+                if source not in {'memo', 'microphone', 'system', 'status'}:
                     raise ValueError('Unknown speech source')
                 if client.source is not None:
                     raise ValueError('Source is already set')

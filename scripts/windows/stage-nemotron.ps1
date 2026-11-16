@@ -25,7 +25,7 @@ $modelRevision = 'ebe59e5a817142986528bbbee5dba8db7b38ed50'
 $modelHash = 'd9a01898d2a611c8764e23a1c2f45e70bbd5a425dc4de93692ac951dd603812d'
 $modelWithTokenizerHash = '926495522ccd2626d8665283b4c9225f704ed2b45e82158984d1823f7e528b52'
 $cardHash = '7701f4b2f1c16542c8ceb2b3a61dd144032898c17f4dc9cc1bbecda6972edec8'
-$stage = [IO.Path]::GetFullPath((Join-Path $OutputRoot 'nemotron'))
+$stage = [IO.Path]::GetFullPath((Join-Path $OutputRoot 'conomo'))
 $cache = [IO.Path]::GetFullPath($CacheRoot)
 New-Item -ItemType Directory -Force $stage, $cache | Out-Null
 $archive = Join-Path $cache "$archiveName.zip"

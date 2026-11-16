@@ -48,7 +48,7 @@ test('only explicit paste confirmation is reported as pasted', () => {
   }
 });
 
-test('Granite final does not mark an asynchronous cleanup as completed', async () => {
+test('Recognition final does not mark an asynchronous cleanup as completed', async () => {
   const entry = path.resolve('electron/main/services/MemoSttService.ts');
   const js = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', write: false,
     external: ['electron', './SettingsService', './AsrModelService'] }).outputFiles[0].text;

@@ -17,6 +17,5 @@ run(process.execPath, ['--test', ...tests]);
 const python = process.env.MEMO_TEST_PYTHON || 'python';
 for (const args of [
   ['scripts/python/test_cleanup_completion.py'],
-  ['scripts/python/test_device_sync_lifecycle.py'],
   ['scripts/python/transcript-cleanup-worker.py', '--self-test'],
 ]) run(python, args);

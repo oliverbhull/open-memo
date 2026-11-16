@@ -1,4 +1,5 @@
 """Exercise the installer's default route with an incompatible service present."""
+import base64
 import json
 import os
 from pathlib import Path
@@ -39,9 +40,20 @@ with tempfile.TemporaryDirectory(prefix='memo-isolation-', dir='/tmp') as home:
     env.pop('MEMO_SPEECH_SOCKET', None)
     env['CONOMO_MODEL_DIR'] = str(bundle / 'model')
     try:
-        result = subprocess.run([str(bundle / 'conomo'), '--worker'], input='', capture_output=True, text=True, env=env, timeout=150)
-        if result.returncode or result.stdout.strip() != 'READY':
+        messages = [
+            {'type': 'context', 'phrases': ['Project Memo']},
+            {'type': 'start'},
+            {'type': 'audio', 'pcm16le': base64.b64encode(bytes(6400)).decode()},
+            {'type': 'end'},
+        ]
+        request = ''.join(json.dumps(message) + '\n' for message in messages)
+        result = subprocess.run([str(bundle / 'conomo'), '--worker'], input=request, capture_output=True, text=True, env=env, timeout=150)
+        lines = result.stdout.splitlines()
+        if result.returncode or lines[:1] != ['READY'] or any(line.startswith('ERROR:') for line in lines):
             raise RuntimeError(f'Bundled default startup failed: {result.stdout}\n{result.stderr}')
+        finals = [json.loads(line.removeprefix('FINAL:'))['processedText'] for line in lines if line.startswith('FINAL:')]
+        if finals != ['']:
+            raise RuntimeError(f'Short silence produced text with vocabulary enabled: {finals}')
         if connections:
             raise RuntimeError('Bundled app contacted the incompatible standalone runtime')
         print('Bundled default startup passed with incompatible standalone runtime present.')

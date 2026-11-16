@@ -12,7 +12,7 @@ test('Windows packaging cannot replace the Mac resource list or download URL', (
   assert.ok(readme.includes('<p align="left">'));
   assert.ok(pkg.build.extraResources.some(resource => resource.to === 'conomo'));
   assert.ok(!pkg.build.extraResources.some(resource => resource.to === 'nemotron'));
-  assert.deepEqual(windows.extraResources.map(resource => resource.to), ['app-icon.ico', 'dictation', 'whisper', 'nemotron', 'pnc']);
+  assert.deepEqual(windows.extraResources.map(resource => resource.to), ['app-icon.ico', 'dictation', 'whisper', 'conomo', 'pnc']);
   assert.equal(windows.afterPack, null);
   assert.ok(windows.extraResources.find(resource => resource.to === 'whisper').filter.includes('ggml-base.en-q5_1.bin'));
 });

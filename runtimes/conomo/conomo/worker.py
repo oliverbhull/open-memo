@@ -55,11 +55,9 @@ def main():
 
     threading.Thread(target=watch_parent, daemon=True).start()
     ensure_running()
-    with SpeechClient(source=os.getenv('MEMO_ASR_SOURCE', 'memo')) as client:
+    with SpeechClient() as client:
         if client.info.get('runtime') != 'Conomo' or not client.info.get('capabilities', {}).get('vocabulary_boosting'):
             raise RuntimeError('Conomo with vocabulary boosting is required')
-        if os.getenv('CONOMO_PHRASES'):
-            client.request({'type': 'context', 'phrases': json.loads(os.environ['CONOMO_PHRASES'])})
         serve(client, sys.stdin)
 
 

@@ -6,7 +6,6 @@ import type {
   DictationReadiness,
   DictationDelivery,
   DictationLatency,
-  DeviceSyncStatus,
   ElectronAPI,
   MemoSttError,
   MicrophoneInputState,
@@ -65,10 +64,6 @@ const electronAPI = {
     ipcRenderer.removeListener('transcription:new', transcriptionHandler);
   },
 
-  listUsbTranscripts: (): Promise<TranscriptionData[]> => {
-    return ipcRenderer.invoke('usb-transcripts:list');
-  },
-
   entries: {
     initialize: (): Promise<{ legacyImportComplete: boolean }> => (
       ipcRenderer.invoke('entries:initialize')
@@ -92,15 +87,6 @@ const electronAPI = {
       const handler = (_event: Electron.IpcRendererEvent, status: AppUpdateStatus) => callback(status);
       ipcRenderer.on('app-update:status', handler);
       return () => ipcRenderer.removeListener('app-update:status', handler);
-    },
-  },
-
-  deviceSync: {
-    getStatus: (): Promise<DeviceSyncStatus> => ipcRenderer.invoke('device-sync:get-status'),
-    onStatus: (callback: (status: DeviceSyncStatus) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, status: DeviceSyncStatus) => callback(status);
-      ipcRenderer.on('device-sync:status', handler);
-      return () => ipcRenderer.removeListener('device-sync:status', handler);
     },
   },
 
@@ -219,7 +205,6 @@ const electronAPI = {
       dictationSounds: boolean;
       writingMode: WritingMode;
       experimentalEmailFormatting: boolean;
-      experimentalSupermicrophone: boolean;
       cleanupState: CleanupState;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
@@ -254,7 +239,6 @@ const electronAPI = {
       return ipcRenderer.invoke('settings:setSaveAudio', enabled);
     },
     setDictationSounds: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setDictationSounds', enabled),
-    setExperimentalSupermicrophone: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setExperimentalSupermicrophone', enabled),
     setExperimentalEmailFormatting: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setExperimentalEmailFormatting', enabled),
     setWindowsSpeechModel: (model: 'whisper-base.en-q5_1' | 'nemotron-streaming'): Promise<void> => ipcRenderer.invoke('settings:setWindowsSpeechModel', model),
     setWritingMode: (mode: WritingMode): Promise<boolean> => {

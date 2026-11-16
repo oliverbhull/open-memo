@@ -23,7 +23,7 @@ module.exports = {
     { from: 'assets/app-icons/app-icon.ico', to: 'app-icon.ico' },
     { from: '.build/windows/dictation', to: 'dictation', filter: ['memo-dictation.exe', 'THIRD_PARTY_NOTICES.txt'] },
     { from: '.build/windows/whisper', to: 'whisper', filter: ['whisper-cli.exe', 'memo-whisper-worker.exe', '*.dll', 'ggml-base.en-q5_1.bin', 'manifest.json', 'LICENSE-*.txt'] },
-    { from: '.build/windows/nemotron', to: 'nemotron', filter: ['memo-nemotron-worker.exe', '*.dll', 'nemotron-en-q8.gguf', 'manifest.json', 'MODEL-CARD.md', 'NVIDIA-Open-Model-License.html', 'Notice.txt', 'licenses/**'] },
+    { from: '.build/windows/conomo', to: 'conomo', filter: ['memo-nemotron-worker.exe', '*.dll', 'nemotron-en-q8.gguf', 'model-pack.json', 'manifest.json', 'MODEL-CARD.md', 'NVIDIA-Open-Model-License.html', 'Notice.txt', 'licenses/**'] },
     { from: '.build/windows/pnc', to: 'pnc', filter: ['**/*'] },
   ],
   win: { ...(useAzure ? { azureSignOptions: azureFields } : {}), icon: 'assets/app-icons/app-icon.ico', target: [{ target: 'nsis', arch: ['x64'] }] },

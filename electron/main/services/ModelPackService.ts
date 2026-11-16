@@ -49,6 +49,9 @@ function activeManifestPath(name: ModelPackName): string {
 }
 
 function requiredPaths(name: ModelPackName): string[] {
+  if (name === 'conomo' && process.platform === 'win32') {
+    return ['model-pack.json', 'manifest.json', 'memo-nemotron-worker.exe', 'nemotron-en-q8.gguf', 'Notice.txt', 'NVIDIA-Open-Model-License.html'];
+  }
   if (name === 'conomo') return ['model-pack.json', 'conomo', 'model', 'runtime/conomo/model-manifest.json', 'VERSIONS', 'device-runtime/bin/python3.12'];
   if (name === 'pnc') return ['model-pack.json', 'memo-pnc', 'compiled', 'tokenizer.vocab', 'manifest.json', 'VERSIONS'];
   return ['manifest.json', 'model/model.safetensors', 'model/memo-cleanup-model.json', 'runtime/bin/python', 'worker/transcript-cleanup-worker.py', 'VERSIONS'];
@@ -62,6 +65,9 @@ async function verifyModelPack(name: ModelPackName, root: string): Promise<void>
   const manifest = JSON.parse(await fs.promises.readFile(path.join(root, 'model-pack.json'), 'utf8')) as PackManifest;
   if (manifest.schemaVersion !== 1 || manifest.name !== name || !/^[a-f0-9]{64}$/u.test(manifest.version)) {
     throw new Error(`${name} model pack manifest is invalid`);
+  }
+  if (name === 'conomo' && process.platform === 'win32' && !manifest.files?.['nemotron-en-q8.gguf']) {
+    throw new Error('Conomo model pack manifest is missing the Nemotron weights');
   }
   const aggregate = createHash('sha256');
   for (const relative of Object.keys(manifest.files).sort()) {
@@ -91,6 +97,9 @@ function readActivePack(name: ModelPackName): ActivePack | null {
 }
 
 export function resolveModelPackPath(name: ModelPackName): string {
+  if (process.platform === 'win32' && name === 'conomo') {
+    return app.isPackaged ? bundledPackPath(name) : path.join(process.cwd(), '.build', 'windows', name);
+  }
   if (!app.isPackaged) return path.join(process.cwd(), '.build', name);
   if (name !== 'cleanup' && verifiedBundledPacks.has(name)) return bundledPackPath(name);
   const active = readActivePack(name);
@@ -124,12 +133,27 @@ function expectWorkerReady(command: string, args: string[], env?: NodeJS.Process
   });
 }
 
+async function verifyInstalledPack(name: 'conomo' | 'pnc'): Promise<string> {
+  const source = bundledPackPath(name);
+  if (!isCompleteModelPack(name, source)) throw new Error(`Bundled ${name} pack is incomplete`);
+  await verifyModelPack(name, source);
+  return source;
+}
+
+let windowsConomoVerification: Promise<string> | undefined;
+
+export function verifyBundledWindowsConomo(): Promise<string> {
+  return windowsConomoVerification ??= verifyInstalledPack('conomo');
+}
+
 export async function verifyBundledModelPacks(): Promise<void> {
-  if (!app.isPackaged || process.platform === 'win32') return;
+  if (!app.isPackaged) return;
+  if (process.platform === 'win32') {
+    await verifyBundledWindowsConomo();
+    return;
+  }
   for (const name of ['conomo', 'pnc'] as const) {
-    const source = bundledPackPath(name);
-    if (!isCompleteModelPack(name, source)) throw new Error(`Bundled ${name} pack is incomplete`);
-    await verifyModelPack(name, source);
+    const source = await verifyInstalledPack(name);
     if (name === 'conomo') {
       await expectWorkerReady(path.join(source, 'conomo'), ['--worker']);
     } else {

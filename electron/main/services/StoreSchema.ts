@@ -15,7 +15,6 @@ export interface StoreSchema {
   dictationSounds: boolean;
   writingMode: WritingMode;
   experimentalEmailFormatting: boolean;
-  experimentalSupermicrophone: boolean;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
   userName: string | null;
@@ -41,7 +40,6 @@ export const storeDefaults: StoreSchema = {
   dictationSounds: true,
   writingMode: 'as-spoken',
   experimentalEmailFormatting: false,
-  experimentalSupermicrophone: false,
   vocabWords: [],
   phraseReplacements: [],
   userName: null,

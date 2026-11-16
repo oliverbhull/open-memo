@@ -36,12 +36,22 @@ export function windowsWhisperModelId(): WindowsModelId {
 export function resolveWindowsSpeechModel(preference: unknown): 'whisper-base.en-q5_1' | 'nemotron-streaming' {
   return preference === 'whisper-base.en-q5_1' ? preference : 'nemotron-streaming';
 }
-export function configureWindowsSpeech(env: NodeJS.ProcessEnv, selected: string = resolveWindowsSpeechModel(undefined)): void {
+export function configureWindowsSpeech(
+  env: NodeJS.ProcessEnv,
+  selected: string = resolveWindowsSpeechModel(undefined),
+  conomoRoot: string | null = path.join(windowsResourceRoot(), 'conomo'),
+): void {
   const root = windowsResourceRoot();
   const nemotron = selected === 'nemotron-streaming';
   env.MEMO_ASR_BACKEND = nemotron ? 'nemotron' : 'whisper';
-  env.MEMO_NEMOTRON_WORKER = path.join(root, 'nemotron', 'memo-nemotron-worker.exe');
-  env.MEMO_NEMOTRON_MODEL = path.join(root, 'nemotron', 'nemotron-en-q8.gguf');
+  if (conomoRoot) {
+    env.MEMO_NEMOTRON_WORKER = path.join(conomoRoot, 'memo-nemotron-worker.exe');
+    env.MEMO_NEMOTRON_MODEL = path.join(conomoRoot, 'nemotron-en-q8.gguf');
+  } else {
+    // Keep native fallback and its timing provenance when a pack fails verification.
+    delete env.MEMO_NEMOTRON_WORKER;
+    delete env.MEMO_NEMOTRON_MODEL;
+  }
   env.MEMO_WHISPER_WORKER = path.join(root, 'whisper', 'memo-whisper-worker.exe');
   env.MEMO_WHISPER_MODEL = nemotron || selected === 'whisper-base.en-q5_1' ? path.join(root, 'whisper', 'ggml-base.en-q5_1.bin') : selectedWindowsModel(env).file;
   env.STREAMING_TRANSCRIBE = nemotron ? '1' : '0';

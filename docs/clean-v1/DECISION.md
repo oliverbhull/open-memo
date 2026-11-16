@@ -8,7 +8,7 @@
 Status: blocked from shipping; build an isolated laboratory runtime first.
 Base: 060526a7514a06a89d7f2bb581d6abe3232864b3. The original dirty checkout remains user-owned.
 
-1. **Directly observed:** owned Rust dictation -> Conomo/Granite -> `resolveTranscriptionText` -> leading-dash removal/trim/no-speech filtering -> production PnC, or dirty development Clean -> phrase replacements -> optional spoken-enter removal -> trim -> clipboard/Cmd-V -> renderer history. Dirty `electron/main/index.ts:273-363` is the evidence snapshot.
+1. **Directly observed:** owned Rust dictation -> speech recognition -> `resolveTranscriptionText` -> leading-dash removal/trim/no-speech filtering -> production PnC, or dirty development Clean -> phrase replacements -> optional spoken-enter removal -> trim -> clipboard/Cmd-V -> renderer history. Dirty `electron/main/index.ts:273-363` is the evidence snapshot.
 2. **Directly observed:** PnC is the existing punctuation/capitalization stage, not the proposed grammatical speech editor. Its exact implementation and lifecycle are audited separately.
 3. **Directly observed:** dirty Liquid worker imports protection, prompt and guard from ignored hybrid-v3 experiment files, loads hybrid-v5 weights, generates text, checks a lexical guard, restores literals. Readiness lacks a protocol version; app fallback currently invokes PnC. The isolated experiment will be self-contained and always retain its input.
 4. **Decision:** Liquid owns disfluency removal, grammar and segmentation; deterministic code does not implement English grammar. The new contract intentionally rejects ambiguous correction scope.

@@ -106,11 +106,11 @@ test('fused model receives raw speech; rapid requests and fallback stay ordered'
   } });
   const service = new Service(); t.after(() => service.stop()); await ready(service);
   const order = [];
-  const first = service.format('raw granite speech', ['Ramsey']).then(r => { order.push(1); return r; });
+  const first = service.format('raw recognized speech', ['Ramsey']).then(r => { order.push(1); return r; });
   const second = service.format('x'.repeat(20001), []).then(r => { order.push(2); return r; });
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(order, []); assert.equal(calls.length, 1);
-  assert.equal(calls[0].text, 'raw granite speech'); assert.equal('vocabulary' in calls[0], false);
+  assert.equal(calls[0].text, 'raw recognized speech'); assert.equal('vocabulary' in calls[0], false);
   finish();
   const results = await Promise.all([first, second]);
   assert.deepEqual(order, [1, 2]); assert.equal(results[0].text, 'Cleaned.');
@@ -338,8 +338,4 @@ test('email retains the dictated thank-you opening when LFM substitutes Hello', 
   const result = await service.format('thanks dimitri this is helpful', [], 'email', 'Oliver');
   assert.equal(result.status, 'accepted');
   assert.equal(result.text, 'Thanks Dimitri,\n\nThis is helpful.\n\nThanks,\nOliver');
-});
-
-test('Supermicrophone starts disabled for new and upgraded installs', () => {
-  assert.equal(loadStoreDefaults().experimentalSupermicrophone, false);
 });

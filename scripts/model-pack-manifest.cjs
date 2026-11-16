@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const PACKS = ['conomo', 'pnc'];
+const WINDOWS_CONOMO_FILES = new Set(['nemotron-en-q8.gguf', 'manifest.json', 'MODEL-CARD.md', 'NVIDIA-Open-Model-License.html', 'Notice.txt', 'licenses']);
 const INCLUDED_TOP_LEVEL = {
   conomo: new Set(['conomo', 'model', 'runtime', 'LICENSE', 'THIRD_PARTY_NOTICES', 'VERSIONS', 'device-runtime']),
   pnc: new Set(['memo-pnc', 'compiled', 'tokenizer.vocab', 'manifest.json', 'VERSIONS', 'NOTICE.md']),
@@ -34,10 +35,10 @@ function filesUnder(root, current = root) {
   });
 }
 
-function createManifest(name, root) {
+function createManifest(name, root, platform = 'darwin') {
   const files = {};
   const aggregate = crypto.createHash('sha256');
-  const included = INCLUDED_TOP_LEVEL[name];
+  const included = name === 'conomo' && platform === 'win32' ? WINDOWS_CONOMO_FILES : INCLUDED_TOP_LEVEL[name];
   const runtimeFiles = filesUnder(root).filter(relative =>
     (!included || included.has(relative.split('/')[0])) && isStablePackFile(name, relative));
   for (const relative of runtimeFiles.sort()) {
@@ -49,15 +50,19 @@ function createManifest(name, root) {
   return { schemaVersion: 1, name, version: aggregate.digest('hex'), files };
 }
 
-function writeManifests(buildRoot = path.resolve('.build')) {
-  for (const name of PACKS) {
+function writeManifests(buildRoot = path.resolve('.build'), packs = PACKS) {
+  for (const name of packs) {
+    if (!PACKS.includes(name)) throw new Error(`Unknown bundled model pack: ${name}`);
     const root = path.join(buildRoot, name);
     if (!fs.statSync(root).isDirectory()) throw new Error(`Missing model pack: ${root}`);
-    const manifest = createManifest(name, root);
+    const manifest = createManifest(name, root, process.platform);
     fs.writeFileSync(path.join(root, 'model-pack.json'), `${JSON.stringify(manifest, null, 2)}\n`);
     process.stdout.write(`${name} ${manifest.version}\n`);
   }
 }
 
-if (require.main === module) writeManifests(process.argv[2] ? path.resolve(process.argv[2]) : undefined);
+if (require.main === module) {
+  const [, , root, pack] = process.argv;
+  writeManifests(root && path.resolve(root), pack && [pack]);
+}
 module.exports = { createManifest, writeManifests };

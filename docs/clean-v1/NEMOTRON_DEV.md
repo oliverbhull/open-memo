@@ -15,7 +15,7 @@ npm run dev
 
 In Settings, set **Writing → Clean — Nemotron**. Wait for the loading message to clear, then dictate normally. **As spoken** keeps the recognition text for comparison.
 
-The development Clean path sends the raw Granite transcript to the installed Ollama model `nemotron-nano-4b:latest` with one instruction:
+The development Clean path sends the raw recognition text to the installed Ollama model `nemotron-nano-4b:latest` with one instruction:
 
 > Rewrite this dictation as the user intended it to be written, preserving their message. Return only the cleaned text.
 

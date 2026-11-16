@@ -171,12 +171,11 @@ locally under `.build/cleanup-loop/research/2026-10-06/`.
 | `qwen-0.8b` | [Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) | Different architecture and instruction tuning; 873M total published parameters |
 | `qwen-2b` | [Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B) | Larger quality comparator; 2.274B total published parameters |
 | `smollm-360m` | [SmolLM2-360M-Instruct](https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct) | English-focused small Transformer; 362M parameters |
-| `granite-350m` | [Granite-4.0-350M](https://huggingface.co/ibm-granite/granite-4.0-350m) | IBM's compact text model; 352M parameters; distinct from Conomo's speech model |
 
 The small Liquid models reuse the LFM architecture already supported by the
 worker. Their cards describe structured-output tasks and Apple Silicon support;
 that makes them relevant candidates, not proven transcript cleaners. Liquid uses
-the custom LFM license. Qwen, SmolLM2 and these Granite checkpoints publish Apache
+the custom LFM license. Qwen and SmolLM2 publish Apache
 2.0 licenses. Qwen3.5's original checkpoints contain multimodal components; only
 text inference is needed here, and converted asset sizes must be measured.
 
@@ -201,8 +200,7 @@ Other options considered:
   providing a possible CPU deployment route; performance and faithful cleanup
   have not been tested here. A model's older release date is not itself a reason
   to exclude it from a narrow editing task.
-- [Granite 4.2 3B](https://huggingface.co/ibm-granite/granite-4.2-3b), SmolLM3 3B,
-  and larger Phi/Llama models: possible quality comparators after the first screen,
+- SmolLM3 3B and larger Phi/Llama models: possible quality comparators after the first screen,
   with greater storage and runtime requirements.
 - [Nanowhale 100M](https://huggingface.co/HuggingFaceTB/nanowhale-100m): research
   implementation with custom runtime code; lower priority than compact candidates
@@ -224,9 +222,9 @@ negations, requests or uncertainty. The selection sequence is:
 6. Test shipping precision and full-app memory with Conomo resident, then evaluate
    fresh independent data before selecting or shipping a model.
 
-### Completed seven-model screen
+### Completed model screen
 
-All seven base models were run on the same 40 real development dictations and
+The base models listed below were run on the same 40 real development dictations and
 24 provisional formatting validation inputs. The 10 reserved real dictations
 remained outside inference. Measurements below use 8-bit MLX, the same instruction
 and greedy decoding, and an M5 Pro Mac with 24 GB memory. Latency covers standalone
@@ -237,14 +235,12 @@ Asset sizes are decimal MB and include converted weights and tokenizer files.
 | --- | ---: | ---: | ---: | ---: |
 | LFM2.5-230M | 249 MB | 88 ms | 265 ms | 0 / 64 |
 | LFM2.5-350M | 382 MB | 150 ms | 455 ms | 0 / 64 |
-| Granite-4.0-350M | 382 MB | 166 ms | 322 ms | 0 / 64 |
 | SmolLM2-360M-Instruct | 388 MB | 178 ms | 804 ms | 3 / 64 |
 | Qwen3.5-0.8B | 820 MB | 374 ms | 681 ms | 0 / 64 |
 | LFM2.5-1.2B-Instruct | 1,248 MB | 338 ms | 919 ms | 0 / 64 |
 | Qwen3.5-2B | 2,020 MB | 642 ms | 1,249 ms | 0 / 64 |
 
-Two initial SmolLM/Granite runs overlapped on the GPU and were excluded from
-reported timing. Their serial repeats are used above. Future cycles serialize
+The initial SmolLM run overlapped another run on the GPU. The timing above uses its serial repeat. Future cycles serialize
 conversion, inference and training with a local GPU lock. Downloads now select
 native checkpoint/tokenizer files instead of duplicate ONNX/GGUF exports.
 
@@ -254,8 +250,7 @@ under the research folder. In the inspected examples, Qwen2B preserved an ambigu
 word and the two topics of a long dictation better than some smaller alternatives,
 but still retained explicit spoken corrections rather than resolving them.
 Small LFM models sometimes added explanations or returned little formatting.
-Granite dropped the corrected time and place in one meeting example. SmolLM's
-three incomplete outputs were all real development cases. These are observations
+SmolLM's three incomplete outputs were all real development cases. These are observations
 about this prompt/decoding configuration, not proof that a model family cannot
 be adapted successfully.
 

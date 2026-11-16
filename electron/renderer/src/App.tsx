@@ -8,7 +8,7 @@ import { ToastNotification, ToastData } from './components/ToastNotification';
 import { useEntries } from './hooks/useEntries';
 import { logger } from './utils/logger';
 import { Settings } from './components/Settings';
-import type { AppUpdateStatus, DeviceSyncStatus, MemoSttError, TranscriptionData } from '../../shared/electron-api';
+import type { AppUpdateStatus, MemoSttError, TranscriptionData } from '../../shared/electron-api';
 import './styles/glass.css';
 
 // Settings Icon Component
@@ -50,7 +50,6 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [appUpdate, setAppUpdate] = useState<AppUpdateStatus>({ state: 'idle' });
-  const [isBleSyncing, setIsBleSyncing] = useState(false);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const settingsWasOpenRef = useRef(false);
 
@@ -61,9 +60,6 @@ function App() {
   
   // Track if listeners are registered to prevent duplicates (especially in StrictMode)
   const listenersRegisteredRef = useRef(false);
-  const importedUsbIdsRef = useRef(new Set<string>());
-  const usbImportPromiseRef = useRef<Promise<number> | null>(null);
-  const lastDeviceSyncStateRef = useRef<DeviceSyncStatus['state']>('disconnected');
 
   const handleCopy = useCallback((text: string) => {
     navigator.clipboard.writeText(text).catch((err) => {
@@ -222,89 +218,6 @@ function App() {
     };
   }, [addEntry]);
 
-  const importUsbTranscripts = useCallback(async (): Promise<number> => {
-    if (!window.electronAPI?.listUsbTranscripts) return 0;
-    if (usbImportPromiseRef.current) return usbImportPromiseRef.current;
-    const importPromise = (async () => {
-      const transcriptions = await window.electronAPI.listUsbTranscripts();
-      let imported = 0;
-      for (const transcription of transcriptions) {
-        if (!transcription.id || importedUsbIdsRef.current.has(transcription.id)) continue;
-        const entry = await addEntry(transcription);
-        if (!entry) throw new Error(`Memo recording ${transcription.id} could not be saved`);
-        importedUsbIdsRef.current.add(transcription.id);
-        imported++;
-      }
-      return imported;
-    })();
-    usbImportPromiseRef.current = importPromise;
-    try {
-      return await importPromise;
-    } finally {
-      if (usbImportPromiseRef.current === importPromise) usbImportPromiseRef.current = null;
-    }
-  }, [addEntry]);
-
-  useEffect(() => {
-    let stopped = false;
-    void importUsbTranscripts().catch((error) => {
-      if (!stopped) logger.error('[App] Failed to import Memo recordings:', error);
-    });
-    return () => {
-      stopped = true;
-    };
-  }, [importUsbTranscripts]);
-
-  useEffect(() => {
-    if (!window.electronAPI?.deviceSync) return;
-    let stopped = false;
-    let receivedStatus = false;
-    const applyStatus = (status: DeviceSyncStatus) => {
-      if (stopped) return;
-      setIsBleSyncing(status.transport === 'ble' && (
-        status.state === 'transferring' || status.state === 'transcribing' || status.state === 'verifying'
-      ));
-      const previous = lastDeviceSyncStateRef.current;
-      lastDeviceSyncStateRef.current = status.state;
-      if (status.state === previous && status.state !== 'error') return;
-      if (status.state === 'transcribing' && status.transport !== 'ble') {
-        setToast({ message: 'Syncing Memo recordings… dictation will resume automatically.', severity: 'info', duration: 3500 });
-      } else if (status.state === 'complete') {
-        void importUsbTranscripts()
-          .then(() => {
-            if (status.transport !== 'ble') {
-              setToast({ message: 'Memo sync complete', severity: 'success', duration: 3500 });
-            }
-          })
-          .catch((error) => {
-            logger.error('[App] Failed to show synced Memo recordings:', error);
-            setToast({ message: 'Recordings are safe, but Memo could not add them to the feed.', severity: 'error', duration: 7000 });
-          });
-      } else if (status.state === 'updating-firmware') {
-        setToast({ message: 'Updating Memo firmware… keep the device connected.', severity: 'info', duration: 8000 });
-      } else if (status.state === 'firmware-updated') {
-        setToast({ message: 'Memo firmware updated successfully.', severity: 'success', duration: 4500 });
-      } else if (status.state === 'update-error') {
-        setToast({ message: `Recordings synced, but the firmware update was skipped: ${status.error || 'unknown error'}`, severity: 'warning', duration: 7000 });
-      } else if (status.state === 'error') {
-        setToast({ message: status.error || 'supermicrophone sync failed; recordings remain on the device.', severity: 'error', duration: 6000 });
-      }
-    };
-    const unsubscribe = window.electronAPI.deviceSync.onStatus(status => {
-      receivedStatus = true;
-      applyStatus(status);
-    });
-    void window.electronAPI.deviceSync.getStatus().then(status => {
-      if (!receivedStatus) applyStatus(status);
-    }).catch(error => {
-      if (!stopped) logger.error('[App] Failed to get device sync status:', error);
-    });
-    return () => {
-      stopped = true;
-      unsubscribe();
-    };
-  }, [importUsbTranscripts]);
-
   useEffect(() => {
     if (!window.electronAPI?.appUpdate) return;
     let stopped = false;
@@ -345,8 +258,8 @@ function App() {
             onKeyDown={event => { if (showSettings && event.key === 'Escape') setShowSettings(false); }}>
             <div className="title-bar-right">
               {appUpdate.state === 'downloading' ? (
-                <span className="device-sync-indicator" role="status" aria-label="Downloading Memo update" title="Downloading Memo update…">
-                  <span className="device-sync-spinner" aria-hidden="true" />
+                <span className="app-update-indicator" role="status" aria-label="Downloading Memo update" title="Downloading Memo update…">
+                  <span className="app-update-spinner" aria-hidden="true" />
                 </span>
               ) : appUpdate.state !== 'idle' && (
                 <button type="button" className="settings-icon app-update-icon" title={updateLabel} aria-label={updateLabel}
@@ -358,11 +271,6 @@ function App() {
                     {appUpdate.state === 'downloaded' ? <path d="m5 12 4 4L19 6" /> : <><path d="M12 3v12m-5-5 5 5 5-5" /><path d="M5 16v5h14v-5" /></>}
                   </svg>
                 </button>
-              )}
-              {isBleSyncing && (
-                <span className="device-sync-indicator" role="status" aria-label="Syncing supermicrophone" title="Syncing supermicrophone…">
-                  <span className="device-sync-spinner" aria-hidden="true" />
-                </span>
               )}
               {showSettings ? <button type="button" className="app-back-button" aria-label="Back to feed"
                 onClick={() => setShowSettings(false)}>
