@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "repository": "oliverbhull/open-memo",
-  "observed_at": "2026-11-16T20:10:17.666Z",
+  "observed_at": "2026-11-16T22:23:23.999Z",
   "tracking_started_at": "2026-10-28T18:11:53.753Z",
   "description": "Cumulative GitHub installer asset requests, including direct GitHub downloads, retries and verification. Not unique people, completed transfers or installations. Retains last observed counts for removed assets; requests between final observation and deletion cannot be recovered.",
   "totals": {
-    "macos": 43,
-    "windows": 11
+    "macos": 78,
+    "windows": 12
   },
   "assets": {
     "419644971": {
@@ -14,153 +14,153 @@
       "name": "Open-Memo-0.1.0-arm64.dmg",
       "platform": "macos",
       "release": "v0.1.0",
-      "download_count": 1,
+      "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "478327473": {
       "id": 478327473,
       "name": "Open-Memo-0.1.2-arm64.dmg",
       "platform": "macos",
       "release": "v0.1.2",
-      "download_count": 1,
+      "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "478569186": {
       "id": 478569186,
       "name": "Open-Memo-0.2.0-arm64.dmg",
       "platform": "macos",
       "release": "v0.2.0",
-      "download_count": 2,
+      "download_count": 3,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "479585680": {
       "id": 479585680,
       "name": "Open-Memo-0.2.1-arm64.dmg",
       "platform": "macos",
       "release": "v0.2.1",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "485116009": {
       "id": 485116009,
       "name": "Open-Memo-0.2.2-arm64.dmg",
       "platform": "macos",
       "release": "v0.2.2",
-      "download_count": 1,
+      "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "494297604": {
       "id": 494297604,
       "name": "Open-Memo-0.3.0-arm64.dmg",
       "platform": "macos",
       "release": "v0.3.0",
-      "download_count": 2,
+      "download_count": 3,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "525532868": {
       "id": 525532868,
       "name": "Open-Memo-0.4.0-arm64.dmg",
       "platform": "macos",
       "release": "v0.4.0",
-      "download_count": 1,
+      "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "529988009": {
       "id": 529988009,
       "name": "Open-Memo-0.5.0-arm64.dmg",
       "platform": "macos",
       "release": "v0.5.0",
-      "download_count": 1,
+      "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "531277065": {
       "id": 531277065,
       "name": "Open-Memo-0.6.0-arm64.dmg",
       "platform": "macos",
       "release": "v0.6.0",
-      "download_count": 1,
+      "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "531310011": {
       "id": 531310011,
       "name": "Open-Memo-0.7.1-arm64.dmg",
       "platform": "macos",
       "release": "v0.7.1",
-      "download_count": 1,
+      "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "531336596": {
       "id": 531336596,
       "name": "Open-Memo-0.7.2-arm64.dmg",
       "platform": "macos",
       "release": "v0.7.2",
-      "download_count": 1,
+      "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "531359395": {
       "id": 531359395,
       "name": "Open-Memo-0.7.3-arm64.dmg",
       "platform": "macos",
       "release": "v0.7.3",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "531374244": {
       "id": 531374244,
       "name": "Open-Memo-0.7.4-arm64.dmg",
       "platform": "macos",
       "release": "v0.7.4",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "531413884": {
       "id": 531413884,
       "name": "Open-Memo-0.7.5-arm64.dmg",
       "platform": "macos",
       "release": "v0.7.5",
-      "download_count": 1,
+      "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "539914957": {
       "id": 539914957,
       "name": "Open-Memo-0.8.0-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.0",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "539956020": {
       "id": 539956020,
       "name": "Open-Memo-0.8.1-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.1",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "540263684": {
       "id": 540263684,
       "name": "Open-Memo-0.8.2-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.2",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "540263686": {
       "id": 540263686,
@@ -169,16 +169,16 @@
       "release": "v0.8.2",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "540903375": {
       "id": 540903375,
       "name": "Open-Memo-latest-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.6",
-      "download_count": 1,
+      "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "540903376": {
       "id": 540903376,
@@ -187,16 +187,16 @@
       "release": "v0.8.6",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "542202410": {
       "id": 542202410,
       "name": "Open-Memo-0.8.10-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.10",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "542202412": {
       "id": 542202412,
@@ -205,16 +205,16 @@
       "release": "v0.8.10",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "571495898": {
       "id": 571495898,
       "name": "Open-Memo-latest-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.11",
-      "download_count": 3,
+      "download_count": 4,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "571495902": {
       "id": 571495902,
@@ -223,16 +223,16 @@
       "release": "v0.8.11",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "573235054": {
       "id": 573235054,
       "name": "Open-Memo-0.8.12-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.12",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "573235056": {
       "id": 573235056,
@@ -241,16 +241,16 @@
       "release": "v0.8.12",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "573369509": {
       "id": 573369509,
       "name": "Open-Memo-latest-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.13",
-      "download_count": 1,
+      "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "573369511": {
       "id": 573369511,
@@ -259,16 +259,16 @@
       "release": "v0.8.13",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "573650629": {
       "id": 573650629,
       "name": "Open-Memo-0.8.15-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.15",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "573650632": {
       "id": 573650632,
@@ -277,16 +277,16 @@
       "release": "v0.8.15",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "577533935": {
       "id": 577533935,
       "name": "Open-Memo-0.8.17-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.17",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "577533943": {
       "id": 577533943,
@@ -295,16 +295,16 @@
       "release": "v0.8.17",
       "download_count": 3,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "578068297": {
       "id": 578068297,
       "name": "Open-Memo-latest-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.18",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "578068299": {
       "id": 578068299,
@@ -313,16 +313,16 @@
       "release": "v0.8.18",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "601968921": {
       "id": 601968921,
       "name": "Open-Memo-0.8.19-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.19",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "601968925": {
       "id": 601968925,
@@ -331,16 +331,16 @@
       "release": "v0.8.19",
       "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "602013216": {
       "id": 602013216,
       "name": "Open-Memo-0.8.20-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.20",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "602013219": {
       "id": 602013219,
@@ -349,16 +349,16 @@
       "release": "v0.8.20",
       "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "614071970": {
       "id": 614071970,
       "name": "Open-Memo-latest-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.21",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "614071972": {
       "id": 614071972,
@@ -367,16 +367,16 @@
       "release": "v0.8.21",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "619813706": {
       "id": 619813706,
       "name": "Open-Memo-latest-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.22",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "619813707": {
       "id": 619813707,
@@ -385,16 +385,16 @@
       "release": "v0.8.22",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "648173297": {
       "id": 648173297,
       "name": "Open-Memo-latest-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.23",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "648173298": {
       "id": 648173298,
@@ -403,16 +403,16 @@
       "release": "v0.8.23",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "648888182": {
       "id": 648888182,
       "name": "Open-Memo-latest-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.24",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "648888183": {
       "id": 648888183,
@@ -421,16 +421,16 @@
       "release": "v0.8.24",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "667545827": {
       "id": 667545827,
       "name": "Open-Memo-0.8.25-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.25",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "667545828": {
       "id": 667545828,
@@ -439,16 +439,16 @@
       "release": "v0.8.25",
       "download_count": 0,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "670380375": {
       "id": 670380375,
       "name": "Open-Memo-0.8.26-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.26",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "670380376": {
       "id": 670380376,
@@ -457,16 +457,16 @@
       "release": "v0.8.26",
       "download_count": 2,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "670633177": {
       "id": 670633177,
       "name": "Open-Memo-0.8.27-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.27",
-      "download_count": 3,
+      "download_count": 4,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "670633178": {
       "id": 670633178,
@@ -475,16 +475,16 @@
       "release": "v0.8.27",
       "download_count": 11,
       "first_observed_at": "2026-10-28T18:11:53.753Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "685895087": {
       "id": 685895087,
       "name": "Open-Memo-0.8.27-windows-x64-setup.exe",
       "platform": "windows",
       "release": "windows-preview-900581adaae5",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-10-28T18:14:42.794Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "685896867": {
       "id": 685896867,
@@ -493,16 +493,16 @@
       "release": "windows-latest",
       "download_count": 11,
       "first_observed_at": "2026-10-28T18:14:42.794Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "756272120": {
       "id": 756272120,
       "name": "Open-Memo-latest-arm64.dmg",
       "platform": "macos",
       "release": "v0.8.28",
-      "download_count": 0,
+      "download_count": 1,
       "first_observed_at": "2026-11-16T20:10:17.666Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     },
     "756272123": {
       "id": 756272123,
@@ -511,7 +511,7 @@
       "release": "v0.8.28",
       "download_count": 0,
       "first_observed_at": "2026-11-16T20:10:17.666Z",
-      "last_observed_at": "2026-11-16T20:10:17.666Z"
+      "last_observed_at": "2026-11-16T22:23:23.999Z"
     }
   }
 }
