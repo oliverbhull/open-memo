@@ -1,3 +1,4 @@
+import { resolveWindowTitle } from '../../shared/windowTitle';
 import { windowsDictationPath } from './windowsRuntime';
 import { execFileSync } from 'node:child_process';
 import { matchEmailReply, type ReplySnapshot } from '../../shared/emailContext';
@@ -94,7 +95,7 @@ export function pasteIntoFocusedTarget(
         appName: appName.slice(0, 200),
         ...(websiteDomain ? { websiteDomain } : {}),
         ...(emailReply ? { emailReply } : {}),
-        windowTitle: (windowTitle || '').slice(0, 1_000),
+        windowTitle: resolveWindowTitle(windowTitle || '', appName, bundleId, replySnapshot).slice(0, 1_000),
         ...(bundleId ? { bundleId: bundleId.slice(0, 300) } : {}),
       },
     } : {}),

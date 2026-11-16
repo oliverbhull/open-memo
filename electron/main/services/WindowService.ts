@@ -4,6 +4,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { overlayBounds } from './overlayPosition';
+import { hideOverlayGlass, showOverlayGlass } from './OverlayGlassService';
+import { store } from './SettingsService';
 
 let overlayWindow: BrowserWindow | null = null;
 let overlayRecordingState = false; // Track last recording state to prevent unnecessary updates
@@ -14,8 +16,10 @@ let overlayRecordingState = false; // Track last recording state to prevent unne
  * visible waveform stays smaller; extra area is fully transparent padding.
  */
 const OVERLAY_WINDOW_WIDTH = 200;
-const OVERLAY_WINDOW_HEIGHT = 48;
+const OVERLAY_WINDOW_HEIGHT = 32;
 const OVERLAY_MARGIN = 5;
+const OVERLAY_PILL_WIDTH = 80;
+const OVERLAY_PILL_HEIGHT = 27;
 
 function getActiveDisplay(): Display {
   return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
@@ -26,37 +30,21 @@ function getOverlayBounds(width: number, height: number, display = getActiveDisp
 }
 
 function destroyOverlay() {
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
+  const previousOverlay = overlayWindow;
+  overlayWindow = null;
+  hideOverlayGlass();
+  if (previousOverlay && !previousOverlay.isDestroyed()) {
     // Use destroy() so the new window can be created immediately on the
     // current display without inheriting the previous display's transparency
     // context (macOS does not reliably re-evaluate transparency on move).
-    overlayWindow.destroy();
+    previousOverlay.destroy();
   }
-  overlayWindow = null;
-}
-
-async function getPrimaryColor(mainWindow: BrowserWindow | null): Promise<string> {
-  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-    try {
-      return await mainWindow.webContents.executeJavaScript(`
-        localStorage.getItem('primary') || '#C26D50'
-      `) || '#C26D50';
-    } catch {
-      return '#C26D50';
-    }
-  }
-
-  return '#C26D50';
 }
 
 /**
  * Create overlay window for recording indicator
  */
-export function createOverlayWindow() {
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    return; // Already exists
-  }
-
+function createOverlayWindow() {
   const activeDisplay = getActiveDisplay();
 
   console.log('[Overlay] Display info:', {
@@ -133,11 +121,6 @@ export function createOverlayWindow() {
   newOverlayWindow.webContents.on('will-navigate', (event, targetUrl) => {
     if (targetUrl !== overlayUrl) event.preventDefault();
   });
-  newOverlayWindow.loadFile(overlayHtmlPath).catch(err => {
-    console.error('[Overlay] Failed to load overlay HTML:', err);
-    console.error('[Overlay] Tried paths:', overlayHtmlPaths);
-  });
-
   // Explicitly prevent window from getting focus or becoming active
   newOverlayWindow.setFocusable(false);
   // Keep Memo's foreground app identity when recreating the recording overlay.
@@ -156,14 +139,41 @@ export function createOverlayWindow() {
   });
 
   newOverlayWindow.on('closed', () => {
+    if (overlayWindow !== newOverlayWindow) return;
     overlayWindow = null;
+    hideOverlayGlass();
+  });
+
+  void newOverlayWindow.loadFile(overlayHtmlPath).then(() => {
+    // A short recording may have ended, or a new one may have started during loading.
+    if (overlayWindow !== newOverlayWindow || newOverlayWindow.isDestroyed()) return;
+
+    // Keep the bars above the separate native glass panel.
+    newOverlayWindow.setAlwaysOnTop(true, 'screen-saver');
+    const windowBounds = newOverlayWindow.getBounds();
+    const nativeGlass = showOverlayGlass({
+      x: windowBounds.x + (windowBounds.width - OVERLAY_PILL_WIDTH) / 2,
+      y: windowBounds.y + (windowBounds.height - OVERLAY_PILL_HEIGHT) / 2,
+      width: OVERLAY_PILL_WIDTH,
+      height: OVERLAY_PILL_HEIGHT,
+    });
+    newOverlayWindow.webContents.send('memo:status', {
+      isRecording: true,
+      primaryColor: store.get('overlayAccentColor') ?? undefined,
+      nativeGlass,
+    });
+    newOverlayWindow.showInactive();
+  }).catch(error => {
+    if (overlayWindow !== newOverlayWindow) return;
+    console.error('[Overlay] Failed to show recording overlay:', error);
+    destroyOverlay();
   });
 }
 
 /**
  * Update overlay window visibility based on recording state
  */
-export function updateOverlayVisibility(isRecording: boolean, mainWindow: BrowserWindow | null) {
+export function updateOverlayVisibility(isRecording: boolean) {
   // Only update if recording state actually changed
   if (overlayRecordingState === isRecording) {
     return; // No change, skip update
@@ -175,33 +185,6 @@ export function updateOverlayVisibility(isRecording: boolean, mainWindow: Browse
     // correctly on whichever monitor the user is currently looking at.
     destroyOverlay();
     createOverlayWindow();
-
-    const currentOverlay = overlayWindow;
-    if (!currentOverlay || currentOverlay.isDestroyed()) {
-      return;
-    }
-
-    currentOverlay.showInactive();
-    currentOverlay.setFocusable(false);
-    currentOverlay.blur();
-
-    (async () => {
-      const primaryColor = await getPrimaryColor(mainWindow);
-
-      if (!overlayWindow || overlayWindow.isDestroyed() || overlayWindow.webContents.isDestroyed()) {
-        return;
-      }
-
-      try {
-        overlayWindow.webContents.send('memo:status', {
-          isRecording: true,
-          isProcessing: false,
-          primaryColor,
-        });
-      } catch (e) {
-        console.warn('[Overlay] Failed to send status:', e);
-      }
-    })();
   } else {
     destroyOverlay();
   }
@@ -217,26 +200,5 @@ export function sendAudioLevels(levels: number[]) {
     } catch (e) {
       // Silently ignore errors
     }
-  }
-}
-
-/**
- * Send status update to overlay window
- */
-export function sendStatusToOverlay(isRecording: boolean, mainWindow: BrowserWindow | null) {
-  if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.webContents && !overlayWindow.webContents.isDestroyed()) {
-    (async () => {
-      const primaryColor = await getPrimaryColor(mainWindow);
-      
-      try {
-        overlayWindow!.webContents.send('memo:status', { 
-          isRecording: isRecording,
-          isProcessing: false,
-          primaryColor: primaryColor
-        });
-      } catch (e) {
-        console.warn('[Overlay] Failed to send status:', e);
-      }
-    })();
   }
 }

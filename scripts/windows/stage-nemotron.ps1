@@ -23,6 +23,7 @@ $archiveName = "nemo-speech-$version-windows-x86_64-cpu"
 $sdkHash = '82c80451086e86194aba9af19f800da77cd66d1c28d993d0efceffd6cdb49bb8'
 $modelRevision = 'ebe59e5a817142986528bbbee5dba8db7b38ed50'
 $modelHash = 'd9a01898d2a611c8764e23a1c2f45e70bbd5a425dc4de93692ac951dd603812d'
+$modelWithTokenizerHash = '926495522ccd2626d8665283b4c9225f704ed2b45e82158984d1823f7e528b52'
 $cardHash = '7701f4b2f1c16542c8ceb2b3a61dd144032898c17f4dc9cc1bbecda6972edec8'
 $stage = [IO.Path]::GetFullPath((Join-Path $OutputRoot 'nemotron'))
 $cache = [IO.Path]::GetFullPath($CacheRoot)
@@ -34,11 +35,29 @@ $unpack = Join-Path $cache 'nemo-sdk'
 if ((Split-Path -Parent ([IO.Path]::GetFullPath($unpack))) -ne $cache) { throw 'Invalid SDK extraction path.' }
 if (Test-Path -LiteralPath $unpack) { Remove-Item -LiteralPath $unpack -Recurse -Force }
 Write-Host 'Extracting verified NeMo CPU SDK.'
-Expand-Archive -LiteralPath $archive -DestinationPath $unpack -Force
+# Windows PowerShell's .NET Framework has the two-argument overload. The
+# extraction directory was removed above, so overwriting is unnecessary.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[IO.Compression.ZipFile]::ExtractToDirectory($archive, $unpack)
 $sdk = Join-Path $unpack $archiveName
 if (!(Test-Path "$sdk/include/nemo_speech/asr.h") -or !(Test-Path "$sdk/lib/nemo_speech_asr_c.lib")) { throw 'Incomplete NeMo SDK archive.' }
-$model = Join-Path $cache 'nemotron-en-q8.gguf'
-Get-Asset "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b/resolve/$modelRevision/nemotron-speech-streaming-en-0.6b.q8_0.gguf" $model $modelHash
+$modelBase = "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b/resolve/$modelRevision"
+$model = Join-Path $cache 'nemotron-en-q8-with-tokenizer.gguf'
+if (!(Test-Path -LiteralPath $model) -or (Asset-Hash $model) -ne $modelWithTokenizerHash) {
+    $source = Join-Path $cache 'nemotron-en-q8.gguf'
+    Get-Asset "$modelBase/nemotron-speech-streaming-en-0.6b.q8_0.gguf" $source $modelHash
+    $archivePrefix = Join-Path $cache 'nemotron-tokenizer-prefix.tar'
+    # The tokenizer is near the start of the uncompressed checkpoint archive.
+    & curl.exe --fail --location --silent --show-error --connect-timeout 30 --max-time 60 `
+        --retry 2 --max-filesize 300000 --range '0-274431' --output $archivePrefix `
+        "$modelBase/nemotron-speech-streaming-en-0.6b.nemo?download=true"
+    if ($LASTEXITCODE -ne 0) { throw 'Could not fetch the Nemotron tokenizer.' }
+    & python "$PSScriptRoot/embed-nemotron-tokenizer.py" $source $archivePrefix "$model.partial"
+    if ($LASTEXITCODE -ne 0 -or (Asset-Hash "$model.partial") -ne $modelWithTokenizerHash) {
+        throw 'Could not build the verified Nemotron GGUF with vocabulary support.'
+    }
+    Move-Item -LiteralPath "$model.partial" -Destination $model -Force
+}
 $modelCard = Join-Path $cache 'nemotron-model-card.md'
 Get-Asset "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b/raw/$modelRevision/README.md" $modelCard $cardHash
 # Replace old backend DLLs so a prior local Vulkan experiment cannot enter a CPU release.
@@ -53,7 +72,7 @@ Copy-Item "$sdk/share/licenses/*" -Destination "$stage/licenses" -Recurse -Force
 @{
     engine = 'NeMo-Speech.cpp'; version = $version; backend = 'cpu'; sdkSha256 = $sdkHash
     model = 'nvidia/nemotron-speech-streaming-en-0.6b'; modelRevision = $modelRevision
-    modelSha256 = $modelHash; modelCardSha256 = $cardHash
+    modelSha256 = $modelWithTokenizerHash; upstreamModelSha256 = $modelHash; modelCardSha256 = $cardHash
 } | ConvertTo-Json | Set-Content "$stage/manifest.json" -Encoding UTF8
 # The caller uses the verified SDK headers/import library to build our adapter.
 Write-Output $sdk

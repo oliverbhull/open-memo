@@ -14,7 +14,16 @@ const compiled = buildSync({
 }).outputFiles[0].text;
 const loaded = new Module(entry, module);
 loaded._compile(compiled, entry);
-const { protectVocabulary } = loaded.exports;
+const { applyVocabularySpelling, protectVocabulary } = loaded.exports;
+
+test('uses saved spelling in formatted dictation without changing unmatched words', () => {
+  assert.equal(
+    applyVocabularySpelling('I sent it to openmemo, then joined jtech. Pracore and Memorandum stayed.', ['OpenMemo', 'JTECH', 'Procore', 'Memo']),
+    'I sent it to OpenMemo, then joined JTECH. Pracore and Memorandum stayed.',
+  );
+  const literal = protectVocabulary('Use a $& b.', ['a $& b']);
+  assert.deepEqual(literal.restore(literal.text), { ok: true, text: 'Use a $& b.' });
+});
 
 test('protects exact vocabulary terms and restores canonical spelling', () => {
   const protectedText = protectVocabulary(

@@ -11,45 +11,41 @@ import {
   saveUserSettings,
   store,
 } from './services/SettingsService';
-import { applyPhraseReplacements, clampPhraseReplacementRulesFromInput } from './services/phraseReplacement';
-import { updateOverlayVisibility, sendAudioLevels, sendStatusToOverlay } from './services/WindowService';
+import { updateOverlayVisibility, sendAudioLevels } from './services/WindowService';
+import { playDictationSound, prepareDictationSounds } from './services/DictationSoundService';
 import path from 'path';
 import os from 'os';
 import { pathToFileURL } from 'node:url';
 import { logger } from './utils/logger';
-import { formatDictationForPaste, normalizeTranscriptionText, stripLeadingDashSpace } from './services/textProcessing';
 import { runMemoExport } from './exportMemos';
 import { audioStorageService } from './services/AudioStorageService';
 import { applicationIconService } from './services/ApplicationIconService';
 import { saveJsonExport } from './services/JsonExportService';
 import { audioInputService } from './services/AudioInputService';
 import type { AppContext } from '../shared/electron-api';
-import { resolveTranscriptionText, resolveCleanInput } from '../shared/transcription';
 import { UsbTranscriptService } from './services/UsbTranscriptService';
 import { DeviceSyncService } from './services/DeviceSyncService';
 import { MemoDatabaseService } from './services/MemoDatabaseService';
 import { resolveApplicationContext } from './services/applicationContext';
 import { AppUpdateService } from './services/AppUpdateService';
 import { PunctuationService } from './services/PunctuationService';
-import { CleanupService } from './services/CleanupService';
 import {
   abortGroqRequests,
-  applyGroqTranscription,
-  changeGroqEnabled,
-  cleanupWithGroq,
   GROQ_KEYS_URL,
   groqFailureNotice,
   hasGroqApiKey,
+  isGroqCleanupEnabled,
   removeGroqApiKey,
   saveGroqApiKey,
-  transcribeWithGroq,
+  setGroqCleanupEnabled,
 } from './services/GroqService';
+import { clampPhraseReplacementRulesFromInput } from './services/phraseReplacement';
+import { captureDictationCleanup, formatRecordedDictation } from './services/dictationFormatting';
 import { gmailThreadUrl } from '../shared/emailContext';
 import { captureBrowserReply } from './services/BrowserContextService';
 import { pasteIntoFocusedTarget } from './services/checkedPaste';
-import { detectEmailTarget } from './services/emailFormatting';
 import { createDictationEntry } from '../shared/dictationEntry';
-import { verifyBundledModelPacks, removeLegacyBundledModelPacks, isCleanupModelPackInstalled, removeCleanupModelPack } from './services/ModelPackService';
+import { verifyBundledModelPacks, removeLegacyBundledModelPacks } from './services/ModelPackService';
 import { checkInputMonitoringPermission } from './services/InputMonitoringPermissionService';
 import { DEFAULT_RECORDING_HOTKEY, normalizeRecordingHotkey } from '../shared/recordingHotkey';
 import { removeLegacyWhisperModel } from './services/LegacyWhisperCleanup';
@@ -112,15 +108,6 @@ let deliveryQueue: Promise<void> = Promise.resolve();
 let micDeviceRecoveryTimer: NodeJS.Timeout | null = null;
 const usbTranscriptService = new UsbTranscriptService();
 const punctuationService = new PunctuationService();
-const cleanupService = new CleanupService();
-let writingModeSelectionGeneration = 0;
-let removingCleanupModel = false;
-
-cleanupService.on('state-changed', (state) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('writing:cleanup-state-changed', state);
-  }
-});
 
 app.on('second-instance', () => {
   openMainWindow();
@@ -132,8 +119,8 @@ function createWindow(): void {
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
   mainWindow = new BrowserWindow({
-    width: 440,
-    height: 600,
+    width: 921,
+    height: 616,
     minWidth: 280,
     minHeight: 350,
     transparent: true,
@@ -328,9 +315,7 @@ async function setupMemoSttService(): Promise<void> {
     const timestamp = Date.now();
     const settings = loadSettings();
     const senderName = loadUserSettings().userName;
-    // Snapshot the destination before this delivery waits behind another one.
-    const emailTarget = settings.writingMode === 'clean' && settings.experimentalEmailFormatting
-      ? detectEmailTarget() : Promise.resolve(false);
+    const cleanup = isQuitting ? undefined : captureDictationCleanup(settings.experimentalEmailFormatting);
     deliveryQueue = deliveryQueue.then(async () => {
       let deliveryFinished = false;
       const finishDelivery = () => {
@@ -350,68 +335,20 @@ async function setupMemoSttService(): Promise<void> {
           // Don't change state, just log the issue
         }
 
-        const showGroqNotice = (message: string) => {
-          if (isQuitting || !mainWindow || mainWindow.isDestroyed()) return;
-          mainWindow.webContents.send('audio:showToast', { message, severity: 'warning', duration: 5000 });
-        };
-        // The on-device transcript is already here, so Groq can only improve this dictation.
-        const groqTranscription = settings.groqEnabled && !isQuitting
-          ? await transcribeWithGroq(data.audioCapture?.wavBuffer, settings.vocabWords)
-          : undefined;
-        if (groqTranscription?.ok === false) {
-          showGroqNotice(groqFailureNotice(groqTranscription.reason, 'transcription'));
-        }
-        const transcript = groqTranscription ? applyGroqTranscription(data, groqTranscription) : data;
-        // Skip cleanup when transcription just failed: Groq is probably unreachable.
-        // Experimental email formatting stays with the local model that defines it.
-        const groqCleanup = !!groqTranscription?.ok && settings.groqCleanupEnabled && !isQuitting && !await emailTarget;
-
-        // Update last transcript and paste: support "say enter" to press Enter after paste
         const entryId = randomUUID();
-        const cleanMode = !isQuitting && settings.writingMode === 'clean' && cleanupService.isEnabled();
-        const rawText = resolveTranscriptionText(transcript);
-        const normalized = normalizeTranscriptionText(stripLeadingDashSpace(rawText));
-        const asSpoken = resolveCleanInput(transcript);
-        let formatted = '';
-        let cleanProvenance: Record<string, unknown> | undefined;
-        const { textToPaste, pressEnter: pressEnterThisTime } = await formatDictationForPaste(
-          cleanMode || isQuitting ? asSpoken : normalized,
-          settings.sayEnterToPressEnter ?? false,
-          async input => {
-            if (groqCleanup) {
-              const cleanup = await cleanupWithGroq(input, settings.vocabWords);
-              cleanProvenance = { asSpoken, cleanupInput: input, candidate: cleanup.candidateText, selected: cleanup.text,
-                status: cleanup.status, reason: cleanup.reason, model: cleanup.model,
-                contract: cleanup.contract, latencyMs: cleanup.latencyMs };
-              logger.info(`[Main] Groq cleanup ${cleanup.status}${cleanup.reason ? ` (${cleanup.reason})` : ''}` +
-                `${cleanup.latencyMs === undefined ? '' : ` in ${cleanup.latencyMs.toFixed(0)} ms`}`);
-              if (cleanup.status === 'accepted') {
-                formatted = cleanup.text;
-                return applyPhraseReplacements(formatted, settings.phraseReplacements);
-              }
-              showGroqNotice(groqFailureNotice(cleanup.reason, 'cleanup'));
-            }
-            if (cleanMode) {
-              const cleanup = await cleanupService.format(input, settings.vocabWords, await emailTarget ? 'email' : 'plain', senderName);
-              formatted = cleanup.text;
-              if (cleanup.reason === 'protected_input_bounds' ||
-                  (cleanup.reason === 'input_bounds' && input.length > 20_000)) {
-                mainWindow?.webContents.send('audio:showToast', {
-                  message: 'Dictation was too long to clean; original text retained.',
-                  severity: 'warning', duration: 4000,
-                });
-              }
-              cleanProvenance = { asSpoken, cleanupInput: input, candidate: cleanup.candidateText, selected: cleanup.text,
-                status: cleanup.status, reason: cleanup.reason, model: cleanup.model,
-                contract: cleanup.contract, latencyMs: cleanup.latencyMs };
-              logger.info(`[Main] Clean ${cleanup.status}${cleanup.reason ? ` (${cleanup.reason})` : ''}` +
-                `${cleanup.latencyMs === undefined ? '' : ` in ${cleanup.latencyMs.toFixed(0)} ms`}`);
-            } else {
-              formatted = !isQuitting ? await punctuationService.format(input) : input;
-            }
-            return applyPhraseReplacements(formatted, settings.phraseReplacements);
-          },
-        );
+        const { textToPaste, pressEnter: pressEnterThisTime, asSpoken, provenance: cleanProvenance } =
+          await formatRecordedDictation(data, settings, cleanup, senderName,
+            input => isQuitting ? Promise.resolve(input) : punctuationService.format(input));
+        if (cleanProvenance) {
+          const { status, reason, latencyMs } = cleanProvenance;
+          logger.info(`[Main] Groq cleanup ${status}${reason ? ` (${reason})` : ''}` +
+            `${latencyMs === undefined ? '' : ` in ${latencyMs.toFixed(0)} ms`}`);
+          if (status === 'fallback' && reason !== 'cancelled' && !isQuitting && mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('audio:showToast', {
+              message: groqFailureNotice(reason), severity: 'warning', duration: 5000,
+            });
+          }
+        }
         let delivery = isQuitting ? 'shutdown' : 'empty';
         let deliveryAppContext: AppContext | undefined;
 
@@ -463,7 +400,7 @@ async function setupMemoSttService(): Promise<void> {
           }
         }
 
-        const latency = calculateDictationLatency(transcript.context, data.finalReceivedAtMs, performance.now(), delivery);
+        const latency = calculateDictationLatency(data.context, data.finalReceivedAtMs, performance.now(), delivery);
         if (latency) {
           logger.info('[Dictation latency] ' + JSON.stringify(latency));
           mainWindow?.webContents.send('dictation:latency', latency);
@@ -482,8 +419,8 @@ async function setupMemoSttService(): Promise<void> {
         if (!app.isPackaged) {
           logger.info('[Dictation comparison] ' + JSON.stringify({
             id: entryId,
-            rawGranite: asSpoken,
-            lfmOutput: cleanProvenance?.status === 'accepted' ? formatted : null,
+            raw: asSpoken,
+            cleanupOutput: cleanProvenance?.status === 'accepted' ? cleanProvenance.selected : null,
             cleanupStatus: cleanProvenance?.status ?? 'not_requested',
             cleanupReason: cleanProvenance?.reason ?? null,
             ...(cleanProvenance?.status === 'fallback' ? { modelCandidate: cleanProvenance.candidate ?? null } : {}),
@@ -495,7 +432,7 @@ async function setupMemoSttService(): Promise<void> {
         }
 
         // Reuse the comparison ID for the memo and its optional WAV file.
-        const { audioCapture, finalReceivedAtMs: _timingReceipt, ...transcription } = transcript;
+        const { audioCapture, finalReceivedAtMs: _timingReceipt, ...transcription } = data;
         const appContext = resolveApplicationContext(
           applicationIconService.enrichContext(deliveryAppContext ?? data.appContext),
           !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused(),
@@ -517,9 +454,9 @@ async function setupMemoSttService(): Promise<void> {
         const completed = {
           ...transcription,
           processedText: textToPaste,
-          rawTranscript: transcript.rawTranscript ?? '',
+          rawTranscript: data.rawTranscript ?? '',
           wasProcessedByLLM: cleanProvenance ? cleanProvenance.status === 'accepted' : data.wasProcessedByLLM,
-          context: { ...transcript.context, ...(cleanProvenance ? { cleanup: cleanProvenance } : {}), delivery },
+          context: { ...data.context, ...(cleanProvenance ? { cleanup: cleanProvenance } : {}), delivery },
           id: entryId,
           timestamp,
           ...(appContext ? { appContext } : {}),
@@ -560,8 +497,7 @@ async function setupMemoSttService(): Promise<void> {
       if (isRecording) {
         isRecording = false;
         setRecordingState(false);
-        updateOverlayVisibility(false, mainWindow);
-        sendStatusToOverlay(false, mainWindow);
+        updateOverlayVisibility(false);
       }
     }
     
@@ -593,9 +529,10 @@ async function setupMemoSttService(): Promise<void> {
     logger.debug('[Main] Recording started event received');
     if (!isRecording) {
       isRecording = true;
+      // Before the overlay, whose window is recreated synchronously on each start.
+      playDictationSound('start');
       setRecordingState(true);
-      updateOverlayVisibility(true, mainWindow);
-      sendStatusToOverlay(true, mainWindow);
+      updateOverlayVisibility(true);
     } else {
       logger.warn('[Main] Recording started event received but already recording');
     }
@@ -606,9 +543,9 @@ async function setupMemoSttService(): Promise<void> {
     logger.debug('[Main] Recording stopped event received');
     if (isRecording) {
       isRecording = false;
+      playDictationSound('stop');
       setRecordingState(false);
-      updateOverlayVisibility(false, mainWindow);
-      sendStatusToOverlay(false, mainWindow);
+      updateOverlayVisibility(false);
     } else {
       logger.warn('[Main] Recording stopped event received but not recording');
     }
@@ -638,8 +575,7 @@ async function setupMemoSttService(): Promise<void> {
       logger.warn('[Main] Recording state still set when processing failed, clearing it');
       isRecording = false;
       setRecordingState(false);
-      updateOverlayVisibility(false, mainWindow);
-      sendStatusToOverlay(false, mainWindow);
+      updateOverlayVisibility(false);
     }
   });
 
@@ -703,14 +639,6 @@ app.whenReady().then(async () => {
 
   // Run migration from file-based settings to electron-store
   migrateToElectronStore();
-  if (app.isPackaged && !store.get('_optionalCleanupMigrationCompleted', false)) {
-    if (loadSettings().writingMode === 'clean' && !isCleanupModelPackInstalled()) {
-      store.set('writingMode', 'as-spoken');
-      logger.info('[Main] Migrated Cleaned without a downloaded model to As spoken');
-    }
-    store.set('_optionalCleanupMigrationCompleted', true);
-  }
-
   // Memo owns a normal app window, so keep one foreground app identity on macOS.
   if (process.platform === 'darwin') app.setActivationPolicy('regular');
 
@@ -745,12 +673,13 @@ app.whenReady().then(async () => {
     logger.warn('[Main] Could not verify bundled models; retaining legacy model copies:', error);
   }
 
-  if (loadSettings().writingMode === 'clean') cleanupService.start();
-  else if (app.isPackaged || process.env.MEMO_PNC_ENGINE === 'edge') punctuationService.start();
+  if (app.isPackaged || process.env.MEMO_PNC_ENGINE === 'edge') punctuationService.start();
 
   // Resolve a remembered microphone before memo-stt starts. An unavailable
   // explicit selection remains selected and capture stays stopped.
   await refreshAudioInputDevices();
+
+  prepareDictationSounds();
 
   // Only start memo-stt service if user is onboarded
   // This prevents the Input Monitoring dialog from appearing before onboarding
@@ -807,7 +736,6 @@ const cleanupMemoStt = (): Promise<void> => {
     if (micDeviceRecoveryTimer) clearTimeout(micDeviceRecoveryTimer);
     appUpdateService.stop();
     punctuationService.stop();
-    cleanupService.stop();
     abortGroqRequests();
     await Promise.all([
       deviceSyncService?.stop({ restoreDictation: false }),
@@ -1158,6 +1086,11 @@ ipcMain.handle('settings:setWindowsSpeechModel', async (_event, model: unknown) 
   }
 });
 
+ipcMain.handle('overlay:set-accent-color', (event, color: unknown) => {
+  if (event.sender !== mainWindow?.webContents || typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color)) return;
+  if (color !== store.get('overlayAccentColor')) store.set('overlayAccentColor', color);
+});
+
 ipcMain.handle('settings:getInterfaceSettings', () => {
   const settings = loadSettings();
   const loginItemSettings = app.getLoginItemSettings();
@@ -1168,13 +1101,11 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
     sayEnterToPressEnter: settings.sayEnterToPressEnter ?? false,
     handsFreeMode: settings.handsFreeMode ?? false,
     saveAudio: settings.saveAudio ?? false,
-    writingMode: settings.writingMode,
+    dictationSounds: settings.dictationSounds,
     experimentalEmailFormatting: settings.experimentalEmailFormatting,
     experimentalSupermicrophone: settings.experimentalSupermicrophone,
     groqKeySaved: hasGroqApiKey(),
-    groqEnabled: settings.groqEnabled,
-    groqCleanupEnabled: settings.groqCleanupEnabled,
-    cleanupState: cleanupService.getState(),
+    groqCleanupEnabled: isGroqCleanupEnabled(),
     vocabWords: Array.isArray(settings.vocabWords) ? settings.vocabWords : [],
     phraseReplacements: Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : [],
     startAtLogin: loginItemSettings.openAtLogin || false,
@@ -1235,7 +1166,7 @@ ipcMain.handle('settings:setVocabWords', async (_event, vocabWords: string[]) =>
   settings.vocabWords = Array.isArray(vocabWords) ? vocabWords : [];
   saveSettings(settings);
 
-  // Update memo-stt vocabulary for command and replacement handling.
+  // Apply the updated recognition hints to the next utterance.
   if (memoSttService) {
     memoSttService.updateVocabulary();
   }
@@ -1282,6 +1213,13 @@ ipcMain.handle('settings:setSaveAudio', async (_event, enabled: boolean) => {
   return true;
 });
 
+ipcMain.handle('settings:setDictationSounds', async (_event, enabled: unknown) => {
+  const settings = loadSettings();
+  settings.dictationSounds = enabled === true;
+  saveSettings(settings);
+  return true;
+});
+
 ipcMain.handle('settings:setExperimentalSupermicrophone', async (_event, enabled: unknown) => {
   if (typeof enabled !== 'boolean') throw new Error('Supermicrophone setting must be a boolean.');
   if (!enabled && deviceSyncService?.isUpdatingFirmware()) {
@@ -1303,12 +1241,6 @@ ipcMain.handle('settings:setExperimentalEmailFormatting', (_event, enabled: unkn
   return true;
 });
 
-function setGroqEnabled(enabled: boolean): { groqEnabled: boolean; groqCleanupEnabled: boolean } {
-  const { recorderNeedsRestart, ...state } = changeGroqEnabled(enabled);
-  if (recorderNeedsRestart) void memoSttService?.restart();
-  return state;
-}
-
 ipcMain.handle('settings:saveGroqApiKey', async (_event, apiKey: unknown) => {
   await saveGroqApiKey(apiKey);
   return true;
@@ -1316,71 +1248,14 @@ ipcMain.handle('settings:saveGroqApiKey', async (_event, apiKey: unknown) => {
 
 ipcMain.handle('settings:removeGroqApiKey', () => {
   removeGroqApiKey();
-  return setGroqEnabled(false);
-});
-
-ipcMain.handle('settings:setGroqEnabled', (_event, enabled: unknown) => {
-  if (typeof enabled !== 'boolean') throw new Error('Groq setting must be a boolean.');
-  return setGroqEnabled(enabled);
 });
 
 ipcMain.handle('settings:setGroqCleanupEnabled', (_event, enabled: unknown) => {
   if (typeof enabled !== 'boolean') throw new Error('Groq cleanup must be a boolean.');
-  const settings = loadSettings();
-  settings.groqCleanupEnabled = enabled;
-  saveSettings(settings);
-  return true;
+  return setGroqCleanupEnabled(enabled);
 });
 
 ipcMain.handle('settings:openGroqKeysPage', () => shell.openExternal(GROQ_KEYS_URL));
-
-ipcMain.handle('settings:setWritingMode', async (_event, mode: unknown) => {
-  if (removingCleanupModel) throw new Error('Wait for Cleaned removal to finish.');
-  if (mode !== 'as-spoken' && mode !== 'clean') {
-    throw new Error('Writing mode must be As spoken or Clean.');
-  }
-  const generation = ++writingModeSelectionGeneration;
-  const settings = loadSettings();
-  if (mode === 'clean') {
-    punctuationService.stop();
-    if (!await cleanupService.start()) {
-      if (app.isPackaged || process.env.MEMO_PNC_ENGINE === 'edge') punctuationService.start();
-      return false;
-    }
-    if (generation !== writingModeSelectionGeneration) {
-      cleanupService.stop();
-      return false;
-    }
-  } else {
-    cleanupService.stop();
-    if (app.isPackaged || process.env.MEMO_PNC_ENGINE === 'edge') punctuationService.start();
-  }
-  settings.writingMode = mode;
-  saveSettings(settings);
-  return true;
-});
-
-ipcMain.handle('settings:remove-cleaned', async () => {
-  if (!app.isPackaged) throw new Error('Cleaned removal is available in the installed app.');
-  if (removingCleanupModel || ['downloading', 'loading'].includes(cleanupService.getState().status)) {
-    throw new Error('Wait for Cleaned to finish downloading or loading.');
-  }
-  removingCleanupModel = true;
-  writingModeSelectionGeneration += 1;
-  try {
-    const settings = loadSettings();
-    if (settings.writingMode === 'clean') {
-      settings.writingMode = 'as-spoken';
-      saveSettings(settings);
-    }
-    cleanupService.stop();
-    if (app.isPackaged || process.env.MEMO_PNC_ENGINE === 'edge') punctuationService.start();
-    await removeCleanupModelPack();
-    return { writingMode: loadSettings().writingMode, cleanupState: cleanupService.getState() };
-  } finally {
-    removingCleanupModel = false;
-  }
-});
 
 ipcMain.handle('settings:setStartAtLogin', async (_event, enabled: boolean) => {
   app.setLoginItemSettings({

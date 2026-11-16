@@ -10,7 +10,6 @@ import { DEFAULT_RECORDING_HOTKEY, normalizeRecordingHotkey } from '../../shared
 import type {
   PhraseReplacementRule,
   AsrModelId,
-  WritingMode,
 } from '../../shared/electron-api';
 
 export type { PhraseReplacementRule };
@@ -20,11 +19,9 @@ export interface Settings {
   sayEnterToPressEnter: boolean;
   handsFreeMode: boolean;
   saveAudio: boolean;
-  writingMode: WritingMode;
+  dictationSounds: boolean;
   experimentalEmailFormatting: boolean;
   experimentalSupermicrophone: boolean;
-  groqEnabled: boolean;
-  groqCleanupEnabled: boolean;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
 }
@@ -62,11 +59,9 @@ export function loadSettings(): Settings {
     sayEnterToPressEnter: store.get('sayEnterToPressEnter', false),
     handsFreeMode: store.get('handsFreeMode', false),
     saveAudio: store.get('saveAudio', false),
+    dictationSounds: store.get('dictationSounds', true) !== false,
     experimentalSupermicrophone: store.get('experimentalSupermicrophone', false) === true,
     experimentalEmailFormatting: store.get('experimentalEmailFormatting', false) === true,
-    writingMode: process.platform !== 'win32' && store.get('writingMode') === 'clean' ? 'clean' : 'as-spoken',
-    groqEnabled: store.get('groqEnabled', false) === true,
-    groqCleanupEnabled: store.get('groqCleanupEnabled', true) !== false,
     vocabWords: stringArray(store.get('vocabWords')),
     phraseReplacements: clampPhraseReplacementRulesFromInput(store.get('phraseReplacements')),
   };
@@ -80,11 +75,9 @@ export function saveSettings(next: Settings): void {
     sayEnterToPressEnter: next.sayEnterToPressEnter === true,
     handsFreeMode: next.handsFreeMode === true,
     saveAudio: next.saveAudio === true,
+    dictationSounds: next.dictationSounds !== false,
     experimentalSupermicrophone: next.experimentalSupermicrophone === true,
     experimentalEmailFormatting: next.experimentalEmailFormatting === true,
-    writingMode: process.platform !== 'win32' && next.writingMode === 'clean' ? 'clean' : 'as-spoken',
-    groqEnabled: next.groqEnabled === true,
-    groqCleanupEnabled: next.groqCleanupEnabled !== false,
     vocabWords: stringArray(next.vocabWords),
     phraseReplacements: clampPhraseReplacementRulesFromInput(next.phraseReplacements),
   };
@@ -93,11 +86,9 @@ export function saveSettings(next: Settings): void {
   store.set('sayEnterToPressEnter', settings.sayEnterToPressEnter);
   store.set('handsFreeMode', settings.handsFreeMode);
   store.set('saveAudio', settings.saveAudio);
-  store.set('writingMode', settings.writingMode);
+  store.set('dictationSounds', settings.dictationSounds);
   store.set('experimentalSupermicrophone', settings.experimentalSupermicrophone);
   store.set('experimentalEmailFormatting', settings.experimentalEmailFormatting);
-  store.set('groqEnabled', settings.groqEnabled);
-  store.set('groqCleanupEnabled', settings.groqCleanupEnabled);
   store.set('vocabWords', settings.vocabWords);
   store.set('phraseReplacements', settings.phraseReplacements);
 }
@@ -139,7 +130,6 @@ function migrateSettingsJson(raw: Record<string, unknown>): void {
       : current.sayEnterToPressEnter,
     handsFreeMode: typeof raw.handsFreeMode === 'boolean' ? raw.handsFreeMode : current.handsFreeMode,
     saveAudio: typeof raw.saveAudio === 'boolean' ? raw.saveAudio : current.saveAudio,
-    writingMode: raw.writingMode === 'clean' ? 'clean' : current.writingMode,
     vocabWords: Array.isArray(raw.vocabWords) ? stringArray(raw.vocabWords) : current.vocabWords,
     phraseReplacements: Array.isArray(raw.phraseReplacements)
       ? clampPhraseReplacementRulesFromInput(raw.phraseReplacements)

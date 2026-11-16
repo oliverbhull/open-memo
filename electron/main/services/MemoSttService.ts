@@ -1,5 +1,6 @@
 import { configureWindowsSpeech, windowsDictationPath } from './windowsRuntime';
 import { configureConomo } from './conomoRuntime';
+import { asrVocabulary } from './asrVocabulary';
 import { spawn, spawnSync, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import path from 'path';
@@ -8,7 +9,7 @@ import { app } from 'electron';
 import { logger } from '../utils/logger';
 import { loadSettings, store } from './SettingsService';
 import { resolveModelPackPath } from './ModelPackService';
-import { resolveTranscriptionText, resolveCleanInput } from '../../shared/transcription';
+import { resolveTranscriptionText } from '../../shared/transcription';
 import { normalizeTranscriptionText } from './textProcessing';
 import type { DictationReadiness, TranscriptionData as SharedTranscriptionData } from '../../shared/electron-api';
 import type { RecordingHotkeyCapture } from '../../shared/recordingHotkey';
@@ -162,12 +163,6 @@ export class MemoSttService extends EventEmitter {
     });
   }
 
-  /** Retained recordings and Groq transcription both need the recorder's WAV output. */
-  private needsAudio(): boolean {
-    const { saveAudio, groqEnabled } = loadSettings();
-    return saveAudio || groqEnabled;
-  }
-
   /**
    * Send a command to the owned dictation process via stdin.
    * Used for settings like "Press Enter After Paste"
@@ -220,14 +215,7 @@ export class MemoSttService extends EventEmitter {
   /** Update native speech-recognition vocabulary. */
   updateVocabulary(): void {
     const settings = loadSettings();
-    const boostWordsRaw = Array.isArray(settings.vocabWords) ? settings.vocabWords : [];
-    const boostWords = Array.from(
-      new Set(
-        boostWordsRaw
-          .map(w => (typeof w === 'string' ? w.trim() : ''))
-          .filter(Boolean)
-      )
-    );
+    const boostWords = asrVocabulary(settings.vocabWords);
 
     const vocab = { boostWords, voiceCommandsEnabled: false };
     logger.info(`[MemoSttService] Updated vocabulary: ${boostWords.length} boost words`);
@@ -347,7 +335,7 @@ export class MemoSttService extends EventEmitter {
 
       const env: NodeJS.ProcessEnv = {
         ...process.env,
-        MEMO_EMIT_AUDIO: this.needsAudio() ? '1' : '0',
+        MEMO_EMIT_AUDIO: settings.saveAudio ? '1' : '0',
         MEMO_HANDS_FREE: handsFreeMode ? '1' : '0',
       };
       if (process.platform === 'win32') {
@@ -719,12 +707,12 @@ export class MemoSttService extends EventEmitter {
     // memo-stt emits both OPUS and WAV. WAV is the only retained format because
     // browsers decode it reliably without another codec dependency.
     if (line.startsWith('AUDIO_DATA:')) {
-      if (this.needsAudio()) this.pendingAudioData = {};
+      if (loadSettings().saveAudio) this.pendingAudioData = {};
       return;
     }
 
     if (line.startsWith('AUDIO_DURATION:')) {
-      if (!this.needsAudio()) return;
+      if (!loadSettings().saveAudio) return;
       const duration = Number.parseFloat(line.slice('AUDIO_DURATION:'.length));
       if (Number.isFinite(duration) && duration >= 0) {
         this.pendingAudioData ??= {};
@@ -734,7 +722,7 @@ export class MemoSttService extends EventEmitter {
     }
 
     if (line.startsWith('AUDIO_WAV:')) {
-      if (!this.needsAudio()) return;
+      if (!loadSettings().saveAudio) return;
       const wavBuffer = Buffer.from(line.slice('AUDIO_WAV:'.length), 'base64');
       if (wavBuffer.length < 44 || wavBuffer.subarray(0, 4).toString('ascii') !== 'RIFF') {
         logger.warn('[MemoSttService] Ignored invalid WAV data from recorder');
@@ -803,11 +791,7 @@ export class MemoSttService extends EventEmitter {
         return;
       }
 
-      // Legacy mode respects native artifact suppression; Clean retains recognition text.
-      const cleanMode = !app.isPackaged && loadSettings().writingMode === 'clean';
-      const text = normalizeTranscriptionText(cleanMode
-        ? resolveCleanInput(transcription) : resolveTranscriptionText(transcription));
-      
+      const text = normalizeTranscriptionText(resolveTranscriptionText(transcription));
       if (!text) {
         logger.warn('Received empty or punctuation-only transcription text, skipping');
         this.pendingAudioData = null;
@@ -834,7 +818,7 @@ export class MemoSttService extends EventEmitter {
   }
 
   private takePendingAudio(): CapturedAudio | undefined {
-    if (!this.needsAudio()) {
+    if (!loadSettings().saveAudio) {
       this.pendingAudioData = null;
       return undefined;
     }

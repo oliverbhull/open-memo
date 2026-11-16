@@ -1,4 +1,4 @@
-"""CPU cache-aware RNNT with per-utterance phrase biasing at the joiner logits.
+"""CPU cache-aware RNNT with per-utterance vocabulary rescoring.
 
 Streaming features follow Microsoft's MIT-licensed NeMo feature extractor:
 onnxruntime-extensions/shared/api/nemo_mel_spectrogram.cc (58dfaaed).
@@ -8,55 +8,7 @@ import re
 from pathlib import Path
 import numpy as np
 import onnxruntime as ort
-from tokenizers import Tokenizer, models
-
-
-class PhraseBias:
-    """Match phrase prefixes across every valid wordpiece segmentation.
-
-    The exported tokenizer has synthetic unigram scores, so using just its
-    preferred encoding misses larger pieces emitted by the acoustic decoder.
-    """
-    def __init__(self, tokenizer, phrases=(), strength=2.0):
-        self.strength = float(strength)
-        if not np.isfinite(self.strength) or not 0 <= self.strength <= 5:
-            raise ValueError('Boost strength must be between 0 and 5')
-        self.pieces = {i: tokenizer.id_to_token(i).casefold() for i in range(tokenizer.get_vocab_size())}
-        self.prefixes = {}
-        self.max_length = 1
-        vocabulary = {}
-        for token, piece in self.pieces.items():
-            if piece and '<' not in piece:
-                vocabulary.setdefault(piece, []).append(token)
-        for phrase in phrases:
-            text = '▁' + '▁'.join(phrase.casefold().split())
-            self.max_length = max(self.max_length, len(text))
-            for position in range(len(text)):
-                prefix, remaining = text[:position], text[position:]
-                candidates = self.prefixes.setdefault(prefix, set())
-                for end in range(1, len(remaining) + 1):
-                    piece = remaining[:end]
-                    if position or piece != '▁':
-                        candidates.update(vocabulary.get(piece, ()))
-        self.history = ''
-
-    def apply(self, logits, blank):
-        if not self.prefixes or not self.strength:
-            return logits
-        result = logits.copy()
-        candidates = {}
-        for prefix, tokens in self.prefixes.items():
-            if not prefix or self.history.endswith(prefix):
-                reward = self.strength * (0.6 if not prefix else 1.0)
-                for token in tokens:
-                    candidates[token] = max(candidates.get(token, 0), reward)
-        for token, reward in candidates.items():
-            if token != blank:
-                result[token] += reward
-        return result
-
-    def accept(self, token):
-        self.history = (self.history + self.pieces[token])[-self.max_length:]
+from .vocabulary import Tokenizations, Vocabulary, VocabularyDecoder, vocabulary_strength
 
 
 class Features:
@@ -103,19 +55,24 @@ class Model:
         self.decoder = ort.InferenceSession(str(Path(path) / c['decoder']['filename']), options, providers=['CPUExecutionProvider'])
         self.joiner = ort.InferenceSession(str(Path(path) / c['joiner']['filename']), options, providers=['CPUExecutionProvider'])
         vocabulary = json.loads((Path(path) / 'tokenizer.json').read_text())['model']['vocab']
-        self.tokenizer = Tokenizer(models.Unigram([(p, float(s)) for p, s in vocabulary], unk_id=0))
-        self.pieces = [item[0] for item in json.loads((Path(path) / 'tokenizer.json').read_text())['model']['vocab']]
+        self.pieces = [piece for piece, _ in vocabulary]
+        self.tokenizations = Tokenizations(self.pieces, c['blank_id'])
 
-    def session(self, phrases=(), strength=2.0, emit_fn=None):
+    def session(self, phrases=(), strength=None, emit_fn=None):
         return Session(self, phrases, strength, emit_fn)
 
 
 class Session:
-    def __init__(self, model, phrases=(), strength=2.0, emit_fn=None):
+    def __init__(self, model, phrases=(), strength=None, emit_fn=None):
         self.model = model
         self.c = c = model.cfg
         self.features = Features(c)
-        self.bias = PhraseBias(model.tokenizer, phrases, strength)
+        strength = vocabulary_strength(strength)
+        self.vocabulary = None
+        if phrases and strength != 0:
+            vocabulary = phrases if isinstance(phrases, Vocabulary) else Vocabulary(phrases)
+            if vocabulary.entries:
+                self.vocabulary = VocabularyDecoder(model, vocabulary, strength)
         self.emit = emit_fn or (lambda *_args: None)
         self.buffer = np.empty(0, np.float32)
         self.tokens = []
@@ -134,19 +91,26 @@ class Session:
             'audio_signal': mel, 'length': np.array([mel.shape[1]], np.int64),
             'cache_last_channel': self.channel, 'cache_last_time': self.time,
             'cache_last_channel_len': self.length, 'lang_id': np.array([0], np.int64)})
-        for frame in encoded[0, :int(lengths[0])]:
+        frames = encoded[0, :int(lengths[0])]
+        start = self.vocabulary.capture_frames(frames) if self.vocabulary else 0
+        for index, frame in enumerate(frames, start):
             for _ in range(c['max_symbols_per_step']):
                 prediction, h, cell = m.decoder.run(None, {'targets': np.array([[self.last]], np.int64), 'h_in': self.h, 'c_in': self.cell})
                 logits = m.joiner.run(None, {'encoder_output': frame.reshape(1, 1, -1), 'decoder_output': prediction.reshape(1, 1, -1)})[0].reshape(-1)
-                token = int(np.argmax(self.bias.apply(logits, c['blank_id'])))
+                token = int(np.argmax(logits))
                 if token == c['blank_id']:
                     break
+                if self.vocabulary:
+                    self.vocabulary.capture_emission(index, prediction, h, cell)
                 self.last, self.h, self.cell = token, h, cell
                 self.tokens.append(token)
-                self.bias.accept(token)
-        text = ''.join(m.pieces[t] for t in self.tokens).replace('▁', ' ')
-        self.text = re.sub(r'\s+', ' ', re.sub(r'<[a-z]{2}-[A-Z]{2}>', '', text)).strip()
+        self.text = self.render(''.join(m.pieces[t] for t in self.tokens))
         self.emit('PARTIAL', self.text)
+
+    @staticmethod
+    def render(pieces):
+        text = pieces.replace('▁', ' ')
+        return re.sub(r'\s+', ' ', re.sub(r'<[a-z]{2}-[A-Z]{2}>', '', text)).strip()
 
     def feed(self, pcm):
         self.buffer = np.concatenate((self.buffer, pcm.astype(np.float32) / 32768))
@@ -159,4 +123,6 @@ class Session:
         if len(self.buffer):
             self.decode(np.pad(self.buffer, (0, self.c['chunk_samples'] - len(self.buffer))))
         self.buffer = np.empty(0, np.float32)
+        if self.vocabulary and self.tokens:
+            self.text = self.render(self.vocabulary.resolve(self.tokens))
         self.emit('FINAL', self.text)

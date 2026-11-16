@@ -15,9 +15,3 @@ export function resolveTranscriptionText(data: TranscriptionTextFields): string 
     ? data.processedText
     : (data.rawTranscript ?? '');
 }
-
-/** Clean edits the recognition result before legacy sign-off/dash/punctuation stripping. */
-export function resolveCleanInput(data: TranscriptionTextFields): string {
-  return typeof data.rawTranscript === 'string' && data.rawTranscript.trim()
-    ? data.rawTranscript : resolveTranscriptionText(data);
-}

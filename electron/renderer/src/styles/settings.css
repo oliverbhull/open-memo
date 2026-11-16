@@ -65,8 +65,7 @@
 .settings-dashboard .activity-insights__apps { gap: 9px; }
 .settings-dashboard .activity-insights__app { grid-template-columns: 24px minmax(68px, 1fr) minmax(0, 1fr) 30px; }
 .settings-dashboard .activity-insights__footer { margin-top: 12px; }
-.settings-lifetime { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-top: 1px solid #ffffff12; margin-top: 12px; padding-top: 10px; font-size: 10px; color: var(--settings-muted); }
-.settings-lifetime strong { color: #e0dfdd; font-weight: 600; }
+.settings-export-actions { display: flex; justify-content: flex-end; border-top: 1px solid #ffffff12; margin-top: 12px; padding-top: 10px; }
 .settings-grid-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0 0 10px; }
 .settings-grid-heading h2 { font-size: 14px; font-weight: 500; }
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -105,7 +104,7 @@
 .settings-dashboard input::placeholder, .settings-dashboard textarea::placeholder { color: #929195; }
 .settings-dashboard :is(button, input, textarea, select, summary):focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
 .settings-dashboard button:disabled, .settings-dashboard select:disabled { opacity: 0.5; cursor: default; }
-.settings-download { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 10px; line-height: 1.5; color: var(--settings-muted); }
+.settings-groq-key { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 10px; line-height: 1.5; color: var(--settings-muted); }
 .settings-error { font-size: 11px; color: #ffa7a7; line-height: 1.5; }
 .settings-text-button { border: 0; padding: 3px 0; background: transparent; color: #e4e3e0; font: inherit; font-size: 10px; cursor: pointer; white-space: nowrap; }
 .settings-text-button:hover { text-decoration: underline; }
@@ -113,11 +112,12 @@
 .settings-text-button--danger { color: #ffabab; }
 .settings-button { border: 1px solid #303030; border-radius: 10px; padding: 7px 10px; background: #ffffff06; color: #eeedeb; font: inherit; font-size: 11px; cursor: pointer; width: fit-content; }
 .settings-button:hover { background: #ffffff12; }
-.settings-button--accent { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 40%, #303030); background: color-mix(in srgb, var(--primary) 6%, #0f0f0f); }
-.settings-button--accent:hover { background: color-mix(in srgb, var(--primary) 14%, #0f0f0f); border-color: var(--primary); }
+.settings-button--neutral { background: #ededed; border-color: #ededed; color: #080808; }
+.settings-button--neutral:hover { background: #d6d6d6; border-color: #d6d6d6; }
 .settings-button--primary { background: var(--primary); color: #080808; border-color: var(--primary); }
 .settings-button--primary:hover { background: color-mix(in srgb, var(--primary) 88%, white); }
 .settings-vocab { display: flex; flex-wrap: wrap; gap: 6px; }
+.settings-vocab:empty { display: none; }
 .settings-word { display: inline-flex; align-items: center; gap: 8px; border-radius: 10px; background: color-mix(in srgb, var(--primary) 10%, #0f0f0f); border: 1px solid color-mix(in srgb, var(--primary) 35%, #303030); color: var(--primary); font-size: 11px; padding: 7px 9px; cursor: pointer; }
 .settings-word span { color: inherit; }
 .settings-word:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 16%, #0f0f0f); }
@@ -195,9 +195,8 @@
   .settings-grid { grid-template-columns: 1fr; }
   .settings-activity-panel { padding: 12px; }
   .settings-grid-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
-  .settings-lifetime { flex-wrap: wrap; }
   .settings-export__dates { grid-template-columns: 1fr; }
-  .settings-download { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .settings-groq-key { align-items: flex-start; flex-direction: column; gap: 5px; }
   .settings-dashboard .activity-insights__header { flex-wrap: wrap; }
   .settings-dashboard .activity-insights__app { grid-template-columns: 20px minmax(0, 1fr) 25px; gap: 5px; }
   .settings-dashboard .activity-insights__app-track { display: none; }

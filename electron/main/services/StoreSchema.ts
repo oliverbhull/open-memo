@@ -1,8 +1,9 @@
-import type { AsrModelId, PhraseReplacementRule, ToastData, WritingMode } from '../../shared/electron-api';
+import type { AsrModelId, PhraseReplacementRule, ToastData } from '../../shared/electron-api';
 
 export interface StoreSchema {
   memoUid: string | null;
   desktopDeviceId: string | null;
+  overlayAccentColor: string | null;
   selectedSystemMicName: string | null;
   asrModel: AsrModelId;
   windowsSpeechModel: 'whisper-base.en-q5_1' | 'nemotron-streaming' | null;
@@ -11,11 +12,10 @@ export interface StoreSchema {
   sayEnterToPressEnter: boolean;
   handsFreeMode: boolean;
   saveAudio: boolean;
-  writingMode: WritingMode;
+  dictationSounds: boolean;
   experimentalEmailFormatting: boolean;
   experimentalSupermicrophone: boolean;
-  groqEnabled: boolean;
-  groqCleanupEnabled: boolean;
+  groqTextCleanupOptIn: boolean;
   groqApiKeyEncrypted: string | null;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
@@ -24,12 +24,12 @@ export interface StoreSchema {
   hotkey: string | null;
   lockHotkey: string | null;
   _migrationCompleted: boolean;
-  _optionalCleanupMigrationCompleted: boolean;
 }
 
 export const storeDefaults: StoreSchema = {
   memoUid: null,
   desktopDeviceId: null,
+  overlayAccentColor: null,
   selectedSystemMicName: null,
   asrModel: 'conomo',
   windowsSpeechModel: null,
@@ -38,11 +38,10 @@ export const storeDefaults: StoreSchema = {
   sayEnterToPressEnter: false,
   handsFreeMode: false,
   saveAudio: false,
-  writingMode: 'as-spoken',
+  dictationSounds: true,
   experimentalEmailFormatting: false,
   experimentalSupermicrophone: false,
-  groqEnabled: false,
-  groqCleanupEnabled: true,
+  groqTextCleanupOptIn: false,
   groqApiKeyEncrypted: null,
   vocabWords: [],
   phraseReplacements: [],
@@ -51,7 +50,6 @@ export const storeDefaults: StoreSchema = {
   hotkey: null,
   lockHotkey: null,
   _migrationCompleted: false,
-  _optionalCleanupMigrationCompleted: false,
 };
 
 export type { ToastData };

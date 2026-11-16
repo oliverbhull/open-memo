@@ -127,7 +127,7 @@ jobs:
           $version = node -p "require('./package.json').version"
           $sha = git rev-parse HEAD
           $tag = "windows-v$version"
-          $notes = "Windows 11 x64. Nemotron streaming, local punctuation/capitalization, and Whisper Base fallback are included. Source: $sha. Cleaned mode and automatic updates are not available on Windows."
+          $notes = "Windows 11 x64. Nemotron streaming, local punctuation/capitalization, and Whisper Base fallback are included. Source: $sha. Automatic updates are not available on Windows."
           $notes | Set-Content windows-release-notes.txt -Encoding utf8
           gh release view $tag *> $null
           if ($LASTEXITCODE -ne 0) {

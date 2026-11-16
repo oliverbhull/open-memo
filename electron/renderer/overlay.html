@@ -34,7 +34,7 @@
     }
 
     :root {
-      --primary-color: #C26D50;
+      --primary-color: #dc8e74;
     }
 
     /* ── Waveform ─────────────────────────────────────── */
@@ -44,21 +44,34 @@
       align-items: center;
       justify-content: center;
       gap: 2px;
-      width: 46px;
-      height: 34px;
+      width: 80px;
+      height: 27px;
+      border-radius: 999px;
+      border: 1px solid rgb(255 255 255 / 32%);
+      box-shadow: inset 0 1px 1px rgb(255 255 255 / 58%), inset 0 -1px 1px rgb(231 245 255 / 32%),
+        0 2px 6px rgb(12 14 20 / 24%);
+      background: linear-gradient(150deg, rgb(255 255 255 / 24%), transparent 50%, rgb(24 30 43 / 18%)),
+        rgb(158 168 182 / 15%);
+    }
+
+    .waveform.native-glass {
+      border-color: transparent;
+      box-shadow: inset 0.5px 1px 0.75px rgb(255 255 255 / 36%),
+        inset -0.5px -0.5px 0.75px rgb(219 238 255 / 26%);
+      background: transparent;
     }
 
     .bar {
       width: 3px;
       flex: 0 0 3px;
-      height: 3px;
-      background: var(--primary-color);
+      height: 2px;
+      background-color: var(--primary-color);
       border-radius: 999px;
       transform-origin: center center;
     }
 
     .idle .bar {
-      height: 3px !important;
+      height: 2px !important;
     }
 
   </style>
@@ -81,8 +94,8 @@
     // Seven normalized meter values from the dictation sidecar.
     const waveform = document.getElementById("waveform");
     const bars = Array.from(document.querySelectorAll(".bar"));
-    const MIN_HEIGHT = 3;
-    const MAX_HEIGHT = 32;
+    const MIN_HEIGHT = 2;
+    const MAX_HEIGHT = 19;
     const OPEN_THRESHOLD = 0.07;
     const CLOSE_THRESHOLD = 0.04;
     const ATTACK_MS = 30;
@@ -92,7 +105,6 @@
     const BAR_DELAY_MS = TRAIL_MS / (bars.length - 1);
 
     let isRecording = false;
-    let primaryColor = "#C26D50";
     let frameId = null;
     let lastFrame = 0;
     let lastAudioUpdate = 0;
@@ -186,9 +198,9 @@
     window.memoOverlay.onStatus((status) => {
       const wasRecording = isRecording;
       isRecording = status.isRecording;
-      if (status.primaryColor && status.primaryColor !== primaryColor) {
-        primaryColor = status.primaryColor;
-        document.documentElement.style.setProperty("--primary-color", primaryColor);
+      waveform.classList.toggle("native-glass", status.nativeGlass === true);
+      if (status.primaryColor) {
+        document.documentElement.style.setProperty("--primary-color", status.primaryColor);
       }
       if (isRecording && !wasRecording) {
         resetBars();
@@ -201,8 +213,6 @@
         resetBars();
       }
     });
-
-    document.documentElement.style.setProperty("--primary-color", primaryColor);
   </script>
 </body>
 </html>

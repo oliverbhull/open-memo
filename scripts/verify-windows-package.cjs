@@ -11,6 +11,7 @@ function run(command, args, input, encoding = 'buffer') {
   const result = spawnSync(command, args, { input, encoding, windowsHide: true, timeout: 120000, maxBuffer: 4 * 1024 * 1024 });
   if (result.error) throw result.error;
   assert.equal(result.status, 0, `${path.basename(command)} failed: ${result.stderr}`);
+  assert.doesNotMatch(String(result.stderr), /RNNT word boosting requested but no phrases could be tokenized/);
   return result.stdout;
 }
 async function digest(file) {
@@ -38,7 +39,7 @@ function frame(opcode, payload = Buffer.alloc(0)) {
   const header = Buffer.alloc(5); header[0] = opcode; header.writeUInt32LE(payload.length, 1);
   return Buffer.concat([header, payload]);
 }
-function replies(buffer) {
+function replies(buffer, utteranceCount = 2) {
   const texts = [];
   for (let offset = 0; offset < buffer.length;) {
     assert.ok(offset + 5 <= buffer.length, 'Truncated worker header');
@@ -47,10 +48,11 @@ function replies(buffer) {
     const text = buffer.toString('utf8', offset + 5, offset + 5 + size);
     assert.equal(status, 0, text); texts.push(text); offset += 5 + size;
   }
-  assert.equal(texts.length, 3, 'Expected ready and two resident utterances');
+  assert.equal(texts.length, utteranceCount + 1, 'Expected ready and one reply per utterance');
   assert.equal(texts[0], '');
   for (const text of texts.slice(1)) assert.match(text.toLowerCase(), /country/);
-  assert.equal(texts[1], texts[2], 'Resident worker leaked text across utterances');
+  assert.equal(texts[1], texts[utteranceCount], 'Resident worker leaked text across utterances');
+  return texts.slice(1);
 }
 (async () => {
   for (const file of ['app-icon.ico', 'app.asar', 'dictation/memo-dictation.exe', 'whisper/memo-whisper-worker.exe', 'whisper/ggml-base.en-q5_1.bin', 'nemotron/memo-nemotron-worker.exe', 'nemotron/nemotron-en-q8.gguf', 'nemotron/Notice.txt', 'nemotron/NVIDIA-Open-Model-License.html', 'pnc/python/python.exe', 'pnc/worker.py', 'pnc/model.int8.onnx', 'pnc/bpe.vocab']) assert.ok(fs.existsSync(resource(file)), `Missing packaged resource: ${file}`);
@@ -67,7 +69,14 @@ function replies(buffer) {
   const utterance = [frame(1)];
   for (let offset = 0; offset < pcm.length; offset += 1280) utterance.push(frame(2, pcm.subarray(offset, offset + 1280)));
   utterance.push(frame(3));
-  replies(run(resource('nemotron/memo-nemotron-worker.exe'), [resource('nemotron/nemotron-en-q8.gguf')], Buffer.concat([...utterance, ...utterance])));
+  const withVocabulary = [frame(1, Buffer.from('fellow american')), ...utterance.slice(1)];
+  const [baseline, boosted] = replies(run(
+    resource('nemotron/memo-nemotron-worker.exe'),
+    [resource('nemotron/nemotron-en-q8.gguf')],
+    Buffer.concat([...utterance, ...withVocabulary, ...utterance]),
+  ), 3);
+  assert.match(baseline, /fellow americans\b/i);
+  assert.match(boosted, /fellow american\b/i);
   const python = resource('pnc/python/python.exe');
   run(python, ['-c', 'import sys,sherpa_onnx; assert sys.flags.isolated; assert sherpa_onnx.__version__ == "1.13.8"'], undefined, 'utf8');
   const output = run(python, [resource('pnc/worker.py'), '--model-path', resource('pnc/model.int8.onnx'), '--vocabulary-path', resource('pnc/bpe.vocab'), '--worker'], '{"id":"packaged","text":"how are you i am fine thank you"}\n', 'utf8').trim().split(/\r?\n/);

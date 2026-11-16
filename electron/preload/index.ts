@@ -2,7 +2,6 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type {
   AppUpdateStatus,
   AsrModelId,
-  CleanupState,
   DictationReadiness,
   DictationDelivery,
   DictationLatency,
@@ -14,7 +13,6 @@ import type {
   ToastData,
   TranscriptionData,
   TranscriptionExportDocument,
-  WritingMode,
 } from '../shared/electron-api';
 import type { MemoEntry } from '../shared/memo-entry';
 import type { RecordingHotkeyCapture } from '../shared/recordingHotkey';
@@ -208,6 +206,7 @@ const electronAPI = {
   },
 
   interface: {
+    setOverlayAccentColor: (color: string): Promise<void> => ipcRenderer.invoke('overlay:set-accent-color', color),
     getSettings: (): Promise<{
       asrModel: AsrModelId;
       hotkey: string;
@@ -215,13 +214,11 @@ const electronAPI = {
       sayEnterToPressEnter: boolean;
       handsFreeMode: boolean;
       saveAudio: boolean;
-      writingMode: WritingMode;
+      dictationSounds: boolean;
       experimentalEmailFormatting: boolean;
-  experimentalSupermicrophone: boolean;
+      experimentalSupermicrophone: boolean;
       groqKeySaved: boolean;
-      groqEnabled: boolean;
       groqCleanupEnabled: boolean;
-      cleanupState: CleanupState;
       vocabWords: string[];
       phraseReplacements: PhraseReplacementRule[];
       startAtLogin: boolean;
@@ -254,27 +251,16 @@ const electronAPI = {
     setSaveAudio: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setSaveAudio', enabled);
     },
+    setDictationSounds: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setDictationSounds', enabled),
     setExperimentalSupermicrophone: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setExperimentalSupermicrophone', enabled),
     setExperimentalEmailFormatting: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setExperimentalEmailFormatting', enabled),
     saveGroqApiKey: (apiKey: string): Promise<boolean> => ipcRenderer.invoke('settings:saveGroqApiKey', apiKey),
-    removeGroqApiKey: (): Promise<{ groqEnabled: boolean; groqCleanupEnabled: boolean }> => ipcRenderer.invoke('settings:removeGroqApiKey'),
-    setGroqEnabled: (enabled: boolean): Promise<{ groqEnabled: boolean; groqCleanupEnabled: boolean }> => ipcRenderer.invoke('settings:setGroqEnabled', enabled),
+    removeGroqApiKey: (): Promise<void> => ipcRenderer.invoke('settings:removeGroqApiKey'),
     setGroqCleanupEnabled: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setGroqCleanupEnabled', enabled),
     openGroqKeysPage: (): Promise<void> => ipcRenderer.invoke('settings:openGroqKeysPage'),
     setWindowsSpeechModel: (model: 'whisper-base.en-q5_1' | 'nemotron-streaming'): Promise<void> => ipcRenderer.invoke('settings:setWindowsSpeechModel', model),
-    setWritingMode: (mode: WritingMode): Promise<boolean> => {
-      return ipcRenderer.invoke('settings:setWritingMode', mode);
-    },
-    removeCleaned: (): Promise<{ writingMode: WritingMode; cleanupState: CleanupState }> => (
-      ipcRenderer.invoke('settings:remove-cleaned')
-    ),
     setStartAtLogin: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setStartAtLogin', enabled);
-    },
-    onCleanupStateChanged: (callback: (state: CleanupState) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, state: CleanupState) => callback(state);
-      ipcRenderer.on('writing:cleanup-state-changed', handler);
-      return () => ipcRenderer.removeListener('writing:cleanup-state-changed', handler);
     },
   },
   microphone: {

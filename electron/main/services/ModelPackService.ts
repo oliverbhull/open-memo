@@ -2,25 +2,11 @@ import { app } from 'electron';
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
-import https from 'node:https';
 import path from 'node:path';
-import { Transform } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-import type { IncomingMessage } from 'node:http';
 import { logger } from '../utils/logger';
 
-export const MODEL_PACK_NAMES = ['conomo', 'pnc', 'cleanup'] as const;
+export const MODEL_PACK_NAMES = ['conomo', 'pnc'] as const;
 export type ModelPackName = typeof MODEL_PACK_NAMES[number];
-
-const CLEANUP_PACK_URL = 'https://github.com/oliverbhull/open-memo/releases/download/cleanup-model-v1/open-memo-cleanup-v1.tar.gz';
-const CLEANUP_PACK_BYTES = 1_034_639_401;
-const CLEANUP_PACK_SHA256 = '932c010ad09edf1331486a134c59b0fc5b850d78a2f15db839d79c1a5f6530c0';
-const CLEANUP_PACK_VERSION = CLEANUP_PACK_SHA256.slice(0, 20);
-
-export interface ModelPackDownloadProgress {
-  downloadedBytes: number;
-  totalBytes: number;
-}
 
 interface ActivePack {
   schemaVersion: 1;
@@ -50,8 +36,7 @@ function activeManifestPath(name: ModelPackName): string {
 
 function requiredPaths(name: ModelPackName): string[] {
   if (name === 'conomo') return ['model-pack.json', 'conomo', 'model', 'runtime/conomo/model-manifest.json', 'VERSIONS', 'device-runtime/bin/python3.12'];
-  if (name === 'pnc') return ['model-pack.json', 'memo-pnc', 'compiled', 'tokenizer.vocab', 'manifest.json', 'VERSIONS'];
-  return ['manifest.json', 'model/model.safetensors', 'model/memo-cleanup-model.json', 'runtime/bin/python', 'worker/transcript-cleanup-worker.py', 'VERSIONS'];
+  return ['model-pack.json', 'memo-pnc', 'compiled', 'tokenizer.vocab', 'manifest.json', 'VERSIONS'];
 }
 
 export function isCompleteModelPack(name: ModelPackName, root: string): boolean {
@@ -92,7 +77,7 @@ function readActivePack(name: ModelPackName): ActivePack | null {
 
 export function resolveModelPackPath(name: ModelPackName): string {
   if (!app.isPackaged) return path.join(process.cwd(), '.build', name);
-  if (name !== 'cleanup' && verifiedBundledPacks.has(name)) return bundledPackPath(name);
+  if (verifiedBundledPacks.has(name)) return bundledPackPath(name);
   const active = readActivePack(name);
   if (active) {
     const installed = path.join(packStoreRoot(), name, active.version);
@@ -148,111 +133,4 @@ export async function removeLegacyBundledModelPacks(): Promise<void> {
   await Promise.all((['conomo', 'pnc'] as const).map(name =>
     fs.promises.rm(path.join(packStoreRoot(), name), { recursive: true, force: true })));
   logger.info('[ModelPackService] Removed legacy duplicate Conomo and punctuation packs');
-}
-
-function downloadResponse(url: URL, redirectsRemaining = 5): Promise<IncomingMessage> {
-  return new Promise((resolve, reject) => {
-    const request = https.get(url, { headers: { 'User-Agent': `Open-Memo/${app.getVersion()}` } }, response => {
-      const status = response.statusCode ?? 0;
-      if (status >= 300 && status < 400 && response.headers.location) {
-        response.resume();
-        if (redirectsRemaining === 0) return reject(new Error('Cleaned download redirected too many times.'));
-        const next = new URL(response.headers.location, url);
-        if (next.protocol !== 'https:') return reject(new Error('Cleaned download was redirected to an insecure URL.'));
-        downloadResponse(next, redirectsRemaining - 1).then(resolve, reject);
-        return;
-      }
-      if (status !== 200) {
-        response.resume();
-        reject(new Error(`Cleaned download failed with HTTP ${status}.`));
-        return;
-      }
-      response.setTimeout(60_000, () => response.destroy(new Error('Cleaned download timed out.')));
-      resolve(response);
-    });
-    request.setTimeout(30_000, () => request.destroy(new Error('Cleaned download connection timed out.')));
-    request.on('error', reject);
-  });
-}
-
-function extractArchive(archive: string, destination: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    execFile('/usr/bin/tar', ['-xzf', archive, '-C', destination, '--strip-components=1'], error => {
-      if (error) reject(error); else resolve();
-    });
-  });
-}
-
-let cleanupDownload: Promise<string> | null = null;
-
-export function isCleanupModelPackInstalled(): boolean {
-  const active = readActivePack('cleanup');
-  return Boolean(active && isCompleteModelPack('cleanup', path.join(packStoreRoot(), 'cleanup', active.version)));
-}
-
-export async function removeCleanupModelPack(): Promise<void> {
-  if (cleanupDownload) throw new Error('Wait for the Cleaned download to finish.');
-  await fs.promises.rm(path.join(packStoreRoot(), 'cleanup'), { recursive: true, force: true });
-}
-
-export function installCleanupModelPack(
-  onProgress?: (progress: ModelPackDownloadProgress) => void,
-): Promise<string> {
-  const existing = readActivePack('cleanup');
-  if (existing) {
-    const installed = path.join(packStoreRoot(), 'cleanup', existing.version);
-    if (isCompleteModelPack('cleanup', installed)) return Promise.resolve(installed);
-  }
-  if (cleanupDownload) return cleanupDownload;
-
-  cleanupDownload = (async () => {
-    const packDirectory = path.join(packStoreRoot(), 'cleanup');
-    const destination = path.join(packDirectory, CLEANUP_PACK_VERSION);
-    const archive = path.join(packDirectory, `.${CLEANUP_PACK_VERSION}.tar.gz.part`);
-    const staging = path.join(packDirectory, `.${CLEANUP_PACK_VERSION}.${process.pid}.staging`);
-    await fs.promises.mkdir(packDirectory, { recursive: true });
-    await fs.promises.rm(archive, { force: true });
-    await fs.promises.rm(staging, { recursive: true, force: true });
-    let downloadedBytes = 0;
-    try {
-      const response = await downloadResponse(new URL(CLEANUP_PACK_URL));
-      const hash = createHash('sha256');
-      let lastProgressAt = 0;
-      const meter = new Transform({
-        transform(chunk: Buffer, _encoding, callback) {
-          downloadedBytes += chunk.length;
-          if (downloadedBytes > CLEANUP_PACK_BYTES) return callback(new Error('Cleaned download exceeded its expected size.'));
-          hash.update(chunk);
-          const now = Date.now();
-          if (now - lastProgressAt >= 150) {
-            lastProgressAt = now;
-            onProgress?.({ downloadedBytes, totalBytes: CLEANUP_PACK_BYTES });
-          }
-          callback(null, chunk);
-        },
-      });
-      await pipeline(response, meter, fs.createWriteStream(archive, { flags: 'wx' }));
-      if (downloadedBytes !== CLEANUP_PACK_BYTES || hash.digest('hex') !== CLEANUP_PACK_SHA256) {
-        throw new Error('Cleaned download failed its integrity check.');
-      }
-      await fs.promises.mkdir(staging, { recursive: true });
-      await extractArchive(archive, staging);
-      if (!isCompleteModelPack('cleanup', staging)) throw new Error('Downloaded Cleaned package is incomplete.');
-      await fs.promises.rm(destination, { recursive: true, force: true });
-      await fs.promises.rename(staging, destination);
-      const active: ActivePack = {
-        schemaVersion: 1, name: 'cleanup', version: CLEANUP_PACK_VERSION, installedAt: new Date().toISOString(),
-      };
-      const activePath = activeManifestPath('cleanup');
-      await fs.promises.writeFile(`${activePath}.tmp`, `${JSON.stringify(active, null, 2)}\n`, { mode: 0o600 });
-      await fs.promises.rename(`${activePath}.tmp`, activePath);
-      onProgress?.({ downloadedBytes: CLEANUP_PACK_BYTES, totalBytes: CLEANUP_PACK_BYTES });
-      logger.info(`[ModelPackService] cleanup pack ${CLEANUP_PACK_VERSION} downloaded`);
-      return destination;
-    } finally {
-      await fs.promises.rm(archive, { force: true }).catch(() => undefined);
-      await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => undefined);
-    }
-  })().finally(() => { cleanupDownload = null; });
-  return cleanupDownload;
 }

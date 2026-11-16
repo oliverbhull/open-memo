@@ -17,12 +17,6 @@ function occurrences(text: string, needle: string): number {
   return count;
 }
 
-/**
- * Hide exact, case-insensitive vocabulary matches from the cleanup model and
- * restore the user-supplied spelling only after every placeholder is intact.
- * Recognition errors are deliberately not corrected here: contextual ASR owns
- * that decision because it still has access to the audio evidence.
- */
 let cachedVocabulary: string[] = [];
 let cachedMatcher: ReturnType<typeof buildMatcher> | undefined;
 
@@ -48,7 +42,11 @@ function buildMatcher(vocabulary: string[]) {
   return { canonicalTerms, expressions };
 }
 
-export function protectVocabulary(text: string, vocabulary: string[]): ProtectedVocabulary {
+function replaceVocabularyMatches(
+  text: string,
+  vocabulary: string[],
+  replace: (term: string) => string,
+): string {
   // Keep only the current dictionary; compare contents because settings can
   // return a fresh array on each request or mutate an existing one.
   if (!cachedMatcher || vocabulary.length !== cachedVocabulary.length ||
@@ -57,6 +55,27 @@ export function protectVocabulary(text: string, vocabulary: string[]): Protected
     cachedVocabulary = [...vocabulary];
   }
   const { canonicalTerms, expressions } = cachedMatcher;
+  const matches = expressions.flatMap(expression => Array.from(text.matchAll(expression)))
+    .sort((left, right) => left.index! - right.index! || right[1]!.length - left[1]!.length);
+  let offset = 0;
+  let result = '';
+  for (const match of matches) {
+    const start = match.index!;
+    const term = canonicalTerms.get(match[1]!.toLocaleLowerCase());
+    if (start < offset || term === undefined) continue;
+    result += text.slice(offset, start) + replace(term);
+    offset = start + match[1]!.length;
+  }
+  return result + text.slice(offset);
+}
+
+/** Keep the user's spelling for vocabulary already present in the transcript. */
+export function applyVocabularySpelling(text: string, vocabulary: string[]): string {
+  return replaceVocabularyMatches(text, vocabulary, term => term);
+}
+
+/** Hide recognized vocabulary from cleanup until every placeholder is verified. */
+export function protectVocabulary(text: string, vocabulary: string[]): ProtectedVocabulary {
   let nonce = 0;
   let markerPrefix = '';
   do {
@@ -65,19 +84,11 @@ export function protectVocabulary(text: string, vocabulary: string[]): Protected
   } while (text.includes(markerPrefix));
 
   const replacements: Array<{ marker: string; term: string }> = [];
-  const matches = expressions.flatMap(expression => Array.from(text.matchAll(expression)))
-    .sort((left, right) => left.index! - right.index! || right[1]!.length - left[1]!.length);
-  let offset = 0;
-  let protectedText = '';
-  for (const match of matches) {
-    const start = match.index!;
-    if (start < offset) continue;
+  const protectedText = replaceVocabularyMatches(text, vocabulary, term => {
     const marker = `${markerPrefix}${replacements.length}__`;
-    replacements.push({ marker, term: canonicalTerms.get(match[1]!.toLocaleLowerCase())! });
-    protectedText += text.slice(offset, start) + marker;
-    offset = start + match[1]!.length;
-  }
-  protectedText += text.slice(offset);
+    replacements.push({ marker, term });
+    return marker;
+  });
 
   return {
     text: protectedText,
@@ -92,7 +103,7 @@ export function protectVocabulary(text: string, vocabulary: string[]): Protected
       let restored = candidate;
       for (const replacement of replacements) {
         if (occurrences(restored, replacement.marker) !== 1) return { ok: false };
-        restored = restored.replace(replacement.marker, replacement.term);
+        restored = restored.replace(replacement.marker, () => replacement.term);
       }
       if (markerExpression.test(restored)) return { ok: false };
       return { ok: true, text: restored };

@@ -6,12 +6,10 @@ import { ActivityInsights } from './ActivityInsights';
 import { buildTranscriptionExport } from '../services/transcriptionExport';
 import { DEFAULT_RECORDING_HOTKEY, normalizeRecordingHotkey, recordingHotkeyLabel, recordingHotkeyParts } from '../../../shared/recordingHotkey';
 import type {
-  CleanupState,
   AsrModelId,
   DictationLatency,
   MicrophoneInputState,
   PhraseReplacementRule,
-  WritingMode,
 } from '../../../shared/electron-api';
 import '../styles/glass.css';
 import '../styles/settings.css';
@@ -36,7 +34,7 @@ const FolderIcon = () => (
   </svg>
 );
 
-const ToggleTile = ({ title, description, checked, disabled = false, experimental = false, requires = 'Cleaned', onChange }: {
+const ToggleTile = ({ title, description, checked, disabled = false, experimental = false, requires, onChange }: {
   title: string;
   description: string;
   checked: boolean;
@@ -53,7 +51,7 @@ const ToggleTile = ({ title, description, checked, disabled = false, experimenta
       <span className="settings-switch" aria-hidden="true" />
     </span>
     <span className="settings-tile__description">{description}</span>
-    {(disabled || experimental) && <span className="settings-tile__state">{disabled ? `${experimental ? 'Experimental · ' : ''}Requires ${requires}` : 'Experimental'}</span>}
+    {((disabled && requires) || experimental) && <span className="settings-tile__state">{disabled && requires ? `${experimental ? 'Experimental · ' : ''}Requires ${requires}` : 'Experimental'}</span>}
   </label>
 );
 
@@ -61,9 +59,7 @@ const SETTINGS_SECTIONS = [
   { id: 'activity', label: 'Activity' },
   { id: 'audio', label: 'Audio' },
   { id: 'writing', label: 'Writing' },
-  { id: 'vocabulary', label: 'Vocabulary' },
   { id: 'snippets', label: 'Snippets' },
-  { id: 'appearance', label: 'Appearance' },
   { id: 'general', label: 'General' },
 ] as const;
 
@@ -74,9 +70,7 @@ const SectionIcon = ({ section }: { section: SettingsSection }) => {
     activity: <><path d="M4 19V9m5 10V5m5 14v-7m5 7V3" /></>,
     audio: <><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3m-4 0h8" /></>,
     writing: <><path d="m16 3 5 5-12 12-6 1 1-6L16 3ZM13 6l5 5" /></>,
-    vocabulary: <><path d="M12 5v16M3 4h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5v16h-5a4 4 0 0 0-4 1 4 4 0 0 0-4-1H3V4Z" /></>,
     snippets: <><rect x="7" y="7" width="14" height="14" rx="3" /><path d="M17 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2M11 12h6m-6 4h4" /></>,
-    appearance: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></>,
     general: <><path d="M4 6h16M4 12h16M4 18h16" /><circle cx="8" cy="6" r="2" fill="currentColor" stroke="none" /><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none" /><circle cx="10" cy="18" r="2" fill="currentColor" stroke="none" /></>,
   };
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[section]}</svg>;
@@ -110,23 +104,16 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [microphoneSelecting, setMicrophoneSelecting] = useState(false);
   const [microphoneError, setMicrophoneError] = useState<string | null>(null);
   const [saveAudio, setSaveAudio] = useState(false);
+  const [dictationSounds, setDictationSounds] = useState(true);
   const [experimentalSupermicrophone, setExperimentalSupermicrophone] = useState(false);
   const [supermicrophoneBusy, setSupermicrophoneBusy] = useState(false);
   const [supermicrophoneError, setSupermicrophoneError] = useState('');
   const [experimentalEmailFormatting, setExperimentalEmailFormatting] = useState(false);
   const [groqKeySaved, setGroqKeySaved] = useState(false);
   const [groqKeyDraft, setGroqKeyDraft] = useState('');
-  const [groqEnabled, setGroqEnabled] = useState(false);
-  const [groqCleanupEnabled, setGroqCleanupEnabled] = useState(true);
+  const [groqCleanupEnabled, setGroqCleanupEnabled] = useState(false);
   const [groqBusy, setGroqBusy] = useState(false);
   const [groqError, setGroqError] = useState<string | null>(null);
-  const [writingMode, setWritingMode] = useState<WritingMode>('as-spoken');
-  const [cleanupState, setCleanupState] = useState<CleanupState>({
-    available: false,
-    status: 'disabled',
-  });
-  const [cleanedRemoving, setCleanedRemoving] = useState(false);
-  const [cleanupActionError, setCleanupActionError] = useState<string | null>(null);
   const [vocabWords, setVocabWords] = useState<string[]>([]);
   const [isAddingVocabWord, setIsAddingVocabWord] = useState(false);
   const [vocabWordDraft, setVocabWordDraft] = useState('');
@@ -138,7 +125,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const snippetInputRef = useRef<HTMLInputElement>(null);
   const snippetTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [colorBarHue, setColorBarHue] = useState(0);
-  const [totalWordCount, setTotalWordCount] = useState<number | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportFrom, setExportFrom] = useState('');
   const [exportTo, setExportTo] = useState('');
@@ -177,13 +163,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       setHandsFreeMode(settings.handsFreeMode ?? false);
       setStartAtLogin(settings.startAtLogin);
       setSaveAudio(settings.saveAudio ?? false);
+      setDictationSounds(settings.dictationSounds ?? true);
       setExperimentalSupermicrophone(settings.experimentalSupermicrophone ?? false);
       setExperimentalEmailFormatting(settings.experimentalEmailFormatting ?? false);
       setGroqKeySaved(settings.groqKeySaved);
-      setGroqEnabled(settings.groqEnabled);
       setGroqCleanupEnabled(settings.groqCleanupEnabled);
-      setWritingMode(settings.writingMode ?? 'as-spoken');
-      setCleanupState(settings.cleanupState);
       setVocabWords(Array.isArray(settings.vocabWords) ? settings.vocabWords : []);
       setPhraseReplacementRules(
         Array.isArray(settings.phraseReplacements) ? settings.phraseReplacements : []
@@ -265,7 +249,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     }
   }, [activeSection]);
 
-  useEffect(() => window.electronAPI.interface.onCleanupStateChanged(setCleanupState), []);
 
   useEffect(() => {
     let mounted = true;
@@ -380,17 +363,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     }
   }, [primary]);
 
-  // Load total word count from memo database (words dictated, not typed)
-  useEffect(() => {
-    let cancelled = false;
-    storageService.init().then(() => storageService.getTotalWordCount()).then((count) => {
-      if (!cancelled) setTotalWordCount(count);
-    }).catch(() => {
-      if (!cancelled) setTotalWordCount(null);
-    });
-    return () => { cancelled = true; };
-  }, []);
-
   const openExportPicker = async () => {
     setExportOpen(true);
     setExportStatus(null);
@@ -450,24 +422,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     }
   };
 
-  const removeCleaned = async () => {
-    setCleanedRemoving(true);
-    setCleanupActionError(null);
-    try {
-      const result = await window.electronAPI.interface.removeCleaned();
-      setWritingMode(result.writingMode);
-      setCleanupState(result.cleanupState);
-    } catch (error) {
-      setCleanupActionError(error instanceof Error ? error.message : 'Could not remove Cleaned.');
-      void window.electronAPI.interface.getSettings().then(settings => {
-        setWritingMode(settings.writingMode);
-        setCleanupState(settings.cleanupState);
-      }).catch(() => undefined);
-    } finally {
-      setCleanedRemoving(false);
-    }
-  };
-
   const runGroqAction = async (action: () => Promise<void>, failure: string) => {
     setGroqBusy(true);
     setGroqError(null);
@@ -487,17 +441,10 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   }, 'Could not save the API key.');
 
   const removeGroqKey = () => runGroqAction(async () => {
-    const state = await window.electronAPI.interface.removeGroqApiKey();
+    await window.electronAPI.interface.removeGroqApiKey();
     setGroqKeySaved(false);
-    setGroqEnabled(state.groqEnabled);
-    setGroqCleanupEnabled(state.groqCleanupEnabled);
+    setGroqCleanupEnabled(false);
   }, 'Could not remove the API key.');
-
-  const changeGroqEnabled = (enabled: boolean) => runGroqAction(async () => {
-    const state = await window.electronAPI.interface.setGroqEnabled(enabled);
-    setGroqEnabled(state.groqEnabled);
-    setGroqCleanupEnabled(state.groqCleanupEnabled);
-  }, 'Could not change the Groq setting.');
 
   const changeGroqCleanup = (enabled: boolean) => runGroqAction(async () => {
     await window.electronAPI.interface.setGroqCleanupEnabled(enabled);
@@ -578,8 +525,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             <section id="settings-panel-activity" className="settings-panel" aria-label="Activity" hidden={activeSection !== 'activity'}>
               <section className="settings-activity-panel" aria-label="Dictation activity">
                 <ActivityInsights />
-                <div className="settings-lifetime">
-                  <span><strong>{totalWordCount !== null ? totalWordCount.toLocaleString() : '…'}</strong> words not typed · all time</span>
+                <div className="settings-export-actions">
                   <button type="button" className="settings-text-button settings-text-button--accent" aria-expanded={exportOpen} aria-controls="settings-export"
                     onClick={() => {
                       if (exportOpen) { setExportOpen(false); setExportStatus(null); }
@@ -641,16 +587,23 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 <ToggleTile title="Hands free" checked={handsFreeMode}
                   description={`Speak to record. Pause to transcribe. The ${recordingHotkeyLabel(recordingHotkey)} key still works.`}
                   onChange={async enabled => { setHandsFreeMode(enabled); await window.electronAPI.interface.setHandsFreeMode(enabled); }} />
+                <ToggleTile title="Dictation sounds" checked={dictationSounds}
+                  description="Play a short sound when recording starts and stops. Silent in Hands free."
+                  onChange={async enabled => { setDictationSounds(enabled); await window.electronAPI.interface.setDictationSounds(enabled); }} />
                 <ToggleTile title='Say “ENTER” to submit' checked={sayEnterToPressEnter}
                   description='End dictation with “enter” to paste and press Return.'
                   onChange={async enabled => { setSayEnterToPressEnter(enabled); await window.electronAPI.interface.setSayEnterToPressEnter(enabled); }} />
-                <section className="settings-tile settings-tile--wide" data-active={groqEnabled} aria-labelledby="settings-groq-title" aria-busy={groqBusy}>
+              </div>
+            </section>
+            <section id="settings-panel-writing" className="settings-panel" aria-label="Writing" hidden={activeSection !== 'writing'}>
+              <div className="settings-grid">
+                <section className="settings-tile settings-tile--wide" aria-labelledby="settings-groq-title" aria-busy={groqBusy}>
                   <div className="settings-tile__top">
                     <h3 id="settings-groq-title">Groq</h3>
-                    <span className="settings-badge">{groqEnabled ? 'On' : groqKeySaved ? 'Off' : 'Optional'}</span>
+                    <span className="settings-badge">{groqKeySaved ? 'Key saved' : 'Optional'}</span>
                   </div>
-                  <p className="settings-help">Use your own Groq API key for cloud transcription and cleanup. While Groq is on, your audio and text are sent to Groq. If it fails, Memo uses on-device text.</p>
-                  {groqKeySaved ? <div className="settings-download">
+                  <p className="settings-help">Add your own API key to enable Groq cleanup.</p>
+                  {groqKeySaved ? <div className="settings-groq-key">
                     <span>API key saved and encrypted on this computer.</span>
                     <button type="button" className="settings-text-button settings-text-button--danger" disabled={groqBusy}
                       onClick={() => void removeGroqKey()}>Remove key</button>
@@ -668,62 +621,19 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   </>}
                   {groqError && <p role="alert" className="settings-error">{groqError}</p>}
                 </section>
-                <ToggleTile title="Use Groq" checked={groqEnabled} disabled={!groqKeySaved || groqBusy} requires="a Groq key"
-                  description="Transcribe with Groq's Whisper model. Memo still runs on-device as the fallback."
-                  onChange={enabled => void changeGroqEnabled(enabled)} />
-                <ToggleTile title="Groq cleanup" checked={groqEnabled && groqCleanupEnabled} disabled={!groqEnabled || groqBusy} requires="Use Groq"
-                  description="Remove filler words and fix grammar and punctuation. Turns on when you use Groq."
+                <ToggleTile title="Groq cleanup" checked={groqCleanupEnabled} disabled={!groqKeySaved || groqBusy} requires={!groqKeySaved ? 'a Groq key' : undefined}
+                  description="Send on-device dictation text to Groq to remove fillers and fix grammar and punctuation. Audio stays on this device."
                   onChange={enabled => void changeGroqCleanup(enabled)} />
-              </div>
-            </section>
-            <section id="settings-panel-writing" className="settings-panel" aria-label="Writing" hidden={activeSection !== 'writing'}>
-              <div className="settings-grid">
-                <section className="settings-tile settings-tile--wide" data-active={writingMode === 'clean'} aria-labelledby="settings-writing-title">
-                  <div className="settings-tile__top"><span className="settings-badge">{writingMode === 'clean' ? 'Cleaned' : 'As spoken'}</span></div>
-                  <h3 id="settings-writing-title" className="settings-sr-only">Writing mode</h3>
-                  <p className="settings-help">{window.electronAPI.platform === 'win32' ? 'As spoken adds punctuation and capitalization locally while keeping your words.' : 'As spoken keeps your words. Cleaned adds punctuation and layout locally.'}</p>
-                  <label className="settings-sr-only" htmlFor="writing-mode">Writing mode</label>
-                  <select id="writing-mode" value={writingMode} disabled={cleanedRemoving}
-                    onChange={async event => {
-                      const mode = event.target.value as WritingMode;
-                      const previousMode = writingMode;
-                      setWritingMode(mode);
-                      const accepted = await window.electronAPI.interface.setWritingMode(mode);
-                      if (!accepted) setWritingMode(previousMode);
-                    }}>
-                    <option value="as-spoken">As spoken — Included</option>
-                    {window.electronAPI.platform !== 'win32' && <option value="clean">Cleaned – 1.03 GB model download</option>}
-                  </select>
-                  {writingMode === 'clean' && <p role="status" className="settings-help">
-                    {cleanupState.status === 'ready' ? 'Ready · runs locally' : cleanupState.status === 'downloading'
-                      ? cleanupState.detail || 'Downloading Cleaned…' : cleanupState.status === 'loading'
-                        ? 'Loading LFM locally…' : cleanupState.detail || 'Downloads once when selected, then runs locally.'}
-                  </p>}
-                  {cleanupState.installed && <div className="settings-download">
-                    <span>Stored locally. Removing switches to As spoken.</span>
-                    <button type="button" className="settings-text-button settings-text-button--danger" onClick={() => void removeCleaned()}
-                      disabled={cleanedRemoving || cleanupState.status === 'downloading' || cleanupState.status === 'loading'}
-                      aria-label="Remove Cleaned download">{cleanedRemoving ? 'Removing…' : 'Remove download'}</button>
-                  </div>}
-                  {cleanupActionError && <p role="alert" className="settings-error">{cleanupActionError}</p>}
-                  {groqEnabled && groqCleanupEnabled && <p role="status" className="settings-help">Groq cleanup is on, so this mode only applies when Groq is unavailable.</p>}
-                </section>
-                {window.electronAPI.platform !== 'win32' && <ToggleTile experimental title="Email formatting" checked={experimentalEmailFormatting} disabled={writingMode !== 'clean'}
-                  description="In Cleaned mode, formats Gmail and all Safari dictation as email using the app and URL locally."
+                {window.electronAPI.platform !== 'win32' && <ToggleTile experimental title="Email formatting"
+                  checked={experimentalEmailFormatting} disabled={!groqCleanupEnabled} requires="Groq cleanup"
+                  description="Use Groq cleanup to format dictation as email in Gmail and Safari."
                   onChange={async enabled => { if (await window.electronAPI.interface.setExperimentalEmailFormatting(enabled)) setExperimentalEmailFormatting(enabled); }} />}
-              </div>
-            </section>
-            <section id="settings-panel-vocabulary" className="settings-panel" aria-label="Vocabulary" hidden={activeSection !== 'vocabulary'}>
-              <div className="settings-grid">
                 <section className="settings-tile settings-tile--wide" aria-labelledby="settings-vocab-title">
-                  <div className="settings-tile__top"><span className="settings-badge">{vocabWords.length} words</span></div>
-                  <h3 id="settings-vocab-title" className="settings-sr-only">Vocabulary</h3>
-                  <p className="settings-help">Help Memo recognize names and words you use.</p>
-                  <div className="settings-vocab">
-                    {(vocabWords || []).map(word => <button key={word} type="button" className="settings-word"
-                      onClick={() => void removeVocabWord(word)} aria-label={`Remove ${word}`} title={`Remove ${word}`}>{word}<span aria-hidden="true">×</span></button>)}
-                    {!isAddingVocabWord && <button type="button" className="settings-button settings-button--accent" onClick={() => { setIsAddingVocabWord(true); setVocabWordDraft(''); }}>+ Add word</button>}
+                  <div className="settings-tile__top">
+                    <h3 id="settings-vocab-title">Vocabulary</h3>
+                    <span className="settings-badge">{vocabWords.length} {vocabWords.length === 1 ? 'word' : 'words'}</span>
                   </div>
+                  <p className="settings-help">Help Memo recognize names and words you use.</p>
                   {isAddingVocabWord && <form className="settings-vocab-form" onSubmit={event => { event.preventDefault(); void addVocabWord(vocabWordDraft); }}>
                     <label className="settings-sr-only" htmlFor="settings-new-word">New vocabulary word</label>
                     <input id="settings-new-word" ref={vocabInputRef} type="text" value={vocabWordDraft}
@@ -732,6 +642,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     <button type="submit" className="settings-button settings-button--primary" disabled={!vocabWordDraft.trim()}>Add</button>
                     <button type="button" className="settings-text-button" onClick={() => { setIsAddingVocabWord(false); setVocabWordDraft(''); }}>Cancel</button>
                   </form>}
+                  <div className="settings-vocab">
+                    {!isAddingVocabWord && <button type="button" className="settings-button settings-button--neutral" onClick={() => { setIsAddingVocabWord(true); setVocabWordDraft(''); }}>+ Add word</button>}
+                    {vocabWords.map(word => <button key={word} type="button" className="settings-word"
+                      onClick={() => void removeVocabWord(word)} aria-label={`Remove ${word}`} title={`Remove ${word}`}>{word}<span aria-hidden="true">×</span></button>)}
+                  </div>
                 </section>
               </div>
             </section>
@@ -777,11 +692,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 {snippetError && <p role="alert" className="settings-error">{snippetError}</p>}
               </div>
             </section>
-            <section id="settings-panel-appearance" className="settings-panel" aria-label="Appearance" hidden={activeSection !== 'appearance'}>
+            <section id="settings-panel-general" className="settings-panel" aria-label="General" hidden={activeSection !== 'general'}>
               <div className="settings-grid">
-                <section className="settings-tile settings-appearance" aria-labelledby="settings-appearance-title">
+                <section className="settings-tile" aria-labelledby="settings-accent-color-title">
                   <div className="settings-tile__top"><span className="settings-color-dot" style={{ background: primary }} aria-hidden="true" /></div>
-                  <h3 id="settings-appearance-title" className="settings-sr-only">Accent color</h3>
+                  <h3 id="settings-accent-color-title" className="settings-sr-only">Accent color</h3>
                   <p className="settings-help">Choose your accent color.</p>
                   <label className="settings-sr-only" htmlFor="settings-hue">Accent color hue</label>
                   <input id="settings-hue" className="settings-hue" type="range" min="0" max="360" value={colorBarHue}
@@ -789,22 +704,18 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     onChange={event => { const hue = Number(event.target.value); setColorBarHue(hue); setPrimary(accentColorAtHue(hue, primary)); }} />
                   <span className="settings-tile__state settings-color-value">{primary.toUpperCase()}</span>
                 </section>
-              </div>
-            </section>
-            <section id="settings-panel-general" className="settings-panel" aria-label="General" hidden={activeSection !== 'general'}>
-              <ToggleTile experimental title="Supermicrophone" checked={experimentalSupermicrophone}
-                description="Enable experimental USB and Bluetooth recorder sync, transcription, and automatic firmware updates. Off by default."
-                onChange={async enabled => {
-                  if (supermicrophoneBusy) return;
-                  setSupermicrophoneBusy(true); setSupermicrophoneError('');
-                  try {
-                    if (await window.electronAPI.interface.setExperimentalSupermicrophone(enabled)) setExperimentalSupermicrophone(enabled);
-                  } catch (error) { setSupermicrophoneError(error instanceof Error ? error.message : 'Could not change Supermicrophone setting.'); }
-                  finally { setSupermicrophoneBusy(false); }
-                }} />
-              {supermicrophoneError && <p role="alert">{supermicrophoneError}</p>}
+                <ToggleTile experimental title="Supermicrophone" checked={experimentalSupermicrophone}
+                  description="Enable experimental USB and Bluetooth recorder sync, transcription, and automatic firmware updates. Off by default."
+                  onChange={async enabled => {
+                    if (supermicrophoneBusy) return;
+                    setSupermicrophoneBusy(true); setSupermicrophoneError('');
+                    try {
+                      if (await window.electronAPI.interface.setExperimentalSupermicrophone(enabled)) setExperimentalSupermicrophone(enabled);
+                    } catch (error) { setSupermicrophoneError(error instanceof Error ? error.message : 'Could not change Supermicrophone setting.'); }
+                    finally { setSupermicrophoneBusy(false); }
+                  }} />
+                {supermicrophoneError && <p role="alert">{supermicrophoneError}</p>}
 
-              <div className="settings-grid">
                 <section className="settings-shortcuts" aria-label="Recording shortcuts" aria-busy={hotkeySaving}>
                     {window.electronAPI.platform === 'win32' && <p className="settings-help">Choose a key or combination, such as Right Control or F8. Most Windows keyboards do not expose the Fn key to apps; F1–F12 are separate keys.</p>}
                   {([
