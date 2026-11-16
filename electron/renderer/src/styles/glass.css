@@ -275,56 +275,9 @@ body {
   color: rgba(255, 255, 255, 0.92);
 }
 
-.activity-insights__header,
-.activity-insights__subhead,
-.activity-insights__footer {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.activity-insights__header > div:first-child,
-.activity-insights__total {
-  display: flex;
-  flex-direction: column;
-}
-
-.activity-insights__header strong,
-.activity-insights__subhead strong {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.activity-insights__header span,
-.activity-insights__subhead span,
-.activity-insights__footer,
 .activity-insights__empty {
   color: rgba(255, 255, 255, 0.48);
   font-size: 10px;
-}
-
-.activity-insights__total {
-  flex-direction: row;
-  align-items: baseline;
-  gap: 5px;
-  white-space: nowrap;
-}
-
-.activity-insights__total strong {
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.activity-insights__header > div:first-child strong {
-  font-size: 18px;
-  letter-spacing: -0.02em;
-}
-
-.activity-insights__subhead {
-  margin: 10px 0 7px;
-  align-items: baseline;
 }
 
 .activity-insights__hours,
@@ -417,9 +370,27 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.activity-insights__footer {
-  margin-top: 9px;
-  align-items: center;
+.activity-insights__stats {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 12px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 12px;
+}
+
+.activity-insights__stats strong {
+  color: var(--activity-primary);
+  font-size: 22px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-insights__stats .activity-insights__word-count {
+  color: #fff;
 }
 
 .settings-section {

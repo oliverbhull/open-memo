@@ -21,11 +21,10 @@ Hold Right Ctrl to dictate; release to insert text. Right Ctrl + Left Shift lock
 recording until pressed again. Shortcuts are editable. Most PC Fn keys are handled
 by keyboard firmware; F1–F12 are distinct, capturable keys.
 
-Windows As spoken adds punctuation/capitalization without generative rewriting.
-The existing Cleaned worker and its model pack use MLX and are Mac-only. Do not
-offer or download that package on Windows. A future Windows cleanup backend needs
-its own compatible checkpoint/runtime and latency, memory, and text-quality checks;
-acceptable performance on an 8 GB ThinkPad has not been demonstrated.
+Dictation adds punctuation and capitalization locally. Optional Groq cleanup
+uses an encrypted API key and sends transcript text after explicit opt-in in
+Settings → Writing. Experimental destination-based email formatting uses macOS
+Accessibility.
 
 Windows supports browser window titles and application icons.
 Browser URL/reply capture and automatic app updates are macOS features. Elevated/protected targets can reject normal-user input injection;

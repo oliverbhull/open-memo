@@ -81,7 +81,7 @@ jobs:
       - name: Verify packaged speech and punctuation
         run: bash scripts/shell/verify-packaged-model-workers.sh dist/mac-arm64/Memo.app
 
-      - name: Verify cleanup remains on demand
+      - name: Verify retired cleanup model is absent
         run: test ! -e dist/mac-arm64/Memo.app/Contents/Resources/cleanup
 
       - name: Upload app smoke-build artifact

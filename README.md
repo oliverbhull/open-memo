@@ -34,9 +34,8 @@ Open Memo lets you speak naturally and write anywhere on your computer. Hold
 **Fn** on Mac or **Right Ctrl** on Windows, speak, and release. Your words appear
 wherever your cursor is. You can change the shortcut in Settings.
 
-Dictation runs locally, works without an internet connection, and never consumes
-credits or hits a weekly word limit. Your voice is not sent to a cloud
-transcription service.
+Speech recognition runs on your computer and works offline, without a weekly
+word limit. Optional Groq cleanup sends transcript text after recognition.
 
 ## How it works
 
@@ -50,7 +49,7 @@ transcription service.
 
 - **It works anywhere you can type.** Use it for messages, email, notes, and documents.
 - **It makes speech readable.** Punctuation and capitalization are added automatically.
-- **It stays on your computer.** Your voice is transcribed locally, not sent to the cloud.
+- **It stays on your computer.** Speech recognition runs locally and your audio stays on your computer.
 
 Your recent dictations stay in a simple history so you can find and reuse them.
 Saving the original audio is optional and off by default.
@@ -75,19 +74,35 @@ Conomo with bundled Nemotron streaming, punctuation and capitalization,
 and Whisper Base fallback are included; no separate Python, model, GPU driver,
 or developer-tool installation is needed. Dictation currently supports English.
 
-The optional **Cleaned** writing mode is currently available on Mac only. Windows
-includes automatic punctuation and capitalization in **As spoken** mode. Windows
-updates use the download button; automatic Windows updates are not enabled yet.
+Windows includes automatic local punctuation and capitalization. Windows updates
+use the download button.
 
-Add names, acronyms, and phrases in **Settings → Vocabulary**. Nemotron uses them
+Add names, acronyms, and phrases in **Settings → Writing → Vocabulary**. Nemotron uses them
 as recognition hints on the next dictation. Memo keeps the saved spelling when
 it recognizes a term. Use **Settings → Snippets** to replace a recurring
 misrecognition with fixed text.
 
 ## Private by design
 
-Speech is transcribed on your computer. Open Memo does not require an account and
-does not send your dictation to a transcription service.
+Speech is transcribed on your computer. Open Memo does not require an account,
+and dictation stays local by default.
+
+## Optional Groq cleanup
+
+Add your own [Groq API key](https://console.groq.com/keys) in **Settings → Writing**
+and turn on **Groq cleanup**. The toggle is off by default, including when
+upgrading from local Cleaned. Memo tests the key with Groq and stores it encrypted
+on your computer.
+
+When enabled, Memo sends the on-device transcript as text to Groq to remove
+fillers and fix grammar and punctuation. Groq's pricing and data terms apply.
+If Groq is unavailable, Memo uses its local punctuation path.
+
+On macOS, the separate experimental **Email formatting** setting uses an email
+prompt for Gmail in supported browsers and for Safari. Memo checks the app and
+URL locally and applies your profile signature on your computer.
+
+## Permissions
 
 Memo needs microphone access to hear you. On Mac, Accessibility access inserts text
 and Input Monitoring detects the hotkey. Bluetooth is only used if you
@@ -106,9 +121,7 @@ npm run check
 
 
 See the [development guide](docs/development.md) for prerequisites, local runtime
-setup, validation commands, and packaging boundaries. Clean mode uses the local
-6-bit LFM candidate in development and the same verified offline bundle in
-production packages; As spoken mode uses the punctuation pipeline.
+setup, validation commands, and packaging boundaries.
 See the [Windows build and release guide](docs/windows.md) for the independent
 Windows installer, release gates, and platform boundaries.
 
