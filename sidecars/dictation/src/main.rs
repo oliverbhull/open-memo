@@ -5,7 +5,7 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rdev::{listen, Event, EventType, Key};
 use serde_json::json;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::mpsc;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -17,8 +17,6 @@ use recording_hotkey::{parse_shortcut, ShortcutListener, ShortcutAction};
 mod app_detection;
 mod audio_levels;
 use audio_levels::calculate_speech_audio_levels;
-mod mrec_batch;
-mod opus_decoder;
 mod parent_watchdog;
 mod transcription_engine;
 mod nemotron_engine;
@@ -517,9 +515,6 @@ fn calculate_rate_of_increase(history: &[(f32, f32)]) -> Option<f32> {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if windows_commands::run()? { return Ok(()); }
     parent_watchdog::start();
-    if std::env::args().any(|argument| argument == "--batch-transcribe") {
-        return mrec_batch::run();
-    }
 
     // Permission probes intentionally exit before microphone/model startup so
     // onboarding can request and verify the global hotkey capability directly.
@@ -638,7 +633,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let segment_results: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let segment_boundary: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
     let segmenter_active = Arc::new(AtomicBool::new(false));
-    let last_segment_text: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let worker_feeder_active = Arc::new(AtomicBool::new(false));
     let worker_feeder_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>> =
         Arc::new(Mutex::new(None));
@@ -656,7 +650,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let segment_results_clone = segment_results.clone();
     let segment_boundary_clone = segment_boundary.clone();
     let segmenter_active_clone = segmenter_active.clone();
-    let last_segment_text_clone = last_segment_text.clone();
     let performance_history_clone = performance_history.clone();
 
     let (tx, rx) = mpsc::channel::<KeyEvent>();
@@ -948,70 +941,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Vocabulary storage for voice commands
-    #[derive(Clone)]
-    struct Vocabulary {
-        app_names: Vec<String>,
-        app_commands: HashMap<String, Vec<String>>,
-        global_commands: Vec<String>,
-        boost_words: Vec<String>,
-    }
-
-    let vocabulary = Arc::new(Mutex::new(Vocabulary {
-        app_names: Vec::new(),
-        app_commands: HashMap::new(),
-        global_commands: Vec::new(),
-        boost_words: Vec::new(),
-    }));
-
-    // Build prompt with only the active app's commands (+ global) to avoid hallucination
-    let build_prompt =
-        |app_name: String, window_title: String, vocab: &Vocabulary| -> Option<String> {
-            let mut parts = Vec::new();
-
-            if !app_name.is_empty() && app_name != "Unknown" {
-                if !window_title.is_empty() {
-                    parts.push(format!(
-                        "You are transcribing for {}. The current window is: {}.",
-                        app_name, window_title
-                    ));
-                } else {
-                    parts.push(format!("You are transcribing for {}.", app_name));
-                }
-            }
-
-            if !vocab.app_names.is_empty() {
-                parts.push(format!(
-                    "Voice commands: open {}.",
-                    vocab.app_names.join(", ")
-                ));
-            }
-
-            let mut active_cmds: Vec<&str> =
-                vocab.global_commands.iter().map(|s| s.as_str()).collect();
-            if !app_name.is_empty() {
-                let key = app_name.to_lowercase();
-                if let Some(cmds) = vocab.app_commands.get(&key) {
-                    active_cmds.extend(cmds.iter().map(|s| s.as_str()));
-                }
-            }
-            if !active_cmds.is_empty() {
-                parts.push(format!("Commands: {}.", active_cmds.join(", ")));
-            }
-
-            if !vocab.boost_words.is_empty() {
-                parts.push(format!("Vocabulary: {}.", vocab.boost_words.join(", ")));
-            }
-
-            if parts.is_empty() {
-                None
-            } else {
-                Some(parts.join(" "))
-            }
-        };
-
     // Spawn thread to read commands from stdin
-    let vocabulary_clone = vocabulary.clone();
     let engine_for_vocab = engine.clone();
     let shortcut_commands = shortcut_listener.clone();
     let capture_commands = capture_mode.clone();
@@ -1041,61 +971,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(value) = cmd.strip_prefix("VOCAB:") {
                     if let Ok(vocab_json) = serde_json::from_str::<serde_json::Value>(value.trim())
                     {
-                        let mut vocab = vocabulary_clone.lock().unwrap();
-                        vocab.boost_words = vocab_json
+                        let boost_words: Vec<String> = vocab_json
                             .get("boostWords")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-                        vocab.app_names = vocab_json
-                            .get("appNames")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-                        vocab.global_commands = vocab_json
-                            .get("globalCommands")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-                        vocab.app_commands.clear();
-                        if let Some(obj) = vocab_json.get("appCommands").and_then(|v| v.as_object())
-                        {
-                            for (key, val) in obj {
-                                if let Some(arr) = val.as_array() {
-                                    let cmds: Vec<String> = arr
-                                        .iter()
-                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                        .collect();
-                                    vocab.app_commands.insert(key.clone(), cmds);
-                                }
-                            }
-                        }
-                        let boost_words = vocab.boost_words.clone();
-                        drop(vocab);
-                        engine_for_vocab
-                            .lock()
-                            .unwrap()
-                            .set_vocabulary(&boost_words);
-                        let vocab = vocabulary_clone.lock().unwrap();
-                        eprintln!(
-                            "MIC: Vocabulary updated: {} boost words, {} app names, {} apps with commands, {} global commands",
-                            vocab.boost_words.len(),
-                            vocab.app_names.len(),
-                            vocab.app_commands.len(),
-                            vocab.global_commands.len()
-                        );
+                            .and_then(|value| value.as_array())
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|value| value.as_str().map(str::to_owned))
+                            .collect();
+                        eprintln!("MIC: Vocabulary updated: {} boost words", boost_words.len());
+                        engine_for_vocab.lock().unwrap().set_vocabulary(&boost_words);
                     } else {
                         eprintln!("MIC: Failed to parse VOCAB command");
                     }
@@ -1138,7 +1022,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if streaming_enabled {
                         segment_results_clone.lock().unwrap().clear();
                         *segment_boundary_clone.lock().unwrap() = 0;
-                        *last_segment_text_clone.lock().unwrap() = None;
                         segmenter_active_clone.store(true, Ordering::Release);
 
                         let buf_seg = audio_buffer_clone.clone();
@@ -1146,8 +1029,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let active_seg = segmenter_active_clone.clone();
                         let results_seg = segment_results_clone.clone();
                         let engine_seg = engine_clone.clone();
-                        let vocab_seg = vocabulary.clone();
-                        let prev_text_seg = last_segment_text_clone.clone();
                         let sr = sample_rate;
                         std::thread::spawn(move || {
                             let poll_ms: u64 = 50;
@@ -1197,31 +1078,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                     let eng = engine_seg.clone();
                                     let res = results_seg.clone();
-                                    let voc = vocab_seg.clone();
-                                    let prev_text = prev_text_seg.clone();
                                     std::thread::spawn(move || {
                                         let mut eng = eng.lock().unwrap();
-                                        let (app_name, window_title) =
-                                            app_detection::get_application_context();
-                                        let vocab = voc.lock().unwrap();
-                                        let mut prompt =
-                                            build_prompt(app_name, window_title, &vocab);
-                                        if let Some(ref prev) = *prev_text.lock().unwrap() {
-                                            let context = if prev.len() > 200 {
-                                                &prev[prev.len() - 200..]
-                                            } else {
-                                                prev.as_str()
-                                            };
-                                            prompt = Some(match prompt {
-                                                Some(p) => format!("{} {}", p, context),
-                                                None => context.to_string(),
-                                            });
-                                        }
-                                        eng.set_prompt(prompt);
                                         match eng.transcribe(&segment_audio) {
                                             Ok(text) if has_meaningful_transcript(&text) => {
                                                 let trimmed = text.trim().to_string();
-                                                *prev_text.lock().unwrap() = Some(trimmed.clone());
                                                 res.lock().unwrap().push(trimmed);
                                                 eprintln!(
                                                     "[Streaming] Segment transcribed ({} chars)",
@@ -1400,9 +1261,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Spawn transcription thread immediately for fastest response
                         let engine_for_thread = engine_clone.clone();
                         let perf_history = performance_history_clone.clone();
-                        let vocabulary_for_thread = vocabulary.clone();
                         let segment_results_for_thread = segment_results_clone.clone();
-                        let last_seg_text_for_thread = last_segment_text_clone.clone();
                         let sample_count = samples.len();
                         let audio_duration = sample_count as f32 / sample_rate as f32;
                         let start_time = Instant::now();
@@ -1422,23 +1281,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "TIMING:context_lookup_ms={:.1}",
                                 context_started.elapsed().as_secs_f64() * 1000.0
                             );
-                            let vocab = vocabulary_for_thread.lock().unwrap();
-                            let mut prompt =
-                                build_prompt(app_name.clone(), window_title.clone(), &vocab);
-                            if streaming_boundary > 0 {
-                                if let Some(ref prev) = *last_seg_text_for_thread.lock().unwrap() {
-                                    let context = if prev.len() > 200 {
-                                        &prev[prev.len() - 200..]
-                                    } else {
-                                        prev.as_str()
-                                    };
-                                    prompt = Some(match prompt {
-                                        Some(p) => format!("{} {}", p, context),
-                                        None => context.to_string(),
-                                    });
-                                }
-                            }
-                            eng.set_prompt(prompt);
 
                             let accumulated_segments = if streaming_boundary > 0 {
                                 std::mem::take(&mut *segment_results_for_thread.lock().unwrap())
@@ -1604,7 +1446,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if streaming_enabled {
                                 segment_results_clone.lock().unwrap().clear();
                                 *segment_boundary_clone.lock().unwrap() = 0;
-                                *last_segment_text_clone.lock().unwrap() = None;
                                 segmenter_active_clone.store(true, Ordering::Release);
 
                                 let buf_seg = audio_buffer_clone.clone();
@@ -1612,8 +1453,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let active_seg = segmenter_active_clone.clone();
                                 let results_seg = segment_results_clone.clone();
                                 let engine_seg = engine_clone.clone();
-                                let vocab_seg = vocabulary.clone();
-                                let prev_text_seg = last_segment_text_clone.clone();
                                 let sr = sample_rate;
                                 std::thread::spawn(move || {
                                     let poll_ms: u64 = 50;
@@ -1661,34 +1500,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             silence_count_ms = 0;
                                             let eng = engine_seg.clone();
                                             let res = results_seg.clone();
-                                            let voc = vocab_seg.clone();
-                                            let prev_text = prev_text_seg.clone();
                                             std::thread::spawn(move || {
                                                 let mut eng = eng.lock().unwrap();
-                                                let (app_name, window_title) =
-                                                    app_detection::get_application_context();
-                                                let vocab = voc.lock().unwrap();
-                                                let mut prompt =
-                                                    build_prompt(app_name, window_title, &vocab);
-                                                if let Some(ref prev) = *prev_text.lock().unwrap() {
-                                                    let context = if prev.len() > 200 {
-                                                        &prev[prev.len() - 200..]
-                                                    } else {
-                                                        prev.as_str()
-                                                    };
-                                                    prompt = Some(match prompt {
-                                                        Some(p) => format!("{} {}", p, context),
-                                                        None => context.to_string(),
-                                                    });
-                                                }
-                                                eng.set_prompt(prompt);
                                                 match eng.transcribe(&segment_audio) {
                                                     Ok(text)
                                                         if has_meaningful_transcript(&text) =>
                                                     {
                                                         let trimmed = text.trim().to_string();
-                                                        *prev_text.lock().unwrap() =
-                                                            Some(trimmed.clone());
                                                         res.lock().unwrap().push(trimmed);
                                                         eprintln!("[Streaming] Segment transcribed ({} chars)", text.len());
                                                     }
@@ -1870,9 +1688,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // Spawn transcription thread immediately for fastest response
                                 let engine_for_thread = engine_clone.clone();
                                 let perf_history = performance_history_clone.clone();
-                                let vocabulary_for_thread = vocabulary.clone();
                                 let segment_results_for_thread = segment_results_clone.clone();
-                                let last_seg_text_for_thread = last_segment_text_clone.clone();
                                 let sample_count = samples.len();
                                 let audio_duration = sample_count as f32 / sample_rate as f32;
                                 let start_time = Instant::now();
@@ -1893,28 +1709,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         "TIMING:context_lookup_ms={:.1}",
                                         context_started.elapsed().as_secs_f64() * 1000.0
                                     );
-                                    let vocab = vocabulary_for_thread.lock().unwrap();
-                                    let mut prompt = build_prompt(
-                                        app_name.clone(),
-                                        window_title.clone(),
-                                        &vocab,
-                                    );
-                                    if streaming_boundary > 0 {
-                                        if let Some(ref prev) =
-                                            *last_seg_text_for_thread.lock().unwrap()
-                                        {
-                                            let context = if prev.len() > 200 {
-                                                &prev[prev.len() - 200..]
-                                            } else {
-                                                prev.as_str()
-                                            };
-                                            prompt = Some(match prompt {
-                                                Some(p) => format!("{} {}", p, context),
-                                                None => context.to_string(),
-                                            });
-                                        }
-                                    }
-                                    eng.set_prompt(prompt);
 
                                     let accumulated_segments = if streaming_boundary > 0 {
                                         std::mem::take(

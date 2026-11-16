@@ -24,7 +24,7 @@ ORIGINAL_INSTRUCTION = (
 )
 CASES = [
     {
-        "id": "reported-meaning-loss", "source": "user rawGranite log",
+        "id": "reported-meaning-loss", "source": "user dictation comparison log",
         "text": "the system is actually working quite well but i am frustrated that when i dictate it is really changing what i say fundamentally and it is like i would say just like filtering it a little bit too much especially with longer transmission especially like especially with longer utterances like if i say a ton of words and speak for a while it just like dilutes it a lot like removes a lot of content",
         "review": "The system is filtering, not the speaker. Preserve longer utterances and the final removes-a-lot-of-content thought.",
     },

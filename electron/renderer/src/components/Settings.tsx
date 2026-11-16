@@ -105,9 +105,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [microphoneError, setMicrophoneError] = useState<string | null>(null);
   const [saveAudio, setSaveAudio] = useState(false);
   const [dictationSounds, setDictationSounds] = useState(true);
-  const [experimentalSupermicrophone, setExperimentalSupermicrophone] = useState(false);
-  const [supermicrophoneBusy, setSupermicrophoneBusy] = useState(false);
-  const [supermicrophoneError, setSupermicrophoneError] = useState('');
   const [experimentalEmailFormatting, setExperimentalEmailFormatting] = useState(false);
   const [groqKeySaved, setGroqKeySaved] = useState(false);
   const [groqKeyDraft, setGroqKeyDraft] = useState('');
@@ -164,7 +161,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       setStartAtLogin(settings.startAtLogin);
       setSaveAudio(settings.saveAudio ?? false);
       setDictationSounds(settings.dictationSounds ?? true);
-      setExperimentalSupermicrophone(settings.experimentalSupermicrophone ?? false);
       setExperimentalEmailFormatting(settings.experimentalEmailFormatting ?? false);
       setGroqKeySaved(settings.groqKeySaved);
       setGroqCleanupEnabled(settings.groqCleanupEnabled);
@@ -562,7 +558,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   <select id="windows-speech-model" value={speechModel} disabled={speechModelSaving}
                     onChange={event => void changeSpeechModel(event.target.value as 'whisper-base.en-q5_1' | 'nemotron-streaming')}>
                     <option value="whisper-base.en-q5_1">Whisper Base — resident CPU</option>
-                    <option value="nemotron-streaming">Nemotron — streaming CPU (experimental)</option>
+                    <option value="nemotron-streaming">Conomo — Nemotron streaming</option>
                     {speechModel !== 'whisper-base.en-q5_1' && speechModel !== 'nemotron-streaming' && <option value={speechModel}>Current Whisper model</option>}
                   </select>
                   <p className="settings-help" role="status">{speechModelSaving ? 'Switching model…' : 'Selection applies to the next dictation. Models stay loaded between recordings.'}</p>
@@ -704,18 +700,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     onChange={event => { const hue = Number(event.target.value); setColorBarHue(hue); setPrimary(accentColorAtHue(hue, primary)); }} />
                   <span className="settings-tile__state settings-color-value">{primary.toUpperCase()}</span>
                 </section>
-                <ToggleTile experimental title="Supermicrophone" checked={experimentalSupermicrophone}
-                  description="Enable experimental USB and Bluetooth recorder sync, transcription, and automatic firmware updates. Off by default."
-                  onChange={async enabled => {
-                    if (supermicrophoneBusy) return;
-                    setSupermicrophoneBusy(true); setSupermicrophoneError('');
-                    try {
-                      if (await window.electronAPI.interface.setExperimentalSupermicrophone(enabled)) setExperimentalSupermicrophone(enabled);
-                    } catch (error) { setSupermicrophoneError(error instanceof Error ? error.message : 'Could not change Supermicrophone setting.'); }
-                    finally { setSupermicrophoneBusy(false); }
-                  }} />
-                {supermicrophoneError && <p role="alert">{supermicrophoneError}</p>}
-
                 <section className="settings-shortcuts" aria-label="Recording shortcuts" aria-busy={hotkeySaving}>
                     {window.electronAPI.platform === 'win32' && <p className="settings-help">Choose a key or combination, such as Right Control or F8. Most Windows keyboards do not expose the Fn key to apps; F1–F12 are separate keys.</p>}
                   {([

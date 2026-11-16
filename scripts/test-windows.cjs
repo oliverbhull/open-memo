@@ -14,5 +14,3 @@ process.chdir(root);
 const tests = fs.readdirSync('scripts').filter(name => name.endsWith('.test.cjs')).sort()
   .map(name => path.join('scripts', name));
 run(process.execPath, ['--test', ...tests]);
-const python = process.env.MEMO_TEST_PYTHON || 'python';
-run(python, ['scripts/python/test_device_sync_lifecycle.py']);

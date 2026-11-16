@@ -14,7 +14,6 @@ export interface StoreSchema {
   saveAudio: boolean;
   dictationSounds: boolean;
   experimentalEmailFormatting: boolean;
-  experimentalSupermicrophone: boolean;
   groqTextCleanupOptIn: boolean;
   groqApiKeyEncrypted: string | null;
   vocabWords: string[];
@@ -40,7 +39,6 @@ export const storeDefaults: StoreSchema = {
   saveAudio: false,
   dictationSounds: true,
   experimentalEmailFormatting: false,
-  experimentalSupermicrophone: false,
   groqTextCleanupOptIn: false,
   groqApiKeyEncrypted: null,
   vocabWords: [],

@@ -7,10 +7,8 @@
   "preload": "dist/preload.cjs",
   "type": "module",
   "scripts": {
-    "dev": "npm run build:conomo && npm run setup:pnc:edge && npm run build:dictation && npm run build:ble && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development MEMO_PNC_ENGINE=edge electron .\"",
-    "setup:contextual-ctc": "bash scripts/shell/setup-contextual-ctc.sh",
+    "dev": "npm run build:conomo && npm run setup:pnc:edge && npm run build:dictation && npm run build:ts && concurrently \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:preload\" \"wait-on http://localhost:5173 && NODE_ENV=development MEMO_PNC_ENGINE=edge electron .\"",
     "setup:pnc:edge": "bash scripts/shell/setup-edge-punct-dev.sh",
-    "test:contextual-dictation": "python3 tests/contextual-dictation/replay.py",
     "test:cleanup": "node --test scripts/groq-service.test.cjs",
     "dev:renderer": "vite --config vite.config.ts",
     "dev:main": "esbuild electron/main/index.ts --platform=node --bundle --external:electron --outfile=dist/main.cjs --format=cjs --watch",
@@ -27,21 +25,20 @@
     "verify:pnc": "bash scripts/shell/verify-pnc-bundle.sh",
     "build:model-manifests": "node scripts/model-pack-manifest.cjs",
     "build:backends": "npm run build:dictation && npm run build:conomo && npm run build:pnc && npm run build:model-manifests",
-    "build:ble": "bash scripts/shell/build-ble-bridge.sh",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.json",
     "check": "npm run typecheck && npm test",
-    "build:app": "npm run check && npm run build:backends && npm run build:ble && npm run build:ts && npm run build:renderer",
+    "build:app": "npm run check && npm run build:backends && npm run build:ts && npm run build:renderer",
     "build:dir": "npm run build:app && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
     "dist:mac": "npm run build:app && bash scripts/shell/build-mac-artifacts.sh",
     "release:mac": "npm run dist:mac",
     "build": "npm run dist:mac",
-    "start": "npm run build:backends && npm run build:ble && npm run build:ts && electron .",
+    "start": "npm run build:backends && npm run build:ts && electron .",
     "export-memos": "npm run build:main && npm run build:renderer && MEMO_EXPORT=1 electron .",
     "test:clean-v1": "python3 -m unittest discover -s experiments/clean-v1 -v",
     "test:clean-v2": "python3 -m unittest discover -s experiments/clean-v2 -v",
     "test:clean-v3": "python3 -m unittest discover -s experiments/clean-v3 -v",
     "test:experiments": "node --test experiments/shared/cleanup-development.test.cjs && npm run test:clean-v1 && npm run test:clean-v2 && npm run test:clean-v3",
-    "test": "node --experimental-sqlite --test scripts/*.test.cjs && python3 scripts/python/test_device_sync_lifecycle.py",
+    "test": "node --experimental-sqlite --test scripts/*.test.cjs",
     "build:browser-context": "bash scripts/shell/build-browser-context.sh",
     "build:overlay-glass": "bash scripts/shell/build-overlay-glass.sh",
     "build:windows:backends": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/build-backends.ps1",
@@ -124,7 +121,8 @@
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Memo needs microphone access to record audio for transcription.",
         "NSAppleEventsUsageDescription": "Memo uses System Events to type your dictation into the app you are using.",
-        "NSBluetoothAlwaysUsageDescription": "Memo uses Bluetooth to connect to supermicrophone."
+        "NSBluetoothAlwaysUsageDescription": null,
+        "NSBluetoothPeripheralUsageDescription": null
       },
       "notarize": true,
       "sign": "scripts/sign.cjs"
@@ -173,10 +171,7 @@
         "to": "dictation",
         "filter": [
           "memo-dictation",
-          "THIRD_PARTY_NOTICES.txt",
-          "memo-conomo-contextual",
-          "run-contextual-conomo",
-          "contextual-worker.py"
+          "THIRD_PARTY_NOTICES.txt"
         ]
       },
       {
@@ -205,18 +200,6 @@
           "VERSIONS",
           "NOTICE.md"
         ]
-      },
-      {
-        "from": "sidecars/device-sync/",
-        "to": "device-sync",
-        "filter": [
-          "device_sync.py",
-          "firmware_update.py"
-        ]
-      },
-      {
-        "from": ".build/ble/memo-ble-bridge",
-        "to": "device-sync/memo-ble-bridge"
       },
       {
         "from": ".build/browser-context/memo-browser-context",

@@ -54,7 +54,7 @@ export const FeedEntry = React.memo(forwardRef<HTMLDivElement, FeedEntryProps>(
     const subtitleText = isDesktopEntry 
       ? emailReply?.subject || [appContext.websiteDomain, appContext.windowTitle].filter(Boolean).join(' · ') || 'Unknown'
       : isMemoDeviceEntry
-        ? `supermicrophone${deviceRecordingId ? ` • ${deviceRecordingId}` : ''}`
+        ? `Recorder${deviceRecordingId ? ` • ${deviceRecordingId}` : ''}`
       : (location ? formatAddress(location) : 'Unknown Location');
     
     const isProcessing = recordingState === 'processing';

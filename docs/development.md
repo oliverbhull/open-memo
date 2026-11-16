@@ -51,12 +51,3 @@ both artifacts before upload. Memo verifies the bundled content manifest before
 using it. Conomo validates the pinned model hashes before starting its model
 process; it does not silently load a different revision. Model weights and build
 artifacts are excluded from Git.
-
-## Experimental Supermicrophone support
-
-Settings → General → Supermicrophone enables USB/BLE recorder discovery, sync,
-recording import and automatic firmware updates together. It defaults off for
-new and existing installations. Regular microphone dictation does not require it.
-Disabling stops the worker and cancels pending update checks; an active firmware
-write must finish before the setting can be disabled. Existing feed entries and
-saved recording audio remain available while the experiment is off.

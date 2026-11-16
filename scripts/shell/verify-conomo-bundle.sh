@@ -7,7 +7,7 @@ for required in conomo model runtime/conomo/model-manifest.json LICENSE THIRD_PA
 done
 [[ -x "${BUNDLE_DIR}/conomo" ]] || { echo 'Conomo bridge is not executable' >&2; exit 1; }
 PYTHONPATH="${BUNDLE_DIR}/runtime" "${BUNDLE_DIR}/device-runtime/bin/python3.12" -B -m conomo.models --verify "${BUNDLE_DIR}/model"
-"${BUNDLE_DIR}/device-runtime/bin/python3.12" -B -c 'import serial, numpy, onnxruntime, tokenizers'
+"${BUNDLE_DIR}/device-runtime/bin/python3.12" -B -c 'import numpy, onnxruntime, tokenizers'
 # Isolate build validation from any installed runtime or active dictation.
 CHECK_DIR="$(mktemp -d /tmp/conomo-check.XXXXXX)"
 trap 'if [[ -f "${CHECK_DIR}/pid" ]]; then kill "$(cat "${CHECK_DIR}/pid")" 2>/dev/null || true; fi; rm -rf "${CHECK_DIR}"' EXIT

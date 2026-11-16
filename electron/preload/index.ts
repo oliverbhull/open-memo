@@ -5,7 +5,6 @@ import type {
   DictationReadiness,
   DictationDelivery,
   DictationLatency,
-  DeviceSyncStatus,
   ElectronAPI,
   MemoSttError,
   MicrophoneInputState,
@@ -63,10 +62,6 @@ const electronAPI = {
     ipcRenderer.removeListener('transcription:new', transcriptionHandler);
   },
 
-  listUsbTranscripts: (): Promise<TranscriptionData[]> => {
-    return ipcRenderer.invoke('usb-transcripts:list');
-  },
-
   entries: {
     initialize: (): Promise<{ legacyImportComplete: boolean }> => (
       ipcRenderer.invoke('entries:initialize')
@@ -90,15 +85,6 @@ const electronAPI = {
       const handler = (_event: Electron.IpcRendererEvent, status: AppUpdateStatus) => callback(status);
       ipcRenderer.on('app-update:status', handler);
       return () => ipcRenderer.removeListener('app-update:status', handler);
-    },
-  },
-
-  deviceSync: {
-    getStatus: (): Promise<DeviceSyncStatus> => ipcRenderer.invoke('device-sync:get-status'),
-    onStatus: (callback: (status: DeviceSyncStatus) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, status: DeviceSyncStatus) => callback(status);
-      ipcRenderer.on('device-sync:status', handler);
-      return () => ipcRenderer.removeListener('device-sync:status', handler);
     },
   },
 
@@ -216,7 +202,6 @@ const electronAPI = {
       saveAudio: boolean;
       dictationSounds: boolean;
       experimentalEmailFormatting: boolean;
-      experimentalSupermicrophone: boolean;
       groqKeySaved: boolean;
       groqCleanupEnabled: boolean;
       vocabWords: string[];
@@ -252,7 +237,6 @@ const electronAPI = {
       return ipcRenderer.invoke('settings:setSaveAudio', enabled);
     },
     setDictationSounds: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setDictationSounds', enabled),
-    setExperimentalSupermicrophone: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setExperimentalSupermicrophone', enabled),
     setExperimentalEmailFormatting: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setExperimentalEmailFormatting', enabled),
     saveGroqApiKey: (apiKey: string): Promise<boolean> => ipcRenderer.invoke('settings:saveGroqApiKey', apiKey),
     removeGroqApiKey: (): Promise<void> => ipcRenderer.invoke('settings:removeGroqApiKey'),

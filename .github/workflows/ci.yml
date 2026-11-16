@@ -39,7 +39,7 @@ jobs:
           version: "0.7.19"
 
       - name: Install native build tools
-        run: brew install autoconf automake libtool opus pkg-config
+        run: brew install autoconf automake libtool pkg-config
 
       - name: Cache Cargo registry
         uses: actions/cache@v4
@@ -48,7 +48,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .build/dictation-target
-          key: ${{ runner.os }}-dictation-${{ hashFiles('scripts/shell/build-dictation.sh', 'sidecars/dictation/Cargo.toml', 'sidecars/dictation/Cargo.lock', 'sidecars/dictation/src/**', 'sidecars/conomo/contextual_*') }}
+          key: ${{ runner.os }}-dictation-${{ hashFiles('scripts/shell/build-dictation.sh', 'sidecars/dictation/Cargo.toml', 'sidecars/dictation/Cargo.lock', 'sidecars/dictation/src/**') }}
           restore-keys: |
             ${{ runner.os }}-dictation-
 
@@ -67,9 +67,6 @@ jobs:
       - name: Test application services and release contracts
         run: npm test
 
-      - name: Validate contextual replay manifest
-        run: npm run test:contextual-dictation -- --validate-only
-
       - name: Build unsigned app
         run: |
           npm run build:dir
@@ -80,12 +77,9 @@ jobs:
       - name: Verify packaged dictation sidecar
         run: |
           test -x dist/mac-arm64/Memo.app/Contents/Resources/dictation/memo-dictation
-          test -x dist/mac-arm64/Memo.app/Contents/Resources/dictation/memo-conomo-contextual
-          test -x dist/mac-arm64/Memo.app/Contents/Resources/dictation/run-contextual-conomo
-          test -f dist/mac-arm64/Memo.app/Contents/Resources/dictation/contextual-worker.py
 
-      - name: Verify packaged conomo backend
-        run: bash scripts/shell/verify-conomo-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/conomo
+      - name: Verify packaged speech and punctuation
+        run: bash scripts/shell/verify-packaged-model-workers.sh dist/mac-arm64/Memo.app
 
       - name: Verify retired cleanup model is absent
         run: test ! -e dist/mac-arm64/Memo.app/Contents/Resources/cleanup

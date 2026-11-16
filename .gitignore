@@ -111,9 +111,6 @@ private_keys/
 tests/
 !tests/
 tests/*
-!tests/contextual-dictation/
-!tests/contextual-dictation/fixtures.json
-!tests/contextual-dictation/replay.py
 docs/*
 !docs/README.md
 !docs/development.md

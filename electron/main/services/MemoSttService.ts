@@ -8,7 +8,7 @@ import fs from 'fs';
 import { app } from 'electron';
 import { logger } from '../utils/logger';
 import { loadSettings, store } from './SettingsService';
-import { resolveModelPackPath } from './ModelPackService';
+import { resolveModelPackPath, verifyBundledWindowsConomo } from './ModelPackService';
 import { resolveTranscriptionText } from '../../shared/transcription';
 import { normalizeTranscriptionText } from './textProcessing';
 import type { DictationReadiness, TranscriptionData as SharedTranscriptionData } from '../../shared/electron-api';
@@ -217,7 +217,7 @@ export class MemoSttService extends EventEmitter {
     const settings = loadSettings();
     const boostWords = asrVocabulary(settings.vocabWords);
 
-    const vocab = { boostWords, voiceCommandsEnabled: false };
+    const vocab = { boostWords };
     logger.info(`[MemoSttService] Updated vocabulary: ${boostWords.length} boost words`);
 
     if (this.status === 'running') {
@@ -229,6 +229,14 @@ export class MemoSttService extends EventEmitter {
 
   async start(): Promise<void> {
     if (this.suspended) return;
+    let windowsConomoRoot: string | null = null;
+    if (process.platform === 'win32' && app.isPackaged) {
+      try {
+        windowsConomoRoot = await verifyBundledWindowsConomo();
+      } catch (error) {
+        logger.warn('[MemoSttService] Conomo pack verification failed:', error);
+      }
+    }
     if (this.stopPromise) {
       logger.debug(`[MemoSttService #${this.instanceId}] Waiting for the previous process to exit`);
       await this.stopPromise;
@@ -339,7 +347,8 @@ export class MemoSttService extends EventEmitter {
         MEMO_HANDS_FREE: handsFreeMode ? '1' : '0',
       };
       if (process.platform === 'win32') {
-        configureWindowsSpeech(env, settings.asrModel);
+        const conomoRoot = app.isPackaged ? windowsConomoRoot : resolveModelPackPath('conomo');
+        configureWindowsSpeech(env, settings.asrModel, conomoRoot);
       } else {
         configureConomo(env, resolveModelPackPath('conomo'));
         logger.info(`[MemoSttService #${this.instanceId}] ASR runtime: Conomo`);
@@ -564,10 +573,6 @@ export class MemoSttService extends EventEmitter {
   async suspend(): Promise<void> {
     this.suspended = true;
     await this.stop();
-  }
-
-  resume(): void {
-    this.suspended = false;
   }
 
   getStatus(): MemoSttStatus {

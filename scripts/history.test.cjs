@@ -86,6 +86,43 @@ test('reconciled supermicrophone recordings retain chronological feed order', as
   assert.deepEqual(service.getRecentEntries().map(entry => entry.id), ['new-desktop', 'old-device']);
 });
 
+test('archived recordings continue to play from both historical libraries', {
+  skip: process.platform !== 'darwin',
+}, async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'memo-archived-audio-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { readLegacyRecordingAudio } = load('electron/main/services/legacyRecordingAudio.ts', {
+    electron: { app: { getPath: () => directory } },
+    '../utils/logger': { logger: { warn() {} } },
+  });
+
+  const databasePath = path.join(directory, 'memo.sqlite3');
+  assert.equal(await readLegacyRecordingAudio(`memo-device-${'a'.repeat(64)}`), null);
+  assert.equal(fs.existsSync(databasePath), false, 'playback must never create a database');
+  const { DatabaseSync } = require('node:sqlite');
+  const database = new DatabaseSync(databasePath);
+  t.after(() => database.close());
+  database.exec('CREATE TABLE recordings(source_sha256, classification, audio_path, ingested_at)');
+  const insert = database.prepare("INSERT INTO recordings VALUES (?, 'audio', ?, '2026-01-01')");
+  for (const [index, root] of ['audio', 'device-recordings'].entries()) {
+    const archive = path.join(directory, root, 'saved-recording');
+    fs.mkdirSync(archive, { recursive: true });
+    const audio = Buffer.from(`saved PCM WAV ${index}`);
+    fs.writeFileSync(path.join(archive, 'audio.wav'), audio);
+    const sha = String(index).repeat(64);
+    insert.run(sha, path.join(archive, 'audio.wav'));
+    assert.deepEqual(await readLegacyRecordingAudio(`memo-device-${sha}`), audio);
+  }
+
+  const outside = path.join(directory, 'audio.wav');
+  fs.writeFileSync(outside, 'outside both libraries');
+  const link = path.join(directory, 'audio', 'link', 'audio.wav');
+  fs.mkdirSync(path.dirname(link));
+  fs.symlinkSync(outside, link);
+  insert.run('e'.repeat(64), link);
+  assert.equal(await readLegacyRecordingAudio(`memo-device-${'e'.repeat(64)}`), null);
+});
+
 test('database history is ordered by creation time rather than later updates', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'memo-order-'));
   const databases = [];

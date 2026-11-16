@@ -8,7 +8,7 @@ English dictation is the current model scope.
 
 ## What the installer includes
 
-- Resident, CPU-only Nemotron streaming, selected on a fresh install.
+- Conomo with resident, CPU-only Nemotron streaming, selected on a fresh install.
 - Resident local punctuation/capitalization with an independent Python runtime.
 - Whisper Base English q5_1 and its resident worker as automatic failure fallback
   and an explicit Settings choice. A saved Base preference stays selected.
@@ -26,20 +26,19 @@ uses an encrypted API key and sends transcript text after explicit opt-in in
 Settings → Writing. Experimental destination-based email formatting uses macOS
 Accessibility.
 
-Memo recorder/Bluetooth sync, browser URL/reply capture, and automatic updates are
-not currently supported on Windows. Browser window titles and application icons
-are supported. Elevated/protected targets can reject normal-user input injection;
+Windows supports browser window titles and application icons.
+Browser URL/reply capture and automatic app updates are macOS features. Elevated/protected targets can reject normal-user input injection;
 the clipboard remains available. Installing a newer Windows version preserves
 settings and history.
 
 ## Platform boundaries
 
 The Windows builder config explicitly replaces the Mac resource list and Mac
-afterPack hook. Windows includes only dictation, Base, Nemotron, and PnC.
+afterPack hook. Windows includes dictation, Whisper Base, Conomo, and PnC.
 windowsRuntime.ts selects these resources only in Windows launch paths.
-Native Windows foreground APIs are behind cfg(windows). Mac still uses Conomo;
-its build scripts, signing/notarization, release workflow, download URL, and updater
-metadata are unchanged.
+Native Windows foreground APIs are behind cfg(windows). Conomo packages the native
+NeMo-Speech.cpp worker and pinned GGUF model on Windows, and the local ONNX
+service and pinned ONNX model on macOS.
 
 Shared renderer, delivery events, history service, and timing plumbing also changed.
 These are shared bug fixes; not every edit is Windows-only. SQLite uses Node's

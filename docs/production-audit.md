@@ -14,8 +14,7 @@ open. No version bump, commit, push, tag, publication or app restart was perform
 
 Reviewed the dirty working tree and committed sync changes on
 `codex/fix-reliable-device-sync-feed`, base `060526a` (package `0.8.10`). Three
-subagents reviewed cleanup/native speech, sync/firmware ownership, and releases/
-updates; follow-up passes checked renderer persistence and shutdown integration.
+subagents reviewed cleanup/native speech, recorder ownership, and releases/updates; follow-up passes checked renderer persistence and shutdown integration.
 The coordinator reviewed delivery, settings, privacy, repository layout and tests.
 The preexisting `WindowService.ts` edits were preserved.
 
@@ -27,9 +26,6 @@ The preexisting `WindowService.ts` edits were preserved.
 | LFM transport | Startup, frames, vocabulary and technical output are bounded; expired output cannot win a timeout; pipe failures terminate the failed worker. |
 | Native recognition | Startup failure leaked a child, and timed-out work could supply a stale FINAL to the next utterance. Failed workers are now killed/reaped and invalidated. |
 | Worker ownership | Detached native/sync workers now monitor their owner. An owner-loss guard can terminate only the worker's own isolated group, without deleting the lock inode. |
-| Sync races | Concurrent starts, old worker output, delayed transcription grants and failed-spawn closure can no longer corrupt replacement ownership. Lock conflicts retry. |
-| Sync durability | Batch manifests are durable before completion; missing manifests on already-complete batches can be repaired. |
-| Firmware | Flashing holds the same lock as sync before touching hardware; contention fails safely. Discovery paginates mixed app/firmware release history with a finite bound. |
 | History | Main saves delivered text, original recognition, cleanup evidence and optional audio independently of renderer availability. A UI failure cannot delete audio belonging to an already-persisted entry. Tombstones are not reinserted. |
 | Delivery | Complete delivery jobs are ordered. Icon decoration no longer invokes synchronous AppleScript before history persistence. Shutdown skips new paste/cleanup work and drains accepted output. |
 | Shutdown | Quit/update waits for child stream closure and queued history. A suspended service cannot be resumed by a late sync callback; stale stream events cannot affect replacements. |
@@ -72,7 +68,7 @@ from the updated lockfile. It is a source build, not an installed-app test.
 | Whitespace and Rust formatting | Passed |
 
 Tests include real temporary SQLite reopen/import, real subprocess/flock
-ownership checks, signed synthetic firmware fixtures, corrupt/missing release
+ownership checks, corrupt/missing release
 artifacts, delayed worker output and shutdown stream-drain cases. Native Objective-C
 macro `cargo-clippy` cfg warnings remain; compilation/tests succeed.
 
@@ -89,13 +85,13 @@ perform an upgrade, and does not validate this uncommitted tree.
    native signing and a portable provisioning/build path. Do not remove the
    packaged gate merely to make the option appear enabled.
 2. **Development recognition still depends on local assets.** `npm run dev` uses
-   the contextual Granite prototype and machine-specific setup. An isolated source
+   a contextual ASR prototype and machine-specific setup. An isolated source
    build does not prove that command works on a fresh machine. CI's Conomo fixture
    verifies packaging shape, not recognition.
 3. **End-user validation is outstanding.** Test a signed download in Applications
    on a supported clean machine: permissions, both writing modes, offline use,
-   history, device sync, relaunch and a real previous-version automatic upgrade
-   with interrupted download/install recovery. Hardware flashing was not tested.
+   history, relaunch and a real previous-version automatic upgrade
+   with interrupted download/install recovery.
 4. **Quality is not established by transport tests.** Run locked audio-grounded
    evaluation of recognition and cleanup separately, including names, negation,
    corrections, amounts, email, questions and long speech; measure stop-to-paste

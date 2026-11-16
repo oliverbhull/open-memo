@@ -9,5 +9,4 @@ export function configureConomo(env: NodeJS.ProcessEnv, runtimeRoot: string): vo
   env.MEMO_ASR_WORKER = worker;
   // Leave routing to the bridge: bundled workers select a versioned private
   // socket; external workers select their shared default. Preserve explicit overrides.
-  env.MEMO_CONTEXTUAL_VOCAB = '1';
 }

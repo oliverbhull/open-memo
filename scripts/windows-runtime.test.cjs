@@ -52,7 +52,7 @@ test('local profile selects base; explicit model override takes precedence and i
 });
 test('Windows installer excludes every Apple-only model and helper', () => {
   const config = require('../config/electron-builder.windows.cjs');
-  assert.deepEqual(config.extraResources.map(r => r.to), ['app-icon.ico', 'dictation', 'whisper', 'nemotron', 'pnc']);
+  assert.deepEqual(config.extraResources.map(r => r.to), ['app-icon.ico', 'dictation', 'whisper', 'conomo', 'pnc']);
   assert.ok(config.extraResources.find(r => r.to === 'whisper').filter.includes('memo-whisper-worker.exe'));
   assert.equal(config.afterPack, null);
   assert.equal(config.nsis.perMachine, false);
@@ -64,8 +64,17 @@ test('Nemotron selection enables streaming and retains bundled Base fallback', (
   api.configureWindowsSpeech(env, 'nemotron-streaming');
   assert.equal(env.MEMO_ASR_BACKEND, 'nemotron');
   assert.equal(env.STREAMING_TRANSCRIBE, '1');
-  assert.equal(path.basename(env.MEMO_NEMOTRON_WORKER), 'memo-nemotron-worker.exe');
-  assert.equal(path.basename(env.MEMO_NEMOTRON_MODEL), 'nemotron-en-q8.gguf');
+  assert.equal(env.MEMO_NEMOTRON_WORKER, path.normalize('/installed/resources/conomo/memo-nemotron-worker.exe'));
+  assert.equal(env.MEMO_NEMOTRON_MODEL, path.normalize('/installed/resources/conomo/nemotron-en-q8.gguf'));
+  assert.equal(path.basename(env.MEMO_WHISPER_MODEL), 'ggml-base.en-q5_1.bin');
+});
+
+test('an unverified Conomo pack uses native fallback even with inherited worker paths', () => {
+  const env = { MEMO_NEMOTRON_WORKER: 'old-worker.exe', MEMO_NEMOTRON_MODEL: 'old-model.gguf' };
+  runtime(true).configureWindowsSpeech(env, 'nemotron-streaming', null);
+  assert.equal(env.MEMO_ASR_BACKEND, 'nemotron');
+  assert.equal(env.MEMO_NEMOTRON_WORKER, undefined);
+  assert.equal(env.MEMO_NEMOTRON_MODEL, undefined);
   assert.equal(path.basename(env.MEMO_WHISPER_MODEL), 'ggml-base.en-q5_1.bin');
 });
 

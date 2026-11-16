@@ -92,17 +92,6 @@ impl TranscriptionEngine {
         }
     }
 
-    pub fn set_prompt(&mut self, prompt: Option<String>) {
-        let Self::Worker(engine) = self else {
-            return;
-        };
-        if env::var("MEMO_CONTEXTUAL_VOCAB").as_deref() == Ok("1") {
-            if let Err(error) = engine.set_context(prompt) {
-                eprintln!("contextual vocabulary update failed: {error}");
-            }
-        }
-    }
-
     pub fn begin_live_stream(&mut self) -> Result<()> {
         match self {
             Self::Worker(engine) => engine.begin_live_stream(),
@@ -227,13 +216,6 @@ impl WorkerEngine {
         self.send_message(json!({ "type": "start" }))?;
         self.session_active = true;
         Ok(())
-    }
-
-    fn set_context(&mut self, prompt: Option<String>) -> Result<()> {
-        self.send_message(json!({
-            "type": "context",
-            "prompt": prompt,
-        }))
     }
 
     fn feed_live_audio(&mut self, samples: &[i16]) -> Result<()> {

@@ -21,7 +21,6 @@ export interface Settings {
   saveAudio: boolean;
   dictationSounds: boolean;
   experimentalEmailFormatting: boolean;
-  experimentalSupermicrophone: boolean;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
 }
@@ -60,7 +59,6 @@ export function loadSettings(): Settings {
     handsFreeMode: store.get('handsFreeMode', false),
     saveAudio: store.get('saveAudio', false),
     dictationSounds: store.get('dictationSounds', true) !== false,
-    experimentalSupermicrophone: store.get('experimentalSupermicrophone', false) === true,
     experimentalEmailFormatting: store.get('experimentalEmailFormatting', false) === true,
     vocabWords: stringArray(store.get('vocabWords')),
     phraseReplacements: clampPhraseReplacementRulesFromInput(store.get('phraseReplacements')),
@@ -76,7 +74,6 @@ export function saveSettings(next: Settings): void {
     handsFreeMode: next.handsFreeMode === true,
     saveAudio: next.saveAudio === true,
     dictationSounds: next.dictationSounds !== false,
-    experimentalSupermicrophone: next.experimentalSupermicrophone === true,
     experimentalEmailFormatting: next.experimentalEmailFormatting === true,
     vocabWords: stringArray(next.vocabWords),
     phraseReplacements: clampPhraseReplacementRulesFromInput(next.phraseReplacements),
@@ -87,7 +84,6 @@ export function saveSettings(next: Settings): void {
   store.set('handsFreeMode', settings.handsFreeMode);
   store.set('saveAudio', settings.saveAudio);
   store.set('dictationSounds', settings.dictationSounds);
-  store.set('experimentalSupermicrophone', settings.experimentalSupermicrophone);
   store.set('experimentalEmailFormatting', settings.experimentalEmailFormatting);
   store.set('vocabWords', settings.vocabWords);
   store.set('phraseReplacements', settings.phraseReplacements);

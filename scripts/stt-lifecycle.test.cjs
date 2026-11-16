@@ -26,7 +26,7 @@ function harness(vocabWords = []) {
     setTimeout: (fn, ms) => setTimeout(fn, ms === 500 ? 0 : ms), clearTimeout,
     require: name => {
       if (name === 'child_process') return { spawn, spawnSync: () => ({ status: 0 }) };
-      if (name === 'fs') return { existsSync: () => true, readdirSync: () => ['GraniteSpeech.mlmodelc'] };
+      if (name === 'fs') return { existsSync: () => true };
       if (name === 'electron') return { app: { isPackaged: false } };
       if (name === '../utils/logger') return { logger };
       if (name === './SettingsService') return { loadSettings: () => ({ vocabWords }), store: { get() {} } };
