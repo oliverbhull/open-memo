@@ -55,7 +55,7 @@ test('Granite final does not mark an asynchronous cleanup as completed', async (
   const loaded = new Module(entry, module), original = Module._load;
   Module._load = (name, ...args) => {
     if (name === 'electron') return { app: { isPackaged: false } };
-    if (name === './SettingsService') return { loadSettings: () => ({ writingMode: 'clean', saveAudio: false, vocabWords: [] }) };
+    if (name === './SettingsService') return { loadSettings: () => ({ saveAudio: false, vocabWords: [] }) };
     if (name === './AsrModelService') return {};
     return original(name, ...args);
   };

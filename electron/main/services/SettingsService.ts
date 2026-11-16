@@ -10,7 +10,6 @@ import { DEFAULT_RECORDING_HOTKEY, normalizeRecordingHotkey } from '../../shared
 import type {
   PhraseReplacementRule,
   AsrModelId,
-  WritingMode,
 } from '../../shared/electron-api';
 
 export type { PhraseReplacementRule };
@@ -21,7 +20,6 @@ export interface Settings {
   handsFreeMode: boolean;
   saveAudio: boolean;
   dictationSounds: boolean;
-  writingMode: WritingMode;
   experimentalEmailFormatting: boolean;
   experimentalSupermicrophone: boolean;
   vocabWords: string[];
@@ -64,7 +62,6 @@ export function loadSettings(): Settings {
     dictationSounds: store.get('dictationSounds', true) !== false,
     experimentalSupermicrophone: store.get('experimentalSupermicrophone', false) === true,
     experimentalEmailFormatting: store.get('experimentalEmailFormatting', false) === true,
-    writingMode: process.platform !== 'win32' && store.get('writingMode') === 'clean' ? 'clean' : 'as-spoken',
     vocabWords: stringArray(store.get('vocabWords')),
     phraseReplacements: clampPhraseReplacementRulesFromInput(store.get('phraseReplacements')),
   };
@@ -81,7 +78,6 @@ export function saveSettings(next: Settings): void {
     dictationSounds: next.dictationSounds !== false,
     experimentalSupermicrophone: next.experimentalSupermicrophone === true,
     experimentalEmailFormatting: next.experimentalEmailFormatting === true,
-    writingMode: process.platform !== 'win32' && next.writingMode === 'clean' ? 'clean' : 'as-spoken',
     vocabWords: stringArray(next.vocabWords),
     phraseReplacements: clampPhraseReplacementRulesFromInput(next.phraseReplacements),
   };
@@ -91,7 +87,6 @@ export function saveSettings(next: Settings): void {
   store.set('handsFreeMode', settings.handsFreeMode);
   store.set('saveAudio', settings.saveAudio);
   store.set('dictationSounds', settings.dictationSounds);
-  store.set('writingMode', settings.writingMode);
   store.set('experimentalSupermicrophone', settings.experimentalSupermicrophone);
   store.set('experimentalEmailFormatting', settings.experimentalEmailFormatting);
   store.set('vocabWords', settings.vocabWords);
@@ -135,7 +130,6 @@ function migrateSettingsJson(raw: Record<string, unknown>): void {
       : current.sayEnterToPressEnter,
     handsFreeMode: typeof raw.handsFreeMode === 'boolean' ? raw.handsFreeMode : current.handsFreeMode,
     saveAudio: typeof raw.saveAudio === 'boolean' ? raw.saveAudio : current.saveAudio,
-    writingMode: raw.writingMode === 'clean' ? 'clean' : current.writingMode,
     vocabWords: Array.isArray(raw.vocabWords) ? stringArray(raw.vocabWords) : current.vocabWords,
     phraseReplacements: Array.isArray(raw.phraseReplacements)
       ? clampPhraseReplacementRulesFromInput(raw.phraseReplacements)

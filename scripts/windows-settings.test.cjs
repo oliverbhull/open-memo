@@ -31,9 +31,6 @@ test('fresh Windows uses Nemotron; explicit Base survives unrelated settings sav
   assert.equal(existing.loadSettings().asrModel, 'whisper-base.en-q5_1');
   assert.equal(existing.loadSettings().saveAudio, true);
 });
-test('Windows preference never changes Mac ASR or enables Windows cleanup', () => {
+test('Windows preference never changes Mac ASR', () => {
   assert.equal(settings('darwin', 'nemotron-streaming').loadSettings().asrModel, 'conomo');
-  const windows = settings('win32');
-  windows.store.set('writingMode', 'clean');
-  assert.equal(windows.loadSettings().writingMode, 'as-spoken');
 });

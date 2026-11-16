@@ -1,4 +1,4 @@
-import type { AsrModelId, PhraseReplacementRule, ToastData, WritingMode } from '../../shared/electron-api';
+import type { AsrModelId, PhraseReplacementRule, ToastData } from '../../shared/electron-api';
 
 export interface StoreSchema {
   memoUid: string | null;
@@ -13,9 +13,10 @@ export interface StoreSchema {
   handsFreeMode: boolean;
   saveAudio: boolean;
   dictationSounds: boolean;
-  writingMode: WritingMode;
   experimentalEmailFormatting: boolean;
   experimentalSupermicrophone: boolean;
+  groqTextCleanupOptIn: boolean;
+  groqApiKeyEncrypted: string | null;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
   userName: string | null;
@@ -23,7 +24,6 @@ export interface StoreSchema {
   hotkey: string | null;
   lockHotkey: string | null;
   _migrationCompleted: boolean;
-  _optionalCleanupMigrationCompleted: boolean;
 }
 
 export const storeDefaults: StoreSchema = {
@@ -39,9 +39,10 @@ export const storeDefaults: StoreSchema = {
   handsFreeMode: false,
   saveAudio: false,
   dictationSounds: true,
-  writingMode: 'as-spoken',
   experimentalEmailFormatting: false,
   experimentalSupermicrophone: false,
+  groqTextCleanupOptIn: false,
+  groqApiKeyEncrypted: null,
   vocabWords: [],
   phraseReplacements: [],
   userName: null,
@@ -49,7 +50,6 @@ export const storeDefaults: StoreSchema = {
   hotkey: null,
   lockHotkey: null,
   _migrationCompleted: false,
-  _optionalCleanupMigrationCompleted: false,
 };
 
 export type { ToastData };

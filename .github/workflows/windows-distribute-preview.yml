@@ -73,7 +73,7 @@ jobs:
 
           **This preview is unsigned.** Windows may display an unknown publisher or SmartScreen warning. Review the source and SHA-256 checksum before deciding whether to run it. Code signing and clean-machine release acceptance are not claimed for this preview.
 
-          Hold Right Ctrl to dictate. Right Ctrl + Left Shift locks recording. Shortcuts can be changed in Settings. Cleaned mode, Memo recorder sync and automatic app updates are unavailable on Windows. Install a newer installer to update; settings and history are retained.
+          Hold Right Ctrl to dictate. Right Ctrl + Left Shift locks recording. Shortcuts can be changed in Settings. Memo recorder sync and automatic app updates are unavailable on Windows. Install a newer installer to update; settings and history are retained.
 
           The macOS stable release and automatic updater are independent of this preview.
           NOTES
