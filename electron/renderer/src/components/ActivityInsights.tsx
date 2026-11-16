@@ -7,6 +7,14 @@ import { AppIcon } from './AppIcon';
 import { groupApplicationUsage, type AppUsage } from '../utils/applicationUsage';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const ASSUMED_TYPING_WORDS_PER_MINUTE = 40;
+const hoursFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+
+function ActivityTime({ minutes }: { minutes: number }) {
+  const showHours = minutes > 100;
+  const value = showHours ? hoursFormatter.format(minutes / 60) : minutes.toLocaleString();
+  return <><strong>{value}</strong> {showHours ? 'hr' : 'min'}</>;
+}
 
 function countWords(text: string): number {
   const normalized = text.trim();
@@ -58,6 +66,8 @@ export const ActivityInsights: React.FC = () => {
     const appRecords: AppUsage[] = [];
     let totalWords = 0;
     let speakingSeconds = 0;
+    let timedWords = 0;
+    let timedSpeakingSeconds = 0;
 
     entries.forEach((entry) => {
       const words = countWords(entry.text);
@@ -67,7 +77,12 @@ export const ActivityInsights: React.FC = () => {
       if (row) row[hour] = (row[hour] ?? 0) + words;
 
       totalWords += words;
-      speakingSeconds += audioFor(entry)?.duration ?? 0;
+      const duration = audioFor(entry)?.duration ?? 0;
+      speakingSeconds += duration;
+      if (words > 0 && duration > 0) {
+        timedWords += words;
+        timedSpeakingSeconds += duration;
+      }
 
       const app = appContextFor(entry);
       if (!app) return;
@@ -86,26 +101,31 @@ export const ActivityInsights: React.FC = () => {
     const heatCutoffs = [0.25, 0.5, 0.75].map((quantile) => (
       activeHourCounts[Math.floor((activeHourCounts.length - 1) * quantile)] ?? 0
     ));
-    return { heat, heatCutoffs, apps, appWords, totalWords, speakingSeconds };
+    const estimatedMinutesSaved = timedWords > 0
+      ? Math.max(0, Math.round(timedWords / ASSUMED_TYPING_WORDS_PER_MINUTE - timedSpeakingSeconds / 60))
+      : null;
+    return { heat, heatCutoffs, apps, appWords, totalWords, speakingSeconds, estimatedMinutesSaved };
   }, [entries]);
 
   const speakingMinutes = Math.round(activity.speakingSeconds / 60);
 
   return (
     <div className="activity-insights" style={{ '--activity-primary': primary } as React.CSSProperties}>
-      <div className="activity-insights__header">
-        <div>
-          <strong>Words dictated</strong>
-          <span>All time</span>
-        </div>
-        <div className="activity-insights__total">
-          <strong>{loading ? '…' : loadError ? '—' : activity.totalWords.toLocaleString()}</strong>
-          <span>words</span>
-        </div>
-      </div>
-
       {loadError && <p role="status" className="settings-error">Activity could not be loaded. Reopen settings to try again.</p>}
-      <div className="activity-insights__subhead"><span>Weekday × hour</span></div>
+      <div className="activity-insights__stats">
+        <span><strong className="activity-insights__word-count">{loading ? '…' : loadError ? '—' : activity.totalWords.toLocaleString()}</strong> words</span>
+        <span><strong>{loading ? '…' : loadError ? '—' : entries.length.toLocaleString()}</strong> moments</span>
+        {speakingMinutes > 0 ? (
+          <span><ActivityTime minutes={speakingMinutes} /> speaking</span>
+        ) : (
+          <span>Calculated locally</span>
+        )}
+        {activity.estimatedMinutesSaved !== null && (
+          <span title={`All-time words from dictations with a recorded duration, at ${ASSUMED_TYPING_WORDS_PER_MINUTE} words per minute, minus their recording time.`}>
+            <ActivityTime minutes={activity.estimatedMinutesSaved} /> typing saved
+          </span>
+        )}
+      </div>
       <div className="activity-insights__hours" aria-hidden="true">
         <span />
         {[0, 6, 12, 18].map((hour) => <span key={hour} style={{ gridColumn: hour + 2 }}>{hour === 0 ? '12am' : hour === 6 ? '6am' : hour === 12 ? '12pm' : '6pm'}</span>)}
@@ -142,10 +162,6 @@ export const ActivityInsights: React.FC = () => {
           })}
         </div>
       </details>
-      <div className="activity-insights__footer">
-        <span>{loading ? '…' : loadError ? '—' : entries.length.toLocaleString()} voice moments</span>
-        <span>{speakingMinutes > 0 ? `${speakingMinutes.toLocaleString()} min speaking` : 'Calculated locally'}</span>
-      </div>
     </div>
   );
 };

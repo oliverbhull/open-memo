@@ -40,10 +40,6 @@
   padding: 20px;
 }
 .settings-dashboard .activity-insights { width: 100%; margin: 0; }
-.settings-dashboard .activity-insights__header { align-items: center; }
-.settings-dashboard .activity-insights__header > div:first-child strong { font-size: 16px; font-weight: 500; }
-.settings-dashboard .activity-insights__header span { color: var(--settings-muted); font-size: 10px; margin-top: 3px; }
-.settings-dashboard .activity-insights__total strong { font-size: 22px; font-weight: 500; }
 .settings-dashboard .activity-insights__hours { margin-top: 18px; color: var(--settings-muted); }
 .settings-dashboard .activity-insights__heatmap { row-gap: 3px; column-gap: 3px; }
 .settings-dashboard .activity-insights__hours { column-gap: 3px; }
@@ -57,14 +53,10 @@
 .settings-dashboard .activity-insights__cell:hover { outline: 1px solid #fff; outline-offset: 1px; }
 .activity-insights__legend { display: flex; gap: 4px; justify-content: flex-end; align-items: center; font-size: 9px; color: var(--settings-muted); margin-top: 8px; }
 .activity-insights__legend i { width: 8px !important; height: 8px; }
-.settings-dashboard .activity-insights__subhead { margin-top: 14px; }
-.settings-dashboard .activity-insights__subhead span,
-.settings-dashboard .activity-insights__footer,
 .settings-dashboard .activity-insights__empty,
 .settings-dashboard .activity-insights__app-value { color: var(--settings-muted); }
 .settings-dashboard .activity-insights__apps { gap: 9px; }
 .settings-dashboard .activity-insights__app { grid-template-columns: 24px minmax(68px, 1fr) minmax(0, 1fr) 30px; }
-.settings-dashboard .activity-insights__footer { margin-top: 12px; }
 .settings-export-actions { display: flex; justify-content: flex-end; border-top: 1px solid #ffffff12; margin-top: 12px; padding-top: 10px; }
 .settings-grid-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0 0 10px; }
 .settings-grid-heading h2 { font-size: 14px; font-weight: 500; }
@@ -177,8 +169,6 @@
   .settings-nav-item span { display: none; }
   .settings-dashboard .settings-content { padding: 20px 16px 14px; }
   .settings-activity-panel { padding: 14px; }
-  .settings-dashboard .activity-insights__header { align-items: flex-start; gap: 8px; }
-  .settings-dashboard .activity-insights__total strong { font-size: 20px; }
   .settings-vocab-form { flex-wrap: wrap; }
   .settings-vocab-form input { flex-basis: 100%; }
   .settings-snippet-row { padding: 7px 8px; gap: 4px; }
@@ -196,12 +186,10 @@
   .settings-grid-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
   .settings-export__dates { grid-template-columns: 1fr; }
   .settings-download { align-items: flex-start; flex-direction: column; gap: 5px; }
-  .settings-dashboard .activity-insights__header { flex-wrap: wrap; }
   .settings-dashboard .activity-insights__app { grid-template-columns: 20px minmax(0, 1fr) 25px; gap: 5px; }
   .settings-dashboard .activity-insights__app-track { display: none; }
   .activity-insights__applications summary { flex-wrap: wrap; gap: 5px; }
   .activity-insights__applications summary span { flex-basis: 100%; order: 1; }
-  .settings-dashboard .activity-insights__footer { flex-wrap: wrap; }
 }
 @media (prefers-reduced-motion: reduce) {
   .settings-tile, .settings-switch::after { transition: none; }
