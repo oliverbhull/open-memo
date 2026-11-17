@@ -7,7 +7,6 @@ import { logger } from '../utils/logger';
 import { MacUpdateInstaller, type MacUpdateInstallerLike, type PreparedMacUpdate } from './MacUpdateInstaller';
 import { pruneUpdaterCache } from './UpdaterCache';
 
-const FIRST_CHECK_DELAY_MS = 15_000;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
 export class AppUpdateService {
@@ -15,7 +14,6 @@ export class AppUpdateService {
   private availableUpdate: { version: string; bytes?: number } | null = null;
   private readonly updater: AppUpdater;
   private readonly getMainWindow: () => BrowserWindow | null;
-  private firstCheckTimer: NodeJS.Timeout | null = null;
   private intervalTimer: NodeJS.Timeout | null = null;
   private manualCheck = false;
   private checking = false;
@@ -64,27 +62,29 @@ export class AppUpdateService {
   }
 
   start(): void {
-    if (process.platform === 'win32' || !app.isPackaged || this.firstCheckTimer || this.intervalTimer) return;
+    if (process.platform === 'win32' || !app.isPackaged || this.intervalTimer) return;
+
+    if (process.argv.includes('--memo-update-failed')) {
+      void this.showMessage({
+        type: 'warning',
+        title: 'Memo Updates',
+        message: 'Memo reopened the previous version because the update could not be installed.',
+        detail: 'Try again from Applications, or download the latest installer from GitHub.',
+      }).catch((error) => logger.warn('[AppUpdateService] Could not show update failure:', error));
+    }
 
     this.cacheMaintenance = pruneUpdaterCache(
       path.join(os.homedir(), 'Library', 'Caches', 'open-memo-updater'),
       app.getVersion(),
     ).catch((error) => logger.warn('[AppUpdateService] Could not prune old update files:', error));
 
-    this.firstCheckTimer = setTimeout(() => {
-      this.firstCheckTimer = null;
-      void this.check(false);
-    }, FIRST_CHECK_DELAY_MS);
-    this.firstCheckTimer.unref();
-
     this.intervalTimer = setInterval(() => void this.check(false), CHECK_INTERVAL_MS);
     this.intervalTimer.unref();
+    void this.check(false);
   }
 
   stop(): void {
-    if (this.firstCheckTimer) clearTimeout(this.firstCheckTimer);
     if (this.intervalTimer) clearInterval(this.intervalTimer);
-    this.firstCheckTimer = null;
     this.intervalTimer = null;
   }
 
@@ -225,7 +225,7 @@ export class AppUpdateService {
         if (!update || update.version !== version) throw new Error('The downloaded update is no longer available.');
         prepared = await this.installer.prepare(update.file, version);
         await this.beforeInstall();
-        prepared.install();
+        await prepared.install();
       }
     } catch (error) {
       await prepared?.discard?.().catch((cleanupError) => {
@@ -236,7 +236,7 @@ export class AppUpdateService {
         type: 'warning',
         title: 'Memo Updates',
         message: 'Memo could not restart to install the update.',
-        detail: 'Quit and reopen Memo to try again.',
+        detail: 'Open Memo from Applications and try again, or download the latest installer from GitHub.',
       });
     } finally {
       this.updatePromptOpen = false;
