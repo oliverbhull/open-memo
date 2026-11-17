@@ -4,7 +4,7 @@ const { EventEmitter } = require('node:events');
 const { buildSync } = require('esbuild');
 const vm = require('node:vm');
 const compiled = buildSync({ entryPoints: ['electron/main/services/AppUpdateService.ts'], bundle: true, platform: 'node', format: 'cjs', write: false, external: ['electron', 'electron-updater', '../utils/logger', './MacUpdateInstaller'] }).outputFiles[0].text;
-function service(beforeInstall, installer, dialogResponse = 0, platform = 'darwin') {
+function service(beforeInstall, installer, dialogResponse = 0, platform = 'darwin', argv = []) {
   const updater = new EventEmitter();
   let downloads = 0;
   updater.downloadUpdate = async () => { downloads++; return []; };
@@ -14,11 +14,12 @@ function service(beforeInstall, installer, dialogResponse = 0, platform = 'darwi
   };
   const messages = [];
   const module = { exports: {} };
-  vm.runInNewContext(compiled, { process: { platform }, module, exports: module.exports, setTimeout, setInterval, clearTimeout, clearInterval, require: name => {
+  vm.runInNewContext(compiled, { process: { platform, argv }, module, exports: module.exports, setInterval, clearInterval, require: name => {
     if (name === 'electron') return { app: { isPackaged: true, getVersion: () => '1.0.0' }, dialog: { showMessageBox: async options => { messages.push(options); return { response: dialogResponse }; } } };
     if (name === 'electron-updater') return { autoUpdater: updater };
     if (name === '../utils/logger') return { logger: { info() {}, warn() {} } };
     if (name === './MacUpdateInstaller') return { MacUpdateInstaller: class {} };
+    if (name === 'node:os') return { homedir: () => '/nonexistent-memo-test-home' };
     if (name.startsWith('node:')) return require(name);
     throw new Error(name);
   } });
@@ -44,6 +45,26 @@ test('automatic download errors are caught without a dialog', async () => {
   updater.checkForUpdates = async () => ({ downloadPromise: Promise.reject(new Error('offline')) });
   await instance.check(false);
   assert.equal(messages.length, 0);
+});
+test('starting Memo checks for updates automatically and publishes availability', async (t) => {
+  const { instance, updater, messages } = service();
+  t.after(() => instance.stop());
+  updater.checkForUpdates = async () => {
+    updater.emit('update-available', { version: '2.0.0', files: [] });
+    return null;
+  };
+  instance.start();
+  await instance.cacheMaintenance;
+  assert.equal(instance.getStatus().state, 'available');
+  assert.equal(messages.length, 0);
+});
+test('relaunch from a failed installation explains why the old version is open', async (t) => {
+  const { instance, updater, messages } = service(undefined, undefined, 0, 'darwin', ['--memo-update-failed']);
+  t.after(() => instance.stop());
+  updater.checkForUpdates = async () => null;
+  instance.start();
+  assert.match(messages[0].message, /reopened the previous version/);
+  await instance.cacheMaintenance;
 });
 test('restart waits for worker shutdown', async () => {
   let finish;
