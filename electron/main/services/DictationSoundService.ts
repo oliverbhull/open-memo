@@ -4,17 +4,15 @@ import { logger } from '../utils/logger';
 
 export type DictationSound = 'start' | 'stop';
 
-// A rising pair for "listening" and the same pair falling for "stopped".
-const NOTES: Record<DictationSound, readonly [number, number]> = {
-  start: [523.25, 783.99],
-  stop: [783.99, 523.25],
+// Minimal pops: a higher note for "listening" and a lower note for "stopped".
+const NOTES: Record<DictationSound, number> = {
+  start: 740,
+  stop: 440,
 };
 const SAMPLE_RATE = 44_100;
-const DURATION_SECONDS = 0.24;
-const SECOND_NOTE_SECONDS = 0.08;
-const ATTACK_SECONDS = 0.004;
-const DECAY_SECONDS = 0.04;
-const FADE_OUT_SECONDS = 0.01;
+const DURATION_SECONDS = 0.1;
+const ATTACK_SECONDS = 0.002;
+const DECAY_SECONDS = 0.018;
 // About -16 dBFS. The microphone stays open, so the start sound must stay quiet
 // enough that speakers playing it into a recording do not alter the transcript.
 const PEAK = 0.16;
@@ -23,17 +21,16 @@ function note(frequency: number, time: number): number {
   if (time < 0) return 0;
   const envelope = Math.min(1, time / ATTACK_SECONDS) * Math.exp(-time / DECAY_SECONDS);
   const phase = 2 * Math.PI * frequency * time;
-  return envelope * (Math.sin(phase) + 0.2 * Math.sin(2 * phase));
+  return envelope * Math.sin(phase);
 }
 
 /** Render a sound as 16-bit mono PCM WAV. Synthesized so no audio asset has to ship. */
 export function dictationSoundWav(sound: DictationSound): Buffer {
-  const [first, second] = NOTES[sound];
+  const frequency = NOTES[sound];
   const frames = Math.round(DURATION_SECONDS * SAMPLE_RATE);
   const samples = Array.from({ length: frames }, (_, index) => {
     const time = index / SAMPLE_RATE;
-    const fadeOut = Math.min(1, (DURATION_SECONDS - time) / FADE_OUT_SECONDS);
-    return fadeOut * (note(first, time) + note(second, time - SECOND_NOTE_SECONDS));
+    return note(frequency, time);
   });
   const loudest = Math.max(...samples.map(Math.abs));
 
