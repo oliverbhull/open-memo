@@ -117,7 +117,7 @@ jobs:
         run: cargo test --locked --manifest-path sidecars/dictation/Cargo.toml
 
       - name: Test macOS signing policy
-        run: node --test scripts/sign.test.cjs scripts/release-artifacts.test.cjs scripts/app-update.test.cjs
+        run: node --test scripts/sign.test.cjs scripts/release-artifacts.test.cjs scripts/app-update.test.cjs scripts/model-assets.test.cjs scripts/mac-update-installer.test.cjs scripts/mac-update-preparation.test.cjs
 
       - name: Import Developer ID certificate
         env:
@@ -173,12 +173,10 @@ jobs:
           test ! -e "${installer_app}/Contents/Resources/cleanup"
           codesign --verify --deep --strict --verbose=2 "${installer_app}"
           spctl --assess --type execute --verbose "${installer_app}"
+          node scripts/verify-update-assets.cjs dist/mac-arm64/Memo.app/Contents/Resources "${installer_app}/Contents/Resources" dist/model-assets
           hdiutil detach "${installer_mount}"
           rm -rf "${installer_mount}"
           trap - EXIT
-          bash scripts/shell/verify-conomo-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/conomo
-          bash scripts/shell/verify-pnc-bundle.sh dist/mac-arm64/Memo.app/Contents/Resources/pnc
-          bash scripts/shell/verify-packaged-model-workers.sh dist/mac-arm64/Memo.app
           test ! -e dist/mac-arm64/Memo.app/Contents/Resources/cleanup
           dictation_bin="dist/mac-arm64/Memo.app/Contents/Resources/dictation/memo-dictation"
           test -x "${dictation_bin}"
@@ -197,7 +195,7 @@ jobs:
           node scripts/release-artifacts.cjs dist
           shopt -s nullglob
           dmg_artifacts=(dist/Open-Memo-*.dmg)
-          artifacts=(dist/Open-Memo-*.dmg dist/Open-Memo-*.zip dist/latest-mac.yml)
+          artifacts=(dist/Open-Memo-*.dmg dist/Open-Memo-*.zip dist/latest-mac.yml dist/app-mac.yml dist/model-assets/*.tar.gz)
           cp "${artifacts[@]}" release-artifacts/
           cp "${dmg_artifacts[0]}" release-artifacts/Open-Memo-latest-arm64.dmg
           ls -lh release-artifacts

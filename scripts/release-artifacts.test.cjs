@@ -17,13 +17,21 @@ function fixture(t, version = '1.2.3') {
   const manifest = { version, files, path: files[0].url, sha512: files[0].sha512 };
   const save = () => fs.writeFileSync(path.join(dir, 'latest-mac.yml'), JSON.stringify(manifest));
   save();
+  const appZip = `Open-Memo-${version}-app-arm64.zip`;
+  const data = Buffer.from('lightweight');
+  fs.writeFileSync(path.join(dir, appZip), data);
+  const appFile = { url: appZip, size: data.length, sha512: crypto.createHash('sha512').update(data).digest('base64') };
+  fs.writeFileSync(path.join(dir, 'app-mac.yml'), JSON.stringify({ version, files: [appFile], path: appZip, sha512: appFile.sha512 }));
   return { dir, manifest, save };
 }
 test('verifies full installer and self-contained ZIP update artifacts', async t => {
   const { dir } = fixture(t);
-  assert.equal((await verifyReleaseArtifacts(dir, '1.2.3')).length, 3);
+  assert.equal((await verifyReleaseArtifacts(dir, '1.2.3')).length, 5);
 });
 for (const [name, mutate] of Object.entries({
+  'missing app ZIP': f => fs.unlinkSync(path.join(f.dir, 'Open-Memo-1.2.3-app-arm64.zip')),
+  'corrupt app ZIP': f => fs.writeFileSync(path.join(f.dir, 'Open-Memo-1.2.3-app-arm64.zip'), 'corrupt'),
+  'missing app manifest': f => fs.unlinkSync(path.join(f.dir, 'app-mac.yml')),
   'missing ZIP': f => fs.unlinkSync(path.join(f.dir, f.manifest.path)),
   'missing DMG': f => fs.unlinkSync(path.join(f.dir, 'Open-Memo-1.2.3-arm64.dmg')),
   'extra ZIP': f => fs.writeFileSync(path.join(f.dir, 'stale.zip'), 'old'),

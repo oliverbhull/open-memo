@@ -7,7 +7,7 @@ const test = require('node:test');
 const { transformSync } = require('esbuild');
 const loaded = { exports: {} };
 vm.runInNewContext(transformSync(fs.readFileSync('electron/main/services/conomoRuntime.ts', 'utf8'),
-  { loader: 'ts', format: 'cjs' }).code, { module: loaded, exports: loaded.exports, require });
+  { loader: 'ts', format: 'cjs' }).code, { module: loaded, exports: loaded.exports, require: name => name === './ModelAssets' ? { resolveModelAssetPath: (_name, root) => path.join(root, 'model') } : require(name) });
 
 test('Memo connects through the packaged or external Conomo bridge without selecting a model', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'conomo-bridge-'));

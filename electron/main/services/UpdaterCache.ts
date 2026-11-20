@@ -30,7 +30,7 @@ export async function pruneUpdaterCache(cacheDir: string, installedVersion: stri
     return;
   }
   const cachedVersion = typeof fileName === 'string'
-    ? /^Open-Memo-(\d+\.\d+\.\d+)-arm64\.zip$/u.exec(fileName)?.[1]
+    ? /^Open-Memo-(\d+\.\d+\.\d+)-(?:app-)?arm64\.zip$/u.exec(fileName)?.[1]
     : undefined;
   if (cachedVersion && isInstalledOrOlder(cachedVersion, installedVersion)) {
     await fs.rm(pendingDir, { recursive: true, force: true });

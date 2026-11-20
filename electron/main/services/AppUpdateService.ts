@@ -18,8 +18,8 @@ export class AppUpdateService {
   private manualCheck = false;
   private checking = false;
   private downloading = false;
-  private downloadPromptOpen = false;
-  private declinedVersion: string | null = null;
+  private preparation: Promise<void> | null = null;
+  private preparedUpdate: PreparedMacUpdate | null = null;
   private updatePromptOpen = false;
   private downloadedUpdate: { version: string; file: string } | null = null;
   private cacheMaintenance: Promise<void> = Promise.resolve();
@@ -31,7 +31,9 @@ export class AppUpdateService {
   ) {
     this.getMainWindow = getMainWindow;
     this.updater = electronUpdater.autoUpdater;
-    this.updater.autoDownload = false;
+    this.updater.channel = 'app';
+    this.updater.allowDowngrade = false;
+    this.updater.autoDownload = true;
     // MacUpdater otherwise retains another entire ZIP as update.zip.
     this.updater.disableDifferentialDownload = true;
     // Squirrel.Mac buffers the locally proxied ZIP through CFURLConnection. Memo's
@@ -56,8 +58,7 @@ export class AppUpdateService {
     if (this.downloadedUpdate) {
       await this.promptToRestart(this.downloadedUpdate.version);
     } else if (this.availableUpdate) {
-      this.declinedVersion = null;
-      await this.promptToDownload(this.availableUpdate.version, this.availableUpdate.bytes);
+      await this.downloadUpdate(this.availableUpdate.version);
     }
   }
 
@@ -73,10 +74,10 @@ export class AppUpdateService {
       }).catch((error) => logger.warn('[AppUpdateService] Could not show update failure:', error));
     }
 
-    this.cacheMaintenance = pruneUpdaterCache(
+    this.cacheMaintenance = Promise.all([this.installer.prune?.(), pruneUpdaterCache(
       path.join(os.homedir(), 'Library', 'Caches', 'open-memo-updater'),
       app.getVersion(),
-    ).catch((error) => logger.warn('[AppUpdateService] Could not prune old update files:', error));
+    )]).then(() => {}).catch((error) => logger.warn('[AppUpdateService] Could not prune old update files:', error));
 
     this.intervalTimer = setInterval(() => void this.check(false), CHECK_INTERVAL_MS);
     this.intervalTimer.unref();
@@ -103,12 +104,15 @@ export class AppUpdateService {
       });
       return;
     }
-    this.declinedVersion = null;
+    if (this.downloadedUpdate) {
+      await this.promptToRestart(this.downloadedUpdate.version);
+      return;
+    }
     await this.check(true);
   }
 
   private async check(manual: boolean): Promise<void> {
-    if (this.checking || this.downloading) return;
+    if (this.checking || this.downloading || this.downloadedUpdate) return;
     this.checking = true;
     this.manualCheck = manual;
     let downloading = false;
@@ -119,8 +123,11 @@ export class AppUpdateService {
       if (result?.downloadPromise) {
         downloading = true;
         await result.downloadPromise;
+        await this.preparation;
       }
     } catch (error) {
+      this.downloading = false;
+      if (this.availableUpdate) this.publishStatus({ state: 'available', version: this.availableUpdate.version });
       logger.warn('[AppUpdateService] Update check failed:', error);
       if (manual) {
         await this.showMessage({
@@ -141,7 +148,8 @@ export class AppUpdateService {
       logger.info(`[AppUpdateService] Memo ${info.version} is available`);
       const bytes = info.files.find((file) => file.url.endsWith('.zip'))?.size;
       this.availableUpdate = { version: info.version, bytes };
-      this.publishStatus({ state: 'available', version: info.version });
+      this.downloading = true;
+      this.publishStatus({ state: 'downloading', version: info.version });
     });
 
     this.updater.on('update-not-available', (info) => {
@@ -158,50 +166,45 @@ export class AppUpdateService {
     });
 
     this.updater.on('update-downloaded', (info) => {
-      this.downloadedUpdate = { version: info.version, file: info.downloadedFile };
-      this.publishStatus({ state: 'downloaded', version: info.version });
+      // Extract, verify signatures, and provision changed model assets quietly.
+      // Only offer a restart once everything needed by the new app is on disk.
+      this.preparation = (async () => {
+        try {
+          this.preparedUpdate = await this.installer.prepare(info.downloadedFile, info.version);
+          this.downloadedUpdate = { version: info.version, file: info.downloadedFile };
+          this.publishStatus({ state: 'downloaded', version: info.version });
+        } catch (error) {
+          this.publishStatus({ state: 'available', version: info.version });
+          logger.warn('[AppUpdateService] Could not prepare update:', error);
+          throw error;
+        } finally {
+          this.downloading = false;
+        }
+      })();
+      // EventEmitter does not await listeners. check()/downloadUpdate() also
+      // observe this promise so manual requests can report failures.
+      void this.preparation.catch(() => {});
     });
     this.updater.on('error', (error) => logger.warn('[AppUpdateService] Updater error:', error));
   }
 
-  private async promptToDownload(version: string, bytes?: number): Promise<void> {
-    if (this.downloadPromptOpen || this.downloading || this.declinedVersion === version) return;
-    this.downloadPromptOpen = true;
+  private async downloadUpdate(version: string): Promise<void> {
+    if (this.downloading) return;
+    this.downloading = true;
+    this.publishStatus({ state: 'downloading', version });
     try {
-      const size = typeof bytes === 'number' && bytes > 0
-        ? bytes >= 1_000_000_000
-          ? `${(bytes / 1_000_000_000).toFixed(1)} GB`
-          : `${Math.round(bytes / 1_000_000)} MB`
-        : null;
-      const result = await this.showMessage({
-        type: 'info',
-        title: 'Memo Update Available',
-        message: `Memo ${version} is available.`,
-        detail: size ? `The update will download ${size}.` : 'The update needs to be downloaded.',
-        buttons: ['Download Update', 'Later'],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true,
-      });
-      if (result.response !== 0) {
-        this.declinedVersion = version;
-        return;
-      }
-      this.downloading = true;
-      this.publishStatus({ state: 'downloading', version });
       await this.updater.downloadUpdate();
+      await this.preparation;
     } catch (error) {
       this.publishStatus({ state: 'available', version });
       logger.warn('[AppUpdateService] Could not download update:', error);
       await this.showMessage({
-        type: 'warning',
-        title: 'Memo Updates',
+        type: 'warning', title: 'Memo Updates',
         message: 'Memo could not download the update.',
         detail: 'Check your internet connection and try again.',
       });
     } finally {
       this.downloading = false;
-      this.downloadPromptOpen = false;
     }
   }
 
@@ -223,7 +226,7 @@ export class AppUpdateService {
       if (result.response === 0) {
         const update = this.downloadedUpdate;
         if (!update || update.version !== version) throw new Error('The downloaded update is no longer available.');
-        prepared = await this.installer.prepare(update.file, version);
+        prepared = this.preparedUpdate ?? await this.installer.prepare(update.file, version);
         await this.beforeInstall();
         await prepared.install();
       }
@@ -231,6 +234,7 @@ export class AppUpdateService {
       await prepared?.discard?.().catch((cleanupError) => {
         logger.warn('[AppUpdateService] Could not remove prepared update:', cleanupError);
       });
+      this.preparedUpdate = null;
       logger.warn('[AppUpdateService] Could not restart for update:', error);
       await this.showMessage({
         type: 'warning',
