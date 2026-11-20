@@ -67,19 +67,21 @@ test('sounds are short, quiet and free of clicks at either end', () => {
     const samples = pcm(sound);
     const duration = samples.length / SAMPLE_RATE;
     const peak = Math.max(...samples.map(Math.abs)) / 32_768;
-    assert.ok(duration > 0.15 && duration < 0.3, `${sound} lasts ${duration}s`);
+    assert.ok(duration >= 0.08 && duration <= 0.12, `${sound} lasts ${duration}s`);
     assert.ok(20 * Math.log10(peak) < -15, `${sound} peaks at ${peak}`);
     assert.ok(Math.abs(samples[0]) < 100, `${sound} starts at ${samples[0]}`);
     assert.ok(Math.abs(samples[samples.length - 1]) < 100, `${sound} ends at ${samples[samples.length - 1]}`);
   }
 });
 
-test('the start sound rises and the stop sound falls', () => {
-  const secondNote = Math.round(0.08 * SAMPLE_RATE);
-  const [startFirst, startSecond] = [pcm('start').slice(0, secondNote), pcm('start').slice(secondNote)];
-  const [stopFirst, stopSecond] = [pcm('stop').slice(0, secondNote), pcm('stop').slice(secondNote)];
-  assert.ok(frequency(startSecond) > frequency(startFirst));
-  assert.ok(frequency(stopSecond) < frequency(stopFirst));
+test('the minimal pops have a higher start note and a lower stop note', () => {
+  for (const [sound, expected] of [['start', 740], ['stop', 440]]) {
+    const samples = pcm(sound);
+    // Check both halves so the cue stays a single note throughout.
+    for (const half of [samples.slice(0, samples.length / 2), samples.slice(samples.length / 2)]) {
+      assert.ok(Math.abs(frequency(half) - expected) < 25, `${sound} should stay near ${expected}Hz`);
+    }
+  }
 });
 
 test('sounds play when enabled and reuse one prepared player', () => {
