@@ -132,6 +132,7 @@ jobs:
           echo "${MAC_CERT_P12}" | base64 --decode > /tmp/open-memo-dev-id.p12
           security create-keychain -p actions build.keychain
           security default-keychain -s build.keychain
+          security set-keychain-settings -lut 3600 build.keychain
           security unlock-keychain -p actions build.keychain
           security import /tmp/open-memo-dev-id.p12 -k build.keychain -P "${MAC_CERT_PWD}" -T /usr/bin/codesign -T /usr/bin/productbuild
           security set-key-partition-list -S apple-tool:,apple: -s -k actions build.keychain
