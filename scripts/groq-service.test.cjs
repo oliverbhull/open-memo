@@ -118,7 +118,9 @@ function chatBody(request) {
   assert.equal(request.headers['content-type'], 'application/json');
   assert.doesNotMatch(request.body, /RIFF|wavBuffer|Private Profile Name|private-thread|mail\.google\.com/);
   const body = JSON.parse(request.body);
-  assert.equal(body.model, 'openai/gpt-oss-20b');
+  assert.equal(body.model, 'qwen/qwen3.8-27b');
+  assert.equal(body.reasoning_effort, 'none');
+  assert.equal(body.include_reasoning, false);
   assert.deepEqual(body.messages.map(message => message.role), ['system', 'user']);
   return body;
 }

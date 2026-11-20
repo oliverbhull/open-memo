@@ -5,7 +5,7 @@ import { protectVocabulary } from './vocabularyProtection';
 
 const API_BASE_URL = 'https://api.groq.com/openai/v1';
 export const GROQ_KEYS_URL = 'https://console.groq.com/keys';
-export const GROQ_CLEANUP_MODEL = 'openai/gpt-oss-20b';
+export const GROQ_CLEANUP_MODEL = 'qwen/qwen3.8-27b';
 const GROQ_CLEANUP_CONTRACT = 'memo-groq-cleanup-v1';
 const KEY_TEST_TIMEOUT_MS = 10_000;
 const MAX_CLEANUP_CHARS = 20_000;
@@ -174,7 +174,7 @@ export async function cleanupWithGroq(
       body: JSON.stringify({
         model: GROQ_CLEANUP_MODEL,
         temperature: 0,
-        reasoning_effort: 'low',
+        reasoning_effort: 'none',
         include_reasoning: false,
         max_completion_tokens: 8192,
         messages: [
