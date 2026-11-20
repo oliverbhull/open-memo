@@ -135,6 +135,11 @@ module.exports = async function afterPack(context) {
     console.log(`✓ Signed ${nativeLibraries.length} Conomo runtime libraries, Python and PnC worker`);
   }
 
+  if (process.env.MEMO_SLIM_UPDATE === '1') {
+    require('./model-assets.cjs').separateModelAssets(
+      path.join(appPath, 'Contents', 'Resources'), path.resolve('dist/model-assets'), context.packager.appInfo.version);
+  }
+
   // Nested code signatures change executable bytes. Generate the persistent
   // pack contract only after every nested binary has reached its final form.
   for (const [name, bundlePath] of [['conomo', conomoPath], ['pnc', pncPath]]) {

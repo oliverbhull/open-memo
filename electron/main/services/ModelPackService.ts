@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { logger } from '../utils/logger';
+import { prepareModelAssets, resolveModelAssetPath } from './ModelAssets';
 
 export const MODEL_PACK_NAMES = ['conomo', 'pnc'] as const;
 export type ModelPackName = typeof MODEL_PACK_NAMES[number];
@@ -38,12 +39,13 @@ function requiredPaths(name: ModelPackName): string[] {
   if (name === 'conomo' && process.platform === 'win32') {
     return ['model-pack.json', 'manifest.json', 'memo-nemotron-worker.exe', 'nemotron-en-q8.gguf', 'Notice.txt', 'NVIDIA-Open-Model-License.html'];
   }
-  if (name === 'conomo') return ['model-pack.json', 'conomo', 'model', 'runtime/conomo/model-manifest.json', 'VERSIONS', 'device-runtime/bin/python3.12'];
-  return ['model-pack.json', 'memo-pnc', 'compiled', 'tokenizer.vocab', 'manifest.json', 'VERSIONS'];
+  if (name === 'conomo') return ['model-pack.json', 'conomo', 'runtime/conomo/model-manifest.json', 'VERSIONS', 'device-runtime/bin/python3.12'];
+  return ['model-pack.json', 'memo-pnc', 'tokenizer.vocab', 'manifest.json', 'VERSIONS'];
 }
 
 export function isCompleteModelPack(name: ModelPackName, root: string): boolean {
-  return requiredPaths(name).every(relative => fs.existsSync(path.join(root, relative)));
+  return requiredPaths(name).every(relative => fs.existsSync(path.join(root, relative)))
+    && (process.platform === 'win32' || fs.existsSync(resolveModelAssetPath(name, root)));
 }
 
 async function verifyModelPack(name: ModelPackName, root: string): Promise<void> {
@@ -99,7 +101,7 @@ export function resolveModelPackPath(name: ModelPackName): string {
 const verifiedBundledPacks = new Set<ModelPackName>();
 
 function compiledModelPath(root: string): string {
-  const compiled = path.join(root, 'compiled');
+  const compiled = resolveModelAssetPath('pnc', root);
   const models = fs.readdirSync(compiled).filter(name => name.endsWith('.mlmodelc'));
   if (models.length !== 1) throw new Error(`Expected one compiled model in ${compiled}`);
   return path.join(compiled, models[0]!);
@@ -137,10 +139,11 @@ export async function verifyBundledModelPacks(): Promise<void> {
     await verifyBundledWindowsConomo();
     return;
   }
+  await prepareModelAssets(process.resourcesPath);
   for (const name of ['conomo', 'pnc'] as const) {
     const source = await verifyInstalledPack(name);
     if (name === 'conomo') {
-      await expectWorkerReady(path.join(source, 'conomo'), ['--worker']);
+      await expectWorkerReady(path.join(source, 'conomo'), ['--worker'], { ...process.env, CONOMO_MODEL_DIR: resolveModelAssetPath('conomo', source) });
     } else {
       await expectWorkerReady(path.join(source, 'memo-pnc'), [
         '--model-path', compiledModelPath(source),

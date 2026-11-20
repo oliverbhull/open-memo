@@ -6,6 +6,7 @@ import readline from 'node:readline';
 import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger';
 import { resolveModelPackPath } from './ModelPackService';
+import { resolveModelAssetPath } from './ModelAssets';
 
 const FORMAT_TIMEOUT_MS = process.platform === 'win32' ? 500 : 150;
 const WORKER_READY_TIMEOUT_MS = 30_000;
@@ -46,7 +47,7 @@ function punctuationWorkerLaunch(): WorkerLaunch {
   }
   if (!process.env.MEMO_PNC_ENGINE || process.env.MEMO_PNC_ENGINE === 'distilbert') {
     const bundle = resolveModelPackPath('pnc');
-    const compiled = path.join(bundle, 'compiled');
+    const compiled = resolveModelAssetPath('pnc', bundle);
     const modelName = fs.readdirSync(compiled).find((name) => name.endsWith('.mlmodelc'));
     if (!modelName) throw new Error('compiled PnC model is missing');
     return {

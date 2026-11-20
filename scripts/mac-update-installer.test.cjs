@@ -12,7 +12,7 @@ const compiled = buildSync({
   platform: 'node',
   format: 'cjs',
   write: false,
-  external: ['electron'],
+  external: ['electron', './ModelAssets'],
 }).outputFiles[0].text;
 const systemApp = '/Applications/Memo.app';
 const personalApp = '/Users/test/Applications/Memo.app';
@@ -62,6 +62,7 @@ function installer({ running = translocatedApp, apps = {}, readOnly = [], spawnE
     exports: module.exports,
     process: { platform: 'darwin', pid: 42 },
     require: name => {
+      if (name === './ModelAssets') return { prepareModelAssets: async () => {} };
       if (name === 'electron') return { app };
       if (name === 'node:fs') return fileSystem;
       if (name === 'node:path') return path;

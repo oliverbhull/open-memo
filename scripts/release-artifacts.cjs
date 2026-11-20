@@ -8,7 +8,7 @@ async function verifyReleaseArtifacts(directory, version) {
   const extensions = ['zip', 'dmg'];
   const expected = extensions.map(extension => `Open-Memo-${version}-arm64.${extension}`);
   for (const extension of extensions) {
-    const matches = names.filter(name => name.endsWith(`.${extension}`));
+    const matches = names.filter(name => name.endsWith(`.${extension}`) && !name.endsWith('-app-arm64.zip'));
     if (matches.length !== 1 || !expected.includes(matches[0])) {
       throw new Error(`Expected exactly one versioned ARM64 ${extension}: ${version}`);
     }
@@ -33,7 +33,16 @@ async function verifyReleaseArtifacts(directory, version) {
   }
   const zip = manifest.files.find(file => file.url === expected[0]);
   if (manifest.path !== zip.url || manifest.sha512 !== zip.sha512) throw new Error('Legacy update manifest ZIP reference is invalid');
-  return [...expected, 'latest-mac.yml'];
+  const appZip = `Open-Memo-${version}-app-arm64.zip`;
+  const appManifest = load(fs.readFileSync(path.join(directory, 'app-mac.yml'), 'utf8'));
+  if (appManifest?.version !== version || appManifest.files?.length !== 1 || appManifest.files[0].url !== appZip
+    || appManifest.path !== appZip || appManifest.sha512 !== appManifest.files[0].sha512) throw new Error('Lightweight update manifest is invalid');
+  const appPath = path.join(directory, appZip);
+  if (!fs.lstatSync(appPath).isFile() || fs.statSync(appPath).size !== appManifest.files[0].size) throw new Error('Invalid lightweight update size');
+  const appHash = crypto.createHash('sha512');
+  for await (const chunk of fs.createReadStream(appPath)) appHash.update(chunk);
+  if (appHash.digest('base64') !== appManifest.sha512) throw new Error('Lightweight update checksum mismatch');
+  return [...expected, appZip, 'latest-mac.yml', 'app-mac.yml'];
 }
 
 module.exports = { verifyReleaseArtifacts };

@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { prepareModelAssets } from './ModelAssets';
 
 const execFileAsync = promisify(execFile);
 
@@ -13,6 +14,7 @@ export interface PreparedMacUpdate {
 }
 
 export interface MacUpdateInstallerLike {
+  prune?(): Promise<void>;
   prepare(downloadedFile: string, expectedVersion: string): Promise<PreparedMacUpdate>;
 }
 
@@ -115,6 +117,24 @@ async function writableInstalledApp(runningApp: string, identity: Awaited<Return
 export class MacUpdateInstaller implements MacUpdateInstallerLike {
   constructor(private readonly runningApp = installedAppPath()) {}
 
+  async prune(): Promise<void> {
+    const userData = app.getPath('userData');
+    const directories = await fs.promises.readdir(userData, { withFileTypes: true });
+    for (const directory of directories) {
+      if (!directory.isDirectory() || !directory.name.startsWith('prepared-update-')) continue;
+      const root = path.join(userData, directory.name);
+      // A previous app is a rollback copy, owned by the install helper.
+      if (fs.existsSync(path.join(root, 'Previous Memo.app'))) continue;
+      try {
+        const owner = JSON.parse(await fs.promises.readFile(path.join(root, 'owner.json'), 'utf8')) as { pid: number };
+        if (!Number.isInteger(owner.pid) || owner.pid <= 0) continue;
+        try { process.kill(owner.pid, 0); } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ESRCH') await fs.promises.rm(root, { recursive: true, force: true });
+        }
+      } catch { /* Retain unrecognized or legacy preparations. */ }
+    }
+  }
+
   async prepare(downloadedFile: string, expectedVersion: string): Promise<PreparedMacUpdate> {
     if (process.platform !== 'darwin') throw new Error('The staged updater is macOS-only.');
     if (!path.isAbsolute(downloadedFile) || !fs.existsSync(downloadedFile)) {
@@ -125,6 +145,7 @@ export class MacUpdateInstaller implements MacUpdateInstallerLike {
     const targetApp = await writableInstalledApp(this.runningApp, currentIdentity);
     const workRoot = await fs.promises.mkdtemp(path.join(app.getPath('userData'), 'prepared-update-'));
     try {
+      await fs.promises.writeFile(path.join(workRoot, 'owner.json'), JSON.stringify({ pid: process.pid }));
       const extractedRoot = path.join(workRoot, 'extracted');
       await fs.promises.mkdir(extractedRoot);
       await execFileAsync('/usr/bin/ditto', ['-x', '-k', downloadedFile, extractedRoot]);
@@ -144,6 +165,8 @@ export class MacUpdateInstaller implements MacUpdateInstallerLike {
       if (currentIdentity.team !== stagedIdentity.team || currentIdentity.identifier !== stagedIdentity.identifier) {
         throw new Error('The update does not match the installed app’s signing identity.');
       }
+
+      await prepareModelAssets(path.join(stagedApp, 'Contents', 'Resources'), [path.join(targetApp, 'Contents', 'Resources')]);
 
       const helperPath = path.join(workRoot, 'install-update.sh');
       const backupApp = path.join(workRoot, 'Previous Memo.app');

@@ -65,6 +65,18 @@ Conomo is included and ready to use. It streams audio to a separate local runtim
 and boosts saved words and phrases during recognition. The verified model ships
 inside the installer; no first-launch model download is needed.
 
+On macOS, Memo checks for app updates in the background and automatically downloads
+and verifies them. When ready, use the update indicator to **Restart and Update**.
+Memo finishes pending dictations before restarting; it never restarts itself while
+you are working. Failed background updates retry on the next check.
+
+Routine updates contain application code and runtimes. Speech and punctuation
+weights are stored separately, reused across app releases, and downloaded only
+when their content changes or a cached copy needs repair. Changed models are
+prepared before the restart is offered. Existing versions receive one complete
+compatibility update before switching to the lightweight update channel. New
+installations remain offline-ready.
+
 **Windows unsigned preview:** [Download for Windows](https://github.com/oliverbhull/open-memo/releases/download/windows-latest/Open-Memo-latest-windows-x64-setup.exe),
 run the installer, and complete the microphone test. Hold **Right Ctrl** to dictate.
 This preview is unsigned, so Windows may display an unknown publisher or SmartScreen

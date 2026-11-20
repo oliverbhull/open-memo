@@ -2,11 +2,13 @@
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUNDLE_DIR="${1:-${ROOT_DIR}/.build/conomo}"
-for required in conomo model runtime/conomo/model-manifest.json LICENSE THIRD_PARTY_NOTICES VERSIONS device-runtime/bin/python3.12; do
+MODEL_DIR="${CONOMO_MODEL_DIR:-${BUNDLE_DIR}/model}"
+[[ -d "${MODEL_DIR}" ]] || { echo "Conomo model is missing" >&2; exit 1; }
+for required in conomo runtime/conomo/model-manifest.json LICENSE THIRD_PARTY_NOTICES VERSIONS device-runtime/bin/python3.12; do
   [[ -e "${BUNDLE_DIR}/${required}" ]] || { echo "Conomo bundle missing ${required}" >&2; exit 1; }
 done
 [[ -x "${BUNDLE_DIR}/conomo" ]] || { echo 'Conomo bridge is not executable' >&2; exit 1; }
-PYTHONPATH="${BUNDLE_DIR}/runtime" "${BUNDLE_DIR}/device-runtime/bin/python3.12" -B -m conomo.models --verify "${BUNDLE_DIR}/model"
+PYTHONPATH="${BUNDLE_DIR}/runtime" "${BUNDLE_DIR}/device-runtime/bin/python3.12" -B -m conomo.models --verify "${MODEL_DIR}"
 "${BUNDLE_DIR}/device-runtime/bin/python3.12" -B -c 'import numpy, onnxruntime, tokenizers'
 # Isolate build validation from any installed runtime or active dictation.
 CHECK_DIR="$(mktemp -d /tmp/conomo-check.XXXXXX)"

@@ -233,8 +233,8 @@ function App() {
   }, []);
 
   const updateLabel = appUpdate.state === 'downloaded'
-    ? `Memo ${appUpdate.version} is ready to install`
-    : `Download Memo ${appUpdate.version}`;
+    ? `Restart to update Memo to ${appUpdate.version}`
+    : `Retry updating Memo to ${appUpdate.version}`;
 
   // Combine storage errors with other errors
   const displayError = error || (storageError ? storageError.message : null);
@@ -258,7 +258,7 @@ function App() {
             onKeyDown={event => { if (showSettings && event.key === 'Escape') setShowSettings(false); }}>
             <div className="title-bar-right">
               {appUpdate.state === 'downloading' ? (
-                <span className="app-update-indicator" role="status" aria-label="Downloading Memo update" title="Downloading Memo update…">
+                <span className="app-update-indicator" role="status" aria-label="Preparing Memo update" title="Preparing Memo update in the background…">
                   <span className="app-update-spinner" aria-hidden="true" />
                 </span>
               ) : appUpdate.state !== 'idle' && (

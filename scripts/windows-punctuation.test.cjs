@@ -14,6 +14,7 @@ function fixture(exists = true) {
     process: { platform: 'win32', env: {}, resourcesPath: 'C:/Memo/resources', cwd: () => 'C:/dev' },
     require(name) {
       if (name === 'electron') return { app: { isPackaged: true } };
+      if (name === './ModelAssets') return { resolveModelAssetPath() { throw new Error('Mac model assets path used'); } };
       if (name === './ModelPackService') return { resolveModelPackPath() { throw new Error('Mac path used'); } };
       if (name === '../utils/logger') return { logger: { debug() {}, warn() {}, info() {} } };
       if (name === 'node:fs') return { existsSync: () => exists };
