@@ -1,0 +1,22 @@
+/* Only the surrounding editorial artwork is styled here. App panels retain their own CSS. */
+html, body, #root { margin: 0; width: 100%; height: 100%; background: #121212; backdrop-filter: none; }
+.artboard { position: relative; width: 1600px; height: 1000px; overflow: hidden; background: radial-gradient(ellipse at 84% 65%, #34302e 0, transparent 52%), #191817; color: #f5f1e8; }
+.artboard::before { content: ''; position: absolute; width: 800px; height: 800px; border: 1px solid #ffffff08; border-radius: 50%; top: 210px; right: -220px; box-shadow: 0 0 0 100px #ffffff02, 0 0 0 200px #ffffff02; }
+.brand { position: absolute; top: 60px; left: 72px; right: 72px; display: flex; align-items: center; gap: 14px; font-size: 25px; font-weight: 600; letter-spacing: -.7px; }
+.brand img { width: 44px; height: 44px; }
+.brand-note { margin-left: auto; font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #b4afab; }
+.editorial { position: absolute; top: 258px; left: 72px; width: 550px; }
+.eyebrow { color: #e5a58a; font-size: 11px; font-weight: 600; letter-spacing: 2.3px; margin-bottom: 28px; }
+h1 { font-size: 72px; line-height: 1.04; letter-spacing: -3.8px; font-weight: 500; margin: 0 0 28px; }
+.editorial p { max-width: 420px; color: #bcb6b1; font-size: 21px; line-height: 1.5; margin: 0; }
+.feature-note { display: flex; align-items: center; gap: 9px; color: #dbd5cf; font-size: 13px; margin-top: 38px; }
+.feature-note span { width: 6px; height: 6px; background: #dc8e74; border-radius: 50%; }
+.screen-frame { position: absolute; left: 660px; top: 210px; width: 860px; height: 620px; border: 1px solid #ffffff28; border-radius: 14px; box-shadow: 0 40px 100px #0008; overflow: hidden; }
+.product-window { display: flex; flex-direction: column; width: 100%; height: 100%; background: #080808; overflow: hidden; }
+.window-chrome { flex: 0 0 46px; display: flex; align-items: center; padding: 0 18px; gap: 20px; background: #101010; border-bottom: 1px solid #252525; color: #c4c4c4; font-size: 12px; }
+.traffic { display: flex; gap: 7px; }.traffic i { width: 10px; height: 10px; border-radius: 50%; background: #ff6058; }.traffic i:nth-child(2) { background: #ffbd2e; }.traffic i:nth-child(3) { background: #28c840; }
+.window-label { margin-left: auto; color: #777; font-size: 11px; }
+.artboard > footer { position: absolute; bottom: 44px; left: 72px; right: 72px; border-top: 1px solid #ffffff19; padding-top: 22px; display: flex; justify-content: space-between; color: #a39b95; font-size: 12px; letter-spacing: .3px; }.artboard > footer span:last-child { font-size: 10px; letter-spacing: 1.3px; }
+.hero { height: 900px; }.hero .editorial { top: 235px; width: 610px; }.hero h1 { font-size: 70px; }.hero .screen-frame { top: 178px; left: 720px; width: 800px; height: 610px; }.hero .editorial p { width: 460px; }
+
+.writing .screen-frame { top: 160px; height: 740px; }
