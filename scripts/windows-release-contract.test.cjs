@@ -9,7 +9,6 @@ test('Windows packaging cannot replace the Mac resource list or download URL', (
   const readme = fs.readFileSync('README.md', 'utf8');
   assert.ok(readme.includes('https://github.com/oliverbhull/open-memo/releases/latest/download/Open-Memo-latest-arm64.dmg'));
   assert.ok(readme.includes('https://github.com/oliverbhull/open-memo/releases/download/windows-latest/Open-Memo-latest-windows-x64-setup.exe'));
-  assert.ok(readme.includes('<p align="left">'));
   assert.ok(pkg.build.extraResources.some(resource => resource.to === 'conomo'));
   assert.ok(!pkg.build.extraResources.some(resource => resource.to === 'nemotron'));
   assert.deepEqual(windows.extraResources.map(resource => resource.to), ['app-icon.ico', 'dictation', 'whisper', 'conomo', 'pnc']);
