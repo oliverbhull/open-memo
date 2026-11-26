@@ -60,7 +60,8 @@ with tempfile.TemporaryDirectory(prefix='memo-isolation-', dir='/tmp') as home:
     finally:
         # Only stop the server in this isolated test home, never a user service.
         cleanup = "from conomo.bootstrap import runtime_socket; from conomo.client import SpeechClient; import os,signal; c=SpeechClient(str(runtime_socket())); pid=c.info['pid']; c.close(); os.kill(pid,signal.SIGTERM)"
-        subprocess.run([python, '-B', '-c', cleanup], env=env, timeout=10, check=False)
+        if (bundle / 'runtime/conomo/bootstrap.py').is_file():
+            subprocess.run([python, '-B', '-c', cleanup], env=env, timeout=10, check=False)
         stopped.set()
         thread.join(timeout=1)
         server.close()

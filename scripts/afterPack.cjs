@@ -73,20 +73,18 @@ module.exports = async function afterPack(context) {
     conomoWorker,
     devicePython,
     path.join(conomoPath, 'model'),
-    path.join(conomoPath, 'runtime', 'conomo', 'model-manifest.json'),
     path.join(conomoPath, 'model-pack.json'),
     path.join(conomoPath, 'LICENSE'),
-    path.join(conomoPath, 'THIRD_PARTY_NOTICES'),
     path.join(conomoPath, 'VERSIONS'),
   ];
   const missingFiles = conomoRequired.filter((required) => !fs.existsSync(required));
   if (missingFiles.length > 0) throw new Error(`conomo bundle is incomplete:\n${missingFiles.join('\n')}`);
   fs.chmodSync(conomoWorker, 0o755);
   fs.chmodSync(devicePython, 0o755);
-  await sh(devicePython, ['-B', '-m', 'conomo.models', '--verify', path.join(conomoPath, 'model')], {
-    env: { ...process.env, PYTHONPATH: path.join(conomoPath, 'runtime'), PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' },
+  await sh('bash', [path.resolve('scripts/shell/verify-conomo-bundle.sh'), conomoPath, '--assets-only'], {
+    env: { ...process.env, CONOMO_MODEL_DIR: path.join(conomoPath, 'model') },
   });
-  console.log('✓ Bundled Conomo streaming model matches the pinned SHA-256 manifest');
+  console.log('✓ Bundled Conomo assets verified');
 
   const pncPath = path.join(appPath, 'Contents', 'Resources', 'pnc');
   const pncCompiledModels = fs.readdirSync(path.join(pncPath, 'compiled'))

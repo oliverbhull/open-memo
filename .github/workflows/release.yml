@@ -98,12 +98,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-dictation-
 
-      - name: Cache conomo bundle
-        uses: actions/cache@v4
-        with:
-          path: .build/conomo
-          key: ${{ runner.os }}-${{ runner.arch }}-conomo-${{ hashFiles('scripts/shell/build-conomo.sh', 'sidecars/conomo/requirements-device.txt', 'runtimes/conomo/conomo/model-manifest.json') }}
-
       - name: Cache punctuation bundle
         uses: actions/cache@v4
         with:
@@ -131,12 +125,29 @@ jobs:
 
           echo "${MAC_CERT_P12}" | base64 --decode > /tmp/open-memo-dev-id.p12
           security create-keychain -p actions build.keychain
+          security set-keychain-settings -lut 3600 build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p actions build.keychain
           security import /tmp/open-memo-dev-id.p12 -k build.keychain -P "${MAC_CERT_PWD}" -T /usr/bin/codesign -T /usr/bin/productbuild
           security set-key-partition-list -S apple-tool:,apple: -s -k actions build.keychain
           security list-keychains -d user -s build.keychain
           security find-identity -v -p codesigning build.keychain
+
+      - name: Fetch verified Conomo release bundle
+        env:
+          GH_TOKEN: ${{ secrets.CONOMO_TOKEN }}
+          CONOMO_BUNDLE_ASSET_ID: ${{ secrets.CONOMO_BUNDLE_ASSET_ID }}
+          CONOMO_BUNDLE_SHA256: ${{ secrets.CONOMO_BUNDLE_SHA256 }}
+        run: |
+          if [[ -z "${GH_TOKEN}" || ! "${CONOMO_BUNDLE_ASSET_ID}" =~ ^[0-9]+$ || ! "${CONOMO_BUNDLE_SHA256}" =~ ^[a-f0-9]{64}$ ]]; then
+            echo 'Missing or invalid Conomo release bundle configuration.' >&2
+            exit 1
+          fi
+          archive="$(mktemp /tmp/memo-conomo.XXXXXX)"
+          trap 'rm -f "${archive}"' EXIT
+          gh api -H 'Accept: application/octet-stream' \
+            "repos/oliverbhull/conomo-artifacts/releases/assets/${CONOMO_BUNDLE_ASSET_ID}" > "${archive}"
+          bash scripts/shell/install-release-conomo.sh "${archive}" "${CONOMO_BUNDLE_SHA256}"
 
       - name: Build signed and notarized app
         env:
@@ -146,6 +157,7 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           CSC_NAME: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           DEBUG: electron-notarize*
+          MEMO_USE_PREBUILT_CONOMO: "1"
         run: |
           if [[ -z "${APPLE_TEAM_ID}" || -z "${APPLE_API_KEY_BASE64}" || -z "${APPLE_API_KEY_ID}" || -z "${APPLE_API_ISSUER}" ]]; then
             echo "Missing Apple release secrets." >&2

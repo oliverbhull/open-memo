@@ -184,6 +184,7 @@
           "model-pack.json",
           "LICENSE",
           "THIRD_PARTY_NOTICES",
+          "MODEL-LICENSE",
           "VERSIONS",
           "device-runtime/**"
         ]

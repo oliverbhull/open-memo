@@ -2,6 +2,9 @@
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUTPUT_DIR="${MEMO_CONOMO_OUTPUT_DIR:-${ROOT_DIR}/.build/conomo}"
+if [[ "${MEMO_USE_PREBUILT_CONOMO:-0}" == 1 ]]; then
+  exec bash "${ROOT_DIR}/scripts/shell/verify-conomo-bundle.sh" "${OUTPUT_DIR}"
+fi
 DEVICE_INSTALL="${ROOT_DIR}/.build/conomo-device-python-install"
 DEVICE_RUNTIME="${OUTPUT_DIR}/device-runtime"
 mkdir -p "${OUTPUT_DIR}"
