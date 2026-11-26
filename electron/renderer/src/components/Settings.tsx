@@ -90,6 +90,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [latestLatency, setLatestLatency] = useState<DictationLatency | null>(null);
   const [handsFreeMode, setHandsFreeMode] = useState(false);
   const [sayEnterToPressEnter, setSayEnterToPressEnter] = useState(false);
+  const [sendImmediately, setSendImmediately] = useState<boolean | null>(null);
+  const [sendImmediatelySaving, setSendImmediatelySaving] = useState(false);
+  const [sendImmediatelyError, setSendImmediatelyError] = useState(false);
   const [startAtLogin, setStartAtLogin] = useState(false);
   const [recordingHotkey, setRecordingHotkey] = useState(DEFAULT_RECORDING_HOTKEY);
   const [hotkeyLoaded, setHotkeyLoaded] = useState(false);
@@ -157,6 +160,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       setLockHotkey(settings.lockHotkey ?? 'function+controlleft');
       setHotkeyLoaded(true);
       setSayEnterToPressEnter(settings.sayEnterToPressEnter ?? false);
+      setSendImmediately(settings.sendImmediately);
       setHandsFreeMode(settings.handsFreeMode ?? false);
       setStartAtLogin(settings.startAtLogin);
       setSaveAudio(settings.saveAudio ?? false);
@@ -172,6 +176,19 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   }, []);
 
   useEffect(() => window.electronAPI.onDictationLatency(setLatestLatency), []);
+
+  const changeSendImmediately = async (enabled: boolean) => {
+    setSendImmediatelySaving(true);
+    setSendImmediatelyError(false);
+    try {
+      await window.electronAPI.interface.setSendImmediately(enabled);
+      setSendImmediately(enabled);
+    } catch {
+      setSendImmediatelyError(true);
+    } finally {
+      setSendImmediatelySaving(false);
+    }
+  };
 
   const changeSpeechModel = async (model: 'whisper-base.en-q5_1' | 'nemotron-streaming') => {
     setSpeechModelSaving(true);
@@ -589,10 +606,34 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 <ToggleTile title='Say “ENTER” to submit' checked={sayEnterToPressEnter}
                   description='End dictation with “enter” to paste and press Return.'
                   onChange={async enabled => { setSayEnterToPressEnter(enabled); await window.electronAPI.interface.setSayEnterToPressEnter(enabled); }} />
+                <ToggleTile title="Send immediately" checked={sendImmediately === true}
+                  description="Press Return after pasting each dictation."
+                  disabled={sendImmediately === null || sendImmediatelySaving} onChange={changeSendImmediately} />
+                {sendImmediatelyError && <p className="settings-error" role="alert">Could not save Send immediately.</p>}
               </div>
             </section>
             <section id="settings-panel-writing" className="settings-panel" aria-label="Writing" hidden={activeSection !== 'writing'}>
               <div className="settings-grid">
+                <section className="settings-tile settings-tile--wide" aria-labelledby="settings-vocab-title">
+                  <div className="settings-tile__top">
+                    <h3 id="settings-vocab-title">Vocabulary</h3>
+                    <span className="settings-badge">{vocabWords.length} {vocabWords.length === 1 ? 'word' : 'words'}</span>
+                  </div>
+                  <p className="settings-help">Help Memo recognize names and words you use.</p>
+                  {isAddingVocabWord && <form className="settings-vocab-form" onSubmit={event => { event.preventDefault(); void addVocabWord(vocabWordDraft); }}>
+                    <label className="settings-sr-only" htmlFor="settings-new-word">New vocabulary word</label>
+                    <input id="settings-new-word" ref={vocabInputRef} type="text" value={vocabWordDraft}
+                      onChange={event => setVocabWordDraft(event.target.value)} placeholder="Name or word…"
+                      onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setIsAddingVocabWord(false); setVocabWordDraft(''); } }} />
+                    <button type="submit" className="settings-button settings-button--primary" disabled={!vocabWordDraft.trim()}>Add</button>
+                    <button type="button" className="settings-text-button" onClick={() => { setIsAddingVocabWord(false); setVocabWordDraft(''); }}>Cancel</button>
+                  </form>}
+                  <div className="settings-vocab">
+                    {!isAddingVocabWord && <button type="button" className="settings-button settings-button--neutral" onClick={() => { setIsAddingVocabWord(true); setVocabWordDraft(''); }}>+ Add word</button>}
+                    {vocabWords.map(word => <button key={word} type="button" className="settings-word"
+                      onClick={() => void removeVocabWord(word)} aria-label={`Remove ${word}`} title={`Remove ${word}`}>{word}<span aria-hidden="true">×</span></button>)}
+                  </div>
+                </section>
                 <section className="settings-tile settings-tile--wide" aria-labelledby="settings-groq-title" aria-busy={groqBusy}>
                   <div className="settings-tile__top">
                     <h3 id="settings-groq-title">Groq</h3>
@@ -624,26 +665,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   checked={experimentalEmailFormatting} disabled={!groqCleanupEnabled} requires="Groq cleanup"
                   description="Use Groq cleanup to format dictation as email in Gmail and Safari."
                   onChange={async enabled => { if (await window.electronAPI.interface.setExperimentalEmailFormatting(enabled)) setExperimentalEmailFormatting(enabled); }} />}
-                <section className="settings-tile settings-tile--wide" aria-labelledby="settings-vocab-title">
-                  <div className="settings-tile__top">
-                    <h3 id="settings-vocab-title">Vocabulary</h3>
-                    <span className="settings-badge">{vocabWords.length} {vocabWords.length === 1 ? 'word' : 'words'}</span>
-                  </div>
-                  <p className="settings-help">Help Memo recognize names and words you use.</p>
-                  {isAddingVocabWord && <form className="settings-vocab-form" onSubmit={event => { event.preventDefault(); void addVocabWord(vocabWordDraft); }}>
-                    <label className="settings-sr-only" htmlFor="settings-new-word">New vocabulary word</label>
-                    <input id="settings-new-word" ref={vocabInputRef} type="text" value={vocabWordDraft}
-                      onChange={event => setVocabWordDraft(event.target.value)} placeholder="Name or word…"
-                      onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setIsAddingVocabWord(false); setVocabWordDraft(''); } }} />
-                    <button type="submit" className="settings-button settings-button--primary" disabled={!vocabWordDraft.trim()}>Add</button>
-                    <button type="button" className="settings-text-button" onClick={() => { setIsAddingVocabWord(false); setVocabWordDraft(''); }}>Cancel</button>
-                  </form>}
-                  <div className="settings-vocab">
-                    {!isAddingVocabWord && <button type="button" className="settings-button settings-button--neutral" onClick={() => { setIsAddingVocabWord(true); setVocabWordDraft(''); }}>+ Add word</button>}
-                    {vocabWords.map(word => <button key={word} type="button" className="settings-word"
-                      onClick={() => void removeVocabWord(word)} aria-label={`Remove ${word}`} title={`Remove ${word}`}>{word}<span aria-hidden="true">×</span></button>)}
-                  </div>
-                </section>
               </div>
             </section>
             <section id="settings-panel-snippets" className="settings-panel" aria-label="Snippets" hidden={activeSection !== 'snippets'}>

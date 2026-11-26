@@ -388,7 +388,7 @@ async function setupMemoSttService(): Promise<void> {
             if (pasted) delivery = 'pasted';
             logger.debug(
               (pasted ? '[Main] Pasted transcription into focused app' : '[Main] Kept transcription on clipboard') +
-              (pressEnterThisTime ? ' (voice enter)' : '') +
+              (pressEnterThisTime ? ' (Return requested)' : '') +
               ` clipboard=${clipboardMs.toFixed(1)} ms paste_event=${pasteEventMs.toFixed(1)} ms`
             );
           } catch (pasteErr) {
@@ -1062,6 +1062,7 @@ ipcMain.handle('settings:getInterfaceSettings', () => {
     hotkey: loadUserSettings().hotkey ?? DEFAULT_RECORDING_HOTKEY,
     lockHotkey: loadUserSettings().lockHotkey ?? 'function+controlleft',
     sayEnterToPressEnter: settings.sayEnterToPressEnter ?? false,
+    sendImmediately: settings.sendImmediately,
     handsFreeMode: settings.handsFreeMode ?? false,
     saveAudio: settings.saveAudio ?? false,
     dictationSounds: settings.dictationSounds,
@@ -1148,6 +1149,12 @@ ipcMain.handle('settings:setSayEnterToPressEnter', async (_event, enabled: boole
   settings.sayEnterToPressEnter = enabled;
   saveSettings(settings);
   updateMenuState();
+  return true;
+});
+
+ipcMain.handle('settings:setSendImmediately', (_event, enabled: unknown) => {
+  if (typeof enabled !== 'boolean') throw new Error('Send immediately must be a boolean.');
+  saveSettings({ ...loadSettings(), sendImmediately: enabled });
   return true;
 });
 

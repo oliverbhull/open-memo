@@ -4,8 +4,8 @@ const vm = require('node:vm');
 const test = require('node:test');
 
 const BAR_COUNT = (fs.readFileSync('electron/renderer/overlay.html', 'utf8').match(/class="bar"/g) || []).length;
-const MIN_BAR_HEIGHT = 2;
-const MAX_BAR_HEIGHT = 19;
+const MIN_BAR_HEIGHT = 3;
+const MAX_BAR_HEIGHT = 25;
 
 function overlay() {
   const html = fs.readFileSync('electron/renderer/overlay.html', 'utf8');

@@ -10,6 +10,7 @@ export interface StoreSchema {
   lastSystemMicDevice: string | null;
   lastSystemMicSampleRate: number | null;
   sayEnterToPressEnter: boolean;
+  sendImmediately: boolean;
   handsFreeMode: boolean;
   saveAudio: boolean;
   dictationSounds: boolean;
@@ -35,6 +36,7 @@ export const storeDefaults: StoreSchema = {
   lastSystemMicDevice: null,
   lastSystemMicSampleRate: null,
   sayEnterToPressEnter: false,
+  sendImmediately: false,
   handsFreeMode: false,
   saveAudio: false,
   dictationSounds: true,

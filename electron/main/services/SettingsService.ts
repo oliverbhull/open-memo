@@ -17,6 +17,7 @@ export type { PhraseReplacementRule };
 export interface Settings {
   asrModel: AsrModelId;
   sayEnterToPressEnter: boolean;
+  sendImmediately: boolean;
   handsFreeMode: boolean;
   saveAudio: boolean;
   dictationSounds: boolean;
@@ -56,6 +57,7 @@ export function loadSettings(): Settings {
   return {
     asrModel: process.platform === 'win32' ? resolveWindowsSpeechModel(store.get('windowsSpeechModel')) : 'conomo',
     sayEnterToPressEnter: store.get('sayEnterToPressEnter', false),
+    sendImmediately: store.get('sendImmediately') === true,
     handsFreeMode: store.get('handsFreeMode', false),
     saveAudio: store.get('saveAudio', false),
     dictationSounds: store.get('dictationSounds', true) !== false,
@@ -71,6 +73,7 @@ export function saveSettings(next: Settings): void {
     ...next,
     asrModel: process.platform === 'win32' ? resolveWindowsSpeechModel(store.get('windowsSpeechModel')) : 'conomo',
     sayEnterToPressEnter: next.sayEnterToPressEnter === true,
+    sendImmediately: next.sendImmediately === true,
     handsFreeMode: next.handsFreeMode === true,
     saveAudio: next.saveAudio === true,
     dictationSounds: next.dictationSounds !== false,
@@ -81,6 +84,7 @@ export function saveSettings(next: Settings): void {
 
   store.set('asrModel', settings.asrModel);
   store.set('sayEnterToPressEnter', settings.sayEnterToPressEnter);
+  store.set('sendImmediately', settings.sendImmediately);
   store.set('handsFreeMode', settings.handsFreeMode);
   store.set('saveAudio', settings.saveAudio);
   store.set('dictationSounds', settings.dictationSounds);
