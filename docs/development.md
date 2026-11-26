@@ -42,9 +42,15 @@ Packaged builds omit transcript comparison logs.
 
 `build:dir` builds an unsigned application directory. CI builds with the real
 pinned Conomo model, validates its file hashes, and checks that the packaged worker
-starts. Every release ZIP and DMG includes the runtime, ASR model and punctuation
-model. Users do not need Python or a first-launch model download. Dictation works
-offline after installation.
+starts. The full installer includes the runtime and both models for offline
+installation. The slim updater downloads and verifies separately versioned
+model assets before switching to the new app.
+
+The release workflow downloads a versioned Conomo bundle from the private
+artifact repository. Set `CONOMO_BUNDLE_ASSET_ID` and `CONOMO_BUNDLE_SHA256`
+as release secrets for the selected archive and use a read-only `CONOMO_TOKEN`.
+The build verifies the archive and its worker before packaging. Local builds
+and pull request CI can use the default development bundle without these secrets.
 
 The release signs nested native code, signs and notarizes the app, and verifies
 both artifacts before upload. Memo verifies the bundled content manifest before

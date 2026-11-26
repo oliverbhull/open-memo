@@ -5,7 +5,7 @@ const path = require('node:path');
 const PACKS = ['conomo', 'pnc'];
 const WINDOWS_CONOMO_FILES = new Set(['nemotron-en-q8.gguf', 'manifest.json', 'MODEL-CARD.md', 'NVIDIA-Open-Model-License.html', 'Notice.txt', 'licenses']);
 const INCLUDED_TOP_LEVEL = {
-  conomo: new Set(['conomo', 'model', 'runtime', 'LICENSE', 'THIRD_PARTY_NOTICES', 'VERSIONS', 'device-runtime']),
+  conomo: new Set(['conomo', 'model', 'runtime', 'LICENSE', 'THIRD_PARTY_NOTICES', 'MODEL-LICENSE', 'VERSIONS', 'device-runtime']),
   pnc: new Set(['memo-pnc', 'compiled', 'tokenizer.vocab', 'manifest.json', 'VERSIONS', 'NOTICE.md']),
   cleanup: null,
 };

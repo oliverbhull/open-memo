@@ -39,12 +39,18 @@ function requiredPaths(name: ModelPackName): string[] {
   if (name === 'conomo' && process.platform === 'win32') {
     return ['model-pack.json', 'manifest.json', 'memo-nemotron-worker.exe', 'nemotron-en-q8.gguf', 'Notice.txt', 'NVIDIA-Open-Model-License.html'];
   }
-  if (name === 'conomo') return ['model-pack.json', 'conomo', 'runtime/conomo/model-manifest.json', 'VERSIONS', 'device-runtime/bin/python3.12'];
+  if (name === 'conomo') return ['model-pack.json', 'conomo', 'VERSIONS', 'device-runtime/bin/python3.12'];
   return ['model-pack.json', 'memo-pnc', 'tokenizer.vocab', 'manifest.json', 'VERSIONS'];
 }
 
 export function isCompleteModelPack(name: ModelPackName, root: string): boolean {
-  return requiredPaths(name).every(relative => fs.existsSync(path.join(root, relative)))
+  const paths = requiredPaths(name);
+  if (name === 'conomo' && process.platform !== 'win32') {
+    paths.push(...(fs.existsSync(path.join(root, 'runtime/model_assets.py'))
+      ? ['runtime/worker.py', 'MODEL-LICENSE']
+      : ['runtime/conomo/model-manifest.json']));
+  }
+  return paths.every(relative => fs.existsSync(path.join(root, relative)))
     && (process.platform === 'win32' || fs.existsSync(resolveModelAssetPath(name, root)));
 }
 

@@ -83,7 +83,7 @@ test('verified bundled models replace legacy copies without touching downloaded 
     fs.rmSync(temporary, { recursive: true, force: true });
   });
   const conomo = path.join(process.resourcesPath, 'conomo');
-  for (const relative of ['conomo', 'model/weights.bin', 'runtime/conomo/model-manifest.json', 'VERSIONS', 'device-runtime/bin/python3.12']) {
+  for (const relative of ['conomo', 'model/weights.bin', 'runtime/worker.py', 'runtime/model_assets.py', 'MODEL-LICENSE', 'VERSIONS', 'device-runtime/bin/python3.12']) {
     const file = path.join(conomo, relative);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, 'good');
@@ -123,6 +123,9 @@ test('verified bundled models replace legacy copies without touching downloaded 
   fs.mkdirSync(legacyPnc, { recursive: true });
   fs.mkdirSync(downloadedCleaned, { recursive: true });
   fs.cpSync(conomo, legacyConomo, { recursive: true });
+  fs.rmSync(path.join(legacyConomo, 'runtime'), { recursive: true, force: true });
+  fs.mkdirSync(path.join(legacyConomo, 'runtime', 'conomo'), { recursive: true });
+  fs.writeFileSync(path.join(legacyConomo, 'runtime', 'conomo', 'model-manifest.json'), 'legacy');
   fs.writeFileSync(path.join(temporary, 'model-packs', 'conomo', 'active.json'), JSON.stringify({ schemaVersion: 1, name: 'conomo', version: '00000000000000000000' }));
   assert.equal(service.resolveModelPackPath('conomo'), legacyConomo);
   await assert.rejects(service.verifyBundledModelPacks());
