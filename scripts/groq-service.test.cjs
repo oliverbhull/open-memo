@@ -12,6 +12,7 @@ const GMAIL_URL = 'https://mail.google.com/mail/u/0/#inbox/private-thread';
 const SENDER = 'Private Profile Name';
 const settings = {
   sayEnterToPressEnter: true,
+  sendImmediately: false,
   vocabWords: ['Rayaan', 'JTECH'],
   phraseReplacements: [{ id: 'addr', find: 'office address', replace: '5 Main St', enabled: true }],
 };
@@ -110,6 +111,29 @@ async function harness(t, { oldSettings = {}, encryptionAvailable = true } = {})
 function reply(response, content, finish_reason = 'stop') {
   response.end(JSON.stringify({ choices: [{ finish_reason, message: { content } }] }));
 }
+
+test('Send immediately persists and requests Return for nonempty dictation without a spoken command', async t => {
+  const { app } = await harness(t);
+  const format = processedText => app.formatRecordedDictation(
+    { processedText }, app.loadSettings(), undefined, undefined, async text => text,
+  );
+
+  assert.equal(app.loadSettings().sendImmediately, false);
+  assert.equal((await format('Hello there')).pressEnter, false);
+
+  app.saveSettings({ ...app.loadSettings(), sendImmediately: true });
+  assert.equal(app.loadSettings().sendImmediately, true);
+  const message = await format('Please press enter');
+  assert.equal(message.textToPaste, 'Please press enter');
+  assert.equal(message.pressEnter, true);
+  assert.equal((await format(' ')).pressEnter, false);
+
+  app.saveSettings({ ...app.loadSettings(), sendImmediately: false, sayEnterToPressEnter: true });
+  assert.equal(app.loadSettings().sendImmediately, false);
+  const spokenCommand = await format('Hello there enter');
+  assert.equal(spokenCommand.textToPaste, 'Hello there');
+  assert.equal(spokenCommand.pressEnter, true);
+});
 
 function chatBody(request) {
   assert.equal(request.path, '/chat/completions');

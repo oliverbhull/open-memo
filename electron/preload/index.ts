@@ -198,6 +198,7 @@ const electronAPI = {
       hotkey: string;
       lockHotkey: string;
       sayEnterToPressEnter: boolean;
+      sendImmediately: boolean;
       handsFreeMode: boolean;
       saveAudio: boolean;
       dictationSounds: boolean;
@@ -219,6 +220,7 @@ const electronAPI = {
     setSayEnterToPressEnter: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setSayEnterToPressEnter', enabled);
     },
+    setSendImmediately: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setSendImmediately', enabled),
     setHandsFreeMode: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setHandsFreeMode', enabled);
     },

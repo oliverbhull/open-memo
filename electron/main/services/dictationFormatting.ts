@@ -18,7 +18,7 @@ export function captureDictationCleanup(emailEnabled: boolean) {
 
 export async function formatRecordedDictation(
   data: TranscriptionTextFields,
-  settings: Pick<Settings, 'sayEnterToPressEnter' | 'vocabWords' | 'phraseReplacements'>,
+  settings: Pick<Settings, 'sayEnterToPressEnter' | 'sendImmediately' | 'vocabWords' | 'phraseReplacements'>,
   cleanup: ReturnType<typeof captureDictationCleanup>,
   senderName: string | undefined,
   formatLocally: (text: string) => Promise<string>,
@@ -57,5 +57,6 @@ export async function formatRecordedDictation(
     return applyPhraseReplacements(signed, settings.phraseReplacements);
   });
 
-  return { ...result, asSpoken, provenance };
+  const pressEnter = result.pressEnter || (settings.sendImmediately === true && Boolean(result.textToPaste));
+  return { ...result, pressEnter, asSpoken, provenance };
 }

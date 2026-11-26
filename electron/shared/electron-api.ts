@@ -167,6 +167,7 @@ export interface ElectronAPI {
       hotkey: string;
       lockHotkey: string;
       sayEnterToPressEnter: boolean;
+      sendImmediately: boolean;
       handsFreeMode: boolean;
       saveAudio: boolean;
       dictationSounds: boolean;
@@ -180,6 +181,7 @@ export interface ElectronAPI {
     setVocabWords(vocabWords: string[]): Promise<boolean>;
     setPhraseReplacements(rules: PhraseReplacementRule[]): Promise<boolean>;
     setSayEnterToPressEnter(enabled: boolean): Promise<boolean>;
+    setSendImmediately(enabled: boolean): Promise<boolean>;
     setHandsFreeMode(enabled: boolean): Promise<boolean>;
     setRecordingHotkey(hotkey: string): Promise<string>;
     setRecordingLockHotkey(hotkey: string): Promise<string>;
