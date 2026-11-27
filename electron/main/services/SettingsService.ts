@@ -10,18 +10,15 @@ import { DEFAULT_RECORDING_HOTKEY, normalizeRecordingHotkey } from '../../shared
 import type {
   PhraseReplacementRule,
   AsrModelId,
+  DictationQuickSettings,
 } from '../../shared/electron-api';
 
 export type { PhraseReplacementRule };
 
-export interface Settings {
+export interface Settings extends DictationQuickSettings {
   asrModel: AsrModelId;
-  sayEnterToPressEnter: boolean;
-  sendImmediately: boolean;
-  handsFreeMode: boolean;
   saveAudio: boolean;
   dictationSounds: boolean;
-  experimentalEmailFormatting: boolean;
   vocabWords: string[];
   phraseReplacements: PhraseReplacementRule[];
 }

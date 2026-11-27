@@ -91,8 +91,8 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [handsFreeMode, setHandsFreeMode] = useState(false);
   const [sayEnterToPressEnter, setSayEnterToPressEnter] = useState(false);
   const [sendImmediately, setSendImmediately] = useState<boolean | null>(null);
-  const [sendImmediatelySaving, setSendImmediatelySaving] = useState(false);
-  const [sendImmediatelyError, setSendImmediatelyError] = useState(false);
+  const [dictationSettingError, setDictationSettingError] = useState<string | null>(null);
+  const [dictationSettingBusy, setDictationSettingBusy] = useState(false);
   const [startAtLogin, setStartAtLogin] = useState(false);
   const [recordingHotkey, setRecordingHotkey] = useState(DEFAULT_RECORDING_HOTKEY);
   const [hotkeyLoaded, setHotkeyLoaded] = useState(false);
@@ -177,17 +177,20 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
   useEffect(() => window.electronAPI.onDictationLatency(setLatestLatency), []);
 
-  const changeSendImmediately = async (enabled: boolean) => {
-    setSendImmediatelySaving(true);
-    setSendImmediatelyError(false);
-    try {
-      await window.electronAPI.interface.setSendImmediately(enabled);
-      setSendImmediately(enabled);
-    } catch {
-      setSendImmediatelyError(true);
-    } finally {
-      setSendImmediatelySaving(false);
-    }
+  useEffect(() => window.electronAPI.interface.onDictationSettingsChanged(settings => {
+    setHandsFreeMode(settings.handsFreeMode);
+    setSendImmediately(settings.sendImmediately);
+    setSayEnterToPressEnter(settings.sayEnterToPressEnter);
+    setExperimentalEmailFormatting(settings.experimentalEmailFormatting);
+  }), []);
+
+  const changeDictationSetting = async (save: (enabled: boolean) => Promise<boolean>, enabled: boolean) => {
+    setDictationSettingBusy(true);
+    setDictationSettingError(null);
+    try { await save(enabled); }
+    catch (error) {
+      setDictationSettingError((error instanceof Error ? error.message : 'Could not change dictation setting.').replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ''));
+    } finally { setDictationSettingBusy(false); }
   };
 
   const changeSpeechModel = async (model: 'whisper-base.en-q5_1' | 'nemotron-streaming') => {
@@ -597,19 +600,19 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   {microphoneError && <p role="alert" className="settings-error">{microphoneError}</p>}
                 </section>
 
-                <ToggleTile title="Hands free" checked={handsFreeMode}
+                {dictationSettingError && <p role="alert" className="settings-error">{dictationSettingError}</p>}
+                <ToggleTile title="Hands free" checked={handsFreeMode} disabled={dictationSettingBusy}
                   description={`Speak to record. Pause to transcribe. The ${recordingHotkeyLabel(recordingHotkey)} key still works.`}
-                  onChange={async enabled => { setHandsFreeMode(enabled); await window.electronAPI.interface.setHandsFreeMode(enabled); }} />
+                  onChange={enabled => void changeDictationSetting(window.electronAPI.interface.setHandsFreeMode, enabled)} />
                 <ToggleTile title="Dictation sounds" checked={dictationSounds}
                   description="Play a short sound when recording starts and stops. Silent in Hands free."
                   onChange={async enabled => { setDictationSounds(enabled); await window.electronAPI.interface.setDictationSounds(enabled); }} />
-                <ToggleTile title='Say “ENTER” to submit' checked={sayEnterToPressEnter}
+                <ToggleTile title="Send immediately" checked={sendImmediately === true} disabled={sendImmediately === null || dictationSettingBusy}
+                  description="Paste each dictation and press Return automatically. This can send messages."
+                  onChange={enabled => void changeDictationSetting(window.electronAPI.interface.setSendImmediately, enabled)} />
+                <ToggleTile title='Say “ENTER” to submit' checked={sayEnterToPressEnter} disabled={dictationSettingBusy}
                   description='End dictation with “enter” to paste and press Return.'
-                  onChange={async enabled => { setSayEnterToPressEnter(enabled); await window.electronAPI.interface.setSayEnterToPressEnter(enabled); }} />
-                <ToggleTile title="Send immediately" checked={sendImmediately === true}
-                  description="Press Return after pasting each dictation."
-                  disabled={sendImmediately === null || sendImmediatelySaving} onChange={changeSendImmediately} />
-                {sendImmediatelyError && <p className="settings-error" role="alert">Could not save Send immediately.</p>}
+                  onChange={enabled => void changeDictationSetting(window.electronAPI.interface.setSayEnterToPressEnter, enabled)} />
               </div>
             </section>
             <section id="settings-panel-writing" className="settings-panel" aria-label="Writing" hidden={activeSection !== 'writing'}>
@@ -662,9 +665,10 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   description="Send on-device dictation text to Groq to remove fillers and fix grammar and punctuation. Audio stays on this device."
                   onChange={enabled => void changeGroqCleanup(enabled)} />
                 {window.electronAPI.platform !== 'win32' && <ToggleTile experimental title="Email formatting"
-                  checked={experimentalEmailFormatting} disabled={!groqCleanupEnabled} requires="Groq cleanup"
+                  checked={experimentalEmailFormatting} disabled={!groqCleanupEnabled || dictationSettingBusy} requires="Groq cleanup"
                   description="Use Groq cleanup to format dictation as email in Gmail and Safari."
-                  onChange={async enabled => { if (await window.electronAPI.interface.setExperimentalEmailFormatting(enabled)) setExperimentalEmailFormatting(enabled); }} />}
+                  onChange={enabled => void changeDictationSetting(window.electronAPI.interface.setExperimentalEmailFormatting, enabled)} />}
+                {dictationSettingError && <p role="alert" className="settings-error">{dictationSettingError}</p>}
               </div>
             </section>
             <section id="settings-panel-snippets" className="settings-panel" aria-label="Snippets" hidden={activeSection !== 'snippets'}>

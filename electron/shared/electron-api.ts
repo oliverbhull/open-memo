@@ -6,6 +6,13 @@ export interface AppUpdateStatus {
 import type { MemoEntry } from './memo-entry';
 import type { RecordingHotkeyCapture } from './recordingHotkey';
 
+export interface DictationQuickSettings {
+  handsFreeMode: boolean;
+  sendImmediately: boolean;
+  sayEnterToPressEnter: boolean;
+  experimentalEmailFormatting: boolean;
+}
+
 export interface EmailReplyContext {
   source: 'accessibility';
   subject?: string;
@@ -183,6 +190,7 @@ export interface ElectronAPI {
     setSayEnterToPressEnter(enabled: boolean): Promise<boolean>;
     setSendImmediately(enabled: boolean): Promise<boolean>;
     setHandsFreeMode(enabled: boolean): Promise<boolean>;
+    onDictationSettingsChanged(callback: (settings: DictationQuickSettings) => void): () => void;
     setRecordingHotkey(hotkey: string): Promise<string>;
     setRecordingLockHotkey(hotkey: string): Promise<string>;
     beginHotkeyCapture(): Promise<void>;
