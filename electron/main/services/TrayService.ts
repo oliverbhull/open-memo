@@ -1,12 +1,13 @@
-import { app, Menu, Tray, nativeImage, clipboard } from 'electron';
+import { app, Menu, Tray, nativeImage, clipboard, dialog } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
-import { loadSettings, store as persistentStore } from './SettingsService.js';
+import { loadSettings, saveSettings, store as persistentStore } from './SettingsService.js';
+import { isGroqCleanupEnabled } from './GroqService';
 import { recordingHotkeyLabel } from '../../shared/recordingHotkey';
 import { BrowserWindow } from 'electron';
 import type { MemoSttService } from './MemoSttService';
 import { audioInputService } from './AudioInputService';
-import type { MicrophoneInputState } from '../../shared/electron-api';
+import type { DictationQuickSettings, MicrophoneInputState } from '../../shared/electron-api';
 
 // Track menu open state to prevent rebuilding while open
 let menuIsOpen = false;
@@ -25,6 +26,46 @@ let lastTranscript: string | null = null;
 let mainWindow: BrowserWindow | null = null;
 let memoSttService: MemoSttService | null = null;
 let openMainWindowHandler: (() => void) | null = null;
+let changingHandsFreeMode = false;
+
+/** Apply the same setting and recorder changes from Settings and the tray. */
+export async function setDictationSetting(key: keyof DictationQuickSettings, enabled: unknown): Promise<boolean> {
+  if (typeof enabled !== 'boolean') throw new Error('Dictation settings must be a boolean.');
+  const settings = loadSettings();
+  const previous = settings[key];
+  const changesHandsFree = key === 'handsFreeMode' && previous !== enabled;
+  if (key === 'handsFreeMode' && changingHandsFreeMode) {
+    throw new Error('Wait for hands free to finish changing.');
+  }
+  if (changesHandsFree && (isRecording || isProcessing)) {
+    throw new Error('Finish your dictation before changing hands free.');
+  }
+  if (changesHandsFree) changingHandsFreeMode = true;
+  try {
+    saveSettings({ ...settings, [key]: enabled });
+    if (changesHandsFree) await memoSttService?.restart();
+  } catch (error) {
+    saveSettings({ ...loadSettings(), [key]: previous });
+    if (changesHandsFree) {
+      await memoSttService?.restart().catch(restoreError => console.error('[Tray] Could not restore recorder:', restoreError));
+    }
+    throw error;
+  } finally {
+    if (changesHandsFree) changingHandsFreeMode = false;
+    updateMenuState();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const current = loadSettings();
+      const quickSettings: DictationQuickSettings = {
+        handsFreeMode: current.handsFreeMode,
+        sendImmediately: current.sendImmediately,
+        sayEnterToPressEnter: current.sayEnterToPressEnter,
+        experimentalEmailFormatting: current.experimentalEmailFormatting,
+      };
+      mainWindow.webContents.send('settings:dictation-changed', quickSettings);
+    }
+  }
+  return true;
+}
 
 /**
  * Set main window reference
@@ -241,6 +282,18 @@ export function updateMenuState() {
   }
   
   const s = loadSettings();
+  const quickToggle = (label: string, key: keyof DictationQuickSettings, enabled = true): Electron.MenuItemConstructorOptions => ({
+    label,
+    type: 'checkbox',
+    checked: s[key],
+    enabled,
+    click: (item) => {
+      void setDictationSetting(key, item.checked).catch(error => {
+        dialog.showErrorBox('Could not change dictation setting', error instanceof Error ? error.message : String(error));
+      });
+    },
+  });
+  const groqCleanupEnabled = isGroqCleanupEnabled();
   
   // Lead with the active capture gesture while idle so the tray is immediately instructive.
   const statusText = isProcessing
@@ -304,6 +357,19 @@ export function updateMenuState() {
     { label: statusText, enabled: false },
     { label: 'Open Memo', click: () => openMainWindow() },
     { label: 'Settings…', click: () => openSettings() },
+    { type: 'separator' },
+    {
+      label: 'Options',
+      submenu: [
+        quickToggle('Hands free', 'handsFreeMode', !isRecording && !isProcessing && !changingHandsFreeMode),
+        quickToggle('Send immediately', 'sendImmediately'),
+        quickToggle('Say “ENTER” to submit', 'sayEnterToPressEnter'),
+        ...(process.platform === 'win32' ? [] : [quickToggle(
+          groqCleanupEnabled ? 'Email formatting (experimental)' : 'Email formatting (requires Groq cleanup)',
+          'experimentalEmailFormatting', groqCleanupEnabled,
+        )]),
+      ],
+    },
     { type: 'separator' },
     { label: 'Copy Last Dictation', click: () => copyLastTranscript(), enabled: !!lastTranscript },
     {

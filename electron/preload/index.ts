@@ -5,6 +5,7 @@ import type {
   DictationReadiness,
   DictationDelivery,
   DictationLatency,
+  DictationQuickSettings,
   ElectronAPI,
   MemoSttError,
   MicrophoneInputState,
@@ -223,6 +224,11 @@ const electronAPI = {
     setSendImmediately: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setSendImmediately', enabled),
     setHandsFreeMode: (enabled: boolean): Promise<boolean> => {
       return ipcRenderer.invoke('settings:setHandsFreeMode', enabled);
+    },
+    onDictationSettingsChanged: (callback: (settings: DictationQuickSettings) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, settings: DictationQuickSettings) => callback(settings);
+      ipcRenderer.on('settings:dictation-changed', listener);
+      return () => ipcRenderer.removeListener('settings:dictation-changed', listener);
     },
     setRecordingHotkey: (hotkey: string): Promise<string> => {
       return ipcRenderer.invoke('settings:setRecordingHotkey', hotkey);

@@ -2,7 +2,7 @@ import { calculateDictationLatency, saveDictationLatency } from './services/dict
 import { app, autoUpdater, BrowserWindow, ipcMain, systemPreferences, shell, Menu, clipboard, nativeTheme } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { MemoSttService, TranscriptionData } from './services/MemoSttService';
-import { createTray, getMicrophoneInputState, refreshAudioInputDevices, selectSystemInput, setMainWindow, setOpenMainWindowHandler, setLastTranscript, setRecordingState, setProcessingState, updateMenuState, setMemoSttService } from './services/TrayService';
+import { createTray, getMicrophoneInputState, refreshAudioInputDevices, selectSystemInput, setDictationSetting, setMainWindow, setOpenMainWindowHandler, setLastTranscript, setRecordingState, setProcessingState, updateMenuState, setMemoSttService } from './services/TrayService';
 import {
   loadSettings,
   loadUserSettings,
@@ -1144,33 +1144,9 @@ ipcMain.handle('settings:setPhraseReplacements', async (_event, rules: unknown) 
   return true;
 });
 
-ipcMain.handle('settings:setSayEnterToPressEnter', async (_event, enabled: boolean) => {
-  const settings = loadSettings();
-  settings.sayEnterToPressEnter = enabled;
-  saveSettings(settings);
-  updateMenuState();
-  return true;
-});
-
-ipcMain.handle('settings:setSendImmediately', (_event, enabled: unknown) => {
-  if (typeof enabled !== 'boolean') throw new Error('Send immediately must be a boolean.');
-  saveSettings({ ...loadSettings(), sendImmediately: enabled });
-  return true;
-});
-
-ipcMain.handle('settings:setHandsFreeMode', async (_event, enabled: boolean) => {
-  const settings = loadSettings();
-  const previous = settings.handsFreeMode ?? false;
-  settings.handsFreeMode = enabled;
-  saveSettings(settings);
-
-  if (memoSttService && previous !== enabled) {
-    memoSttService.restart();
-  }
-  updateMenuState();
-
-  return true;
-});
+ipcMain.handle('settings:setSayEnterToPressEnter', (_event, enabled: unknown) => setDictationSetting('sayEnterToPressEnter', enabled));
+ipcMain.handle('settings:setSendImmediately', (_event, enabled: unknown) => setDictationSetting('sendImmediately', enabled));
+ipcMain.handle('settings:setHandsFreeMode', (_event, enabled: unknown) => setDictationSetting('handsFreeMode', enabled));
 
 ipcMain.handle('settings:setSaveAudio', async (_event, enabled: boolean) => {
   const settings = loadSettings();
@@ -1189,26 +1165,24 @@ ipcMain.handle('settings:setDictationSounds', async (_event, enabled: unknown) =
   return true;
 });
 
-ipcMain.handle('settings:setExperimentalEmailFormatting', (_event, enabled: unknown) => {
-  if (typeof enabled !== 'boolean') throw new Error('Email formatting must be a boolean.');
-  const settings = loadSettings();
-  settings.experimentalEmailFormatting = enabled;
-  saveSettings(settings);
-  return true;
-});
+ipcMain.handle('settings:setExperimentalEmailFormatting', (_event, enabled: unknown) => setDictationSetting('experimentalEmailFormatting', enabled));
 
 ipcMain.handle('settings:saveGroqApiKey', async (_event, apiKey: unknown) => {
   await saveGroqApiKey(apiKey);
+  updateMenuState();
   return true;
 });
 
 ipcMain.handle('settings:removeGroqApiKey', () => {
   removeGroqApiKey();
+  updateMenuState();
 });
 
 ipcMain.handle('settings:setGroqCleanupEnabled', (_event, enabled: unknown) => {
   if (typeof enabled !== 'boolean') throw new Error('Groq cleanup must be a boolean.');
-  return setGroqCleanupEnabled(enabled);
+  const saved = setGroqCleanupEnabled(enabled);
+  updateMenuState();
+  return saved;
 });
 
 ipcMain.handle('settings:openGroqKeysPage', () => shell.openExternal(GROQ_KEYS_URL));

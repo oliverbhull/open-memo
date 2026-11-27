@@ -149,6 +149,33 @@ function chatBody(request) {
   return body;
 }
 
+test('Send immediately defaults off, survives settings saves, and submits only nonempty dictation', async t => {
+  const h = await harness(t);
+  assert.equal(h.app.loadSettings().sendImmediately, false);
+  h.app.saveSettings({ ...h.app.loadSettings(), sendImmediately: true });
+  h.app.saveSettings({ ...h.app.loadSettings(), dictationSounds: false });
+  assert.equal(h.app.loadSettings().sendImmediately, true);
+  for (const [text, immediate, spokenEnter, expectedText, expectedEnter] of [
+    ['hello', false, false, 'hello', false],
+    ['hello', true, false, 'hello', true],
+    ['hello enter', false, true, 'hello', true],
+    ['hello enter', true, true, 'hello', true],
+    ['hello enter', true, false, 'hello enter', true],
+    ['', true, true, '', false],
+    ['.', true, true, '', false],
+  ]) {
+    const result = await h.app.formatRecordedDictation({ processedText: text }, {
+      ...h.app.loadSettings(), sendImmediately: immediate, sayEnterToPressEnter: spokenEnter,
+    }, undefined, undefined, async input => input);
+    assert.equal(result.textToPaste, expectedText);
+    assert.equal(result.pressEnter, expectedEnter);
+  }
+  const empty = await h.app.formatRecordedDictation({ processedText: 'hello' },
+    h.app.loadSettings(), undefined, undefined, async () => '');
+  assert.equal(empty.pressEnter, false);
+  assert.equal(h.requests.length, 0);
+});
+
 test('fresh and old Cleaned profiles send zero dictations until explicitly opted in', async t => {
   for (const oldSettings of [
     {},
